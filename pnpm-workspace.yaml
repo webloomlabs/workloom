@@ -1,0 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "tests/*"
+
+# Dependency build scripts are blocked by default. Each one here is a
+# deliberate decision rather than a blanket approval.
+allowBuilds:
+  # Needed: these ship platform binaries that the package cannot run without.
+  esbuild: true
+  sharp: true
+  "@tailwindcss/oxide": true
+  unrs-resolver: true
+  # Declined: optional native accelerators pulled in by testcontainers'
+  # Docker client. It works without them.
+  cpu-features: false
+  ssh2: false
+  protobufjs: false

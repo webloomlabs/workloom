@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Pinned so a supply-chain policy change cannot silently alter a CI run.
+  PNPM_VERSION: 12.3.4
+  NODE_VERSION: 22
+
+jobs:
+  static:
+    name: lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Testcontainers uses the runner's Docker daemon.
+      - run: pnpm test:integration
+
+  tenant-isolation:
+    # Deliberately its own job. Isolation between organizations is the one
+    # property whose failure is unrecoverable, so it gets a red/green signal
+    # of its own rather than being one line inside a large test run.
+    name: tenant isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:isolation
+
+  migration-drift:
+    name: migration drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # A schema change without a generated migration is a deploy that works
+      # locally and fails in production. Catch it here instead.
+      - run: pnpm db:generate
+      - name: fail if generation produced a diff
+        run: |
+          if [ -n "$(git status --porcelain packages/db/src/migrations)" ]; then
+            echo "::error::Schema changed without a matching migration. Run pnpm db:generate and commit the result."
+            git --no-pager diff -- packages/db/src/migrations
+            exit 1
+          fi
+
+  clean-install:
+    # The mechanical proof that a stranger can self-host this: a fresh
+    # checkout, the documented commands, nothing else.
+    name: clean install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: boot the stack exactly as the docs describe
+        run: |
+          cp .env.example .env
+          sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
+          sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
+          docker compose -f docker-compose.dev.yml up -d --wait
+      - name: health check
+        run: |
+          docker compose -f docker-compose.dev.yml ps
+          # Application health is asserted here from S1, once the app image exists.
