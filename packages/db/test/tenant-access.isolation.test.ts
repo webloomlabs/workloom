@@ -64,7 +64,21 @@ describe('tenant tables', () => {
     // Guards against the whole suite passing because a migration silently
     // failed and there is simply nothing to protect.
     const tables = await tenantTables()
-    expect(tables).toEqual(expect.arrayContaining(['api_keys', 'audit_logs']))
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        'api_keys',
+        'audit_logs',
+        'events',
+        'webhook_endpoints',
+        'webhook_deliveries',
+        'idempotency_keys',
+        'companies',
+        'contacts',
+        'leads',
+        'deals',
+        'activities',
+      ]),
+    )
   })
 })
 

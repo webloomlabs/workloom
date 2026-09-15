@@ -9,6 +9,17 @@ type Viewer = Extract<Resolution, { ok: true }>
 /** The signed-in session, or null. Deduplicated per request. */
 export const getSession = cache(async () => auth.api.getSession({ headers: await headers() }))
 
+const resolveViewer = cache(async () => resolveActor({ headers: await headers() }))
+
+/**
+ * The acting user and organization, or null -- for layouts that render around
+ * pages which may have no organization yet, such as onboarding.
+ */
+export const getViewer = cache(async (): Promise<Viewer | null> => {
+  const resolution = await resolveViewer()
+  return resolution.ok ? resolution : null
+})
+
 /**
  * The acting user and organization, or a redirect to wherever they need to go
  * next.
@@ -18,8 +29,7 @@ export const getSession = cache(async () => auth.api.getSession({ headers: await
  * to call this would show an error, not another organization's data.
  */
 export const requireViewer = cache(async (): Promise<Viewer> => {
-  const requestHeaders = await headers()
-  const resolution = await resolveActor({ headers: requestHeaders })
+  const resolution = await resolveViewer()
 
   if (resolution.ok) return resolution
   if (resolution.reason === 'unauthenticated' || resolution.reason === 'invalid-key') {

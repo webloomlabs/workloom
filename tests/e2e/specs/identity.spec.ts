@@ -49,7 +49,10 @@ test('an owner signs up and creates their organization', async ({ page }) => {
 
 test('the owner changes a setting, and it is audited', async ({ page }) => {
   await signIn(page, owner)
-  // A single organization is selected automatically on sign-in.
+  // A single organization is selected automatically on sign-in, and home is
+  // the sales pipeline for anyone who can see deals.
+  await expect(page).toHaveURL(/\/pipeline/)
+  await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/settings\/organization/)
 
   await page.getByLabel('Time zone').fill('Australia/Sydney')

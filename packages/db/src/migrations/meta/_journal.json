@@ -36,6 +36,20 @@
       "when": 1789463360350,
       "tag": "0004_events_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789469077002,
+      "tag": "0005_crm",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789469089400,
+      "tag": "0006_crm_rls",
+      "breakpoints": true
     }
   ]
 }

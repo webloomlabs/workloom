@@ -223,6 +223,9 @@ Actions, so anything the UI can do is available — and audited — through the 
 - `packages/core/test/procedures.test.ts` requires a fixture for every mutation
   in the registry and asserts each writes an audit entry. Adding a mutation
   without one fails the suite.
+- The same fixtures drive a generated cross-tenant probe: any fixture input that
+  references a record (`id`, `companyId`, …) is replayed by another organization
+  and must fail with `NotFoundError`. Reads with a path parameter need a fixture too.
 
 ## Events and webhooks
 
@@ -249,8 +252,8 @@ cut latency, with polling kept as the floor.
 
 **Every mutation declares its events.** `defineProcedure({ emits: [...] })`, and
 `packages/core/test/procedures.test.ts` fails if a mutation omits the declaration,
-or runs without emitting what it declares. `emits: []` is allowed but has to be
-written down.
+runs without emitting what it declares, or emits something it does not declare.
+`emits: []` is allowed but has to be written down.
 
 **The catalogue is frozen** in `packages/core/src/events/catalogue.ts` and includes
 events from later slices, so an integration can subscribe to `invoice.*` before
@@ -286,6 +289,26 @@ form post; the origin check makes the guarantee explicit rather than dependent o
 cookie attribute. Requests with an API key carry no ambient credential and are exempt.
 Server Actions have their own origin checking in Next.js.
 
+## CRM
+
+- **There is no clients table.** A client is a company with `lifecycle_stage =
+  'client'`. Splitting clients from companies would force a re-parenting migration on
+  every conversion, which is where CRMs lose history. Leads keep their own table,
+  because enquiry forms and the API produce rows that should not clutter the company list.
+- **Conversion is one transaction.** `lead.convert` creates or attaches the company,
+  creates or reuses the contact (matched by email), optionally opens a deal, marks the
+  lead converted, and re-files the lead's activities onto what it became. It locks the
+  lead row, so concurrent conversions produce one company. It also checks the create
+  permission for each record it makes, so a key scoped to `lead:convert` cannot use it
+  to create deals.
+- **Links are composite foreign keys** on `(organization_id, id)`, so a contact cannot
+  reference another organization's company even through raw SQL.
+- **Activities use nullable foreign keys, not a polymorphic `(type, id)` pair**, so every
+  link is checked. A note on a deal also carries the deal's company and contact, which
+  is how it reaches their timelines. An activity is visible only to someone who can
+  read *every* record it is linked to, so deal notes do not reach developers through the
+  company page.
+
 ## Data-access sharp edges
 
 - **Raw `execute()` returns strings.** Drizzle's typed queries map columns;
@@ -310,6 +333,12 @@ a rounding error that surfaces when a client disputes an invoice.
 
 `pg` is configured to return `int8` as a string rather than a JavaScript
 number, which would lose precision above 2^53. See `packages/db/src/client.ts`.
+
+Over the API, an amount is a JSON integer of minor units with its currency
+(`"valueMinor": 1250050, "currency": "AUD"` is 12,500.50 AUD), validated to at most
+2^53 − 1 on the way in. Converting between that and what a person types is string
+arithmetic in `packages/core/src/money/currency.ts`, which knows each currency's
+exponent: JPY has no minor unit and KWD has three.
 
 Details of the `Money` primitive, tax calculation, and multi-currency handling
 land with S7a, specified by a golden-fixture file written before the

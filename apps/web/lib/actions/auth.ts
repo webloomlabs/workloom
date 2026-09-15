@@ -2,6 +2,7 @@
 
 import { auth } from '@workloom/auth'
 import { headers } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { getSession, safeRedirectPath } from '../server/viewer.ts'
@@ -148,6 +149,9 @@ export async function createOrganizationAction(_: ActionState, form: FormData): 
   } catch (error) {
     return toActionError(error)
   }
+  // The app layout (organization switcher, navigation) was rendered for the
+  // previous organization, or for none; a redirect alone would keep it.
+  revalidatePath('/', 'layout')
   redirect('/settings/organization')
 }
 
@@ -155,6 +159,9 @@ export async function switchOrganizationAction(form: FormData): Promise<void> {
   const organizationId = z.uuid().parse(form.get('organizationId'))
   // Better Auth checks membership before switching; a forged id is refused.
   await auth.api.setActiveOrganization({ body: { organizationId }, headers: await headers() })
+  // The app layout (organization switcher, navigation) was rendered for the
+  // previous organization, or for none; a redirect alone would keep it.
+  revalidatePath('/', 'layout')
   redirect('/settings/organization')
 }
 
@@ -175,5 +182,8 @@ export async function acceptInvitationAction(_: ActionState, form: FormData): Pr
   } catch (error) {
     return toActionError(error)
   }
+  // The app layout (organization switcher, navigation) was rendered for the
+  // previous organization, or for none; a redirect alone would keep it.
+  revalidatePath('/', 'layout')
   redirect('/settings/organization')
 }

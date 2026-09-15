@@ -16,7 +16,7 @@ import { OneTimeSecret } from './one-time-secret'
 
 export type EventFamily = {
   family: string
-  types: Array<{ type: string; description: string; since: string }>
+  types: Array<{ type: string; description: string; emitted: boolean }>
 }
 
 /**
@@ -71,7 +71,7 @@ function EventPicker({ families, initial }: { families: EventFamily[]; initial: 
                       />
                       <span>
                         {t.type.split('.')[1]}
-                        {t.since !== 'S2' && <span className="ml-1 text-neutral-400">(coming)</span>}
+                        {!t.emitted && <span className="ml-1 text-neutral-400">(coming)</span>}
                       </span>
                     </label>
                   ))}

@@ -33,3 +33,12 @@ export {
   needsReencryption,
   type Keyring,
 } from './crypto.ts'
+export {
+  AmountFormatError,
+  CURRENCY_CODES,
+  currencyExponent,
+  formatAmount,
+  isCurrencyCode,
+  minorToDecimalString,
+  parseAmount,
+} from './money/currency.ts'

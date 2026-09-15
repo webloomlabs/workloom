@@ -2,10 +2,12 @@ import { redirect } from 'next/navigation'
 import { requireViewer } from '@/lib/server/viewer'
 
 /**
- * The dashboard arrives in S9. Until then the home page sends people where
- * they can do something: sign-in, onboarding, or organization settings.
+ * The dashboard arrives in S9. Until then the home page sends people to the
+ * most useful place their role can see.
  */
 export default async function Home() {
-  await requireViewer()
+  const viewer = await requireViewer()
+  if (viewer.permissions.has('deal:read')) redirect('/pipeline')
+  if (viewer.permissions.has('company:read')) redirect('/companies')
   redirect('/settings/organization')
 }

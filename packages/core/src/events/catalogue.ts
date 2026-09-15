@@ -13,6 +13,12 @@
 
 type Definition = { description: string; /** The slice that starts emitting it. */ since: string }
 
+/**
+ * Slices that have shipped. Types from later slices are declared, and can be
+ * subscribed to, but nothing emits them yet.
+ */
+const SHIPPED_SLICES = new Set(['S2', 'S3'])
+
 const definitions = {
   'organization.updated': { description: 'Organization settings changed', since: 'S2' },
 
@@ -28,15 +34,30 @@ const definitions = {
   'webhook.test': { description: 'Sent on request, to one endpoint, to check it works', since: 'S2' },
 
   'lead.created': { description: 'A lead was captured', since: 'S3' },
+  'lead.updated': { description: "A lead's details changed", since: 'S3' },
   'lead.status_changed': { description: "A lead's status changed", since: 'S3' },
-  'lead.converted': { description: 'A lead became a client', since: 'S3' },
+  'lead.converted': { description: 'A lead was converted into a company, contact, and deal', since: 'S3' },
+  'lead.archived': { description: 'A lead was archived', since: 'S3' },
+  'lead.restored': { description: 'An archived lead was restored', since: 'S3' },
   'company.created': { description: 'A company was added', since: 'S3' },
+  'company.updated': { description: "A company's details changed", since: 'S3' },
   'company.became_client': { description: 'A company became a client', since: 'S3' },
+  'company.archived': { description: 'A company was archived', since: 'S3' },
+  'company.restored': { description: 'An archived company was restored', since: 'S3' },
   'contact.created': { description: 'A contact was added', since: 'S3' },
+  'contact.updated': { description: "A contact's details changed", since: 'S3' },
+  'contact.archived': { description: 'A contact was archived', since: 'S3' },
+  'contact.restored': { description: 'An archived contact was restored', since: 'S3' },
   'deal.created': { description: 'A deal was opened', since: 'S3' },
-  'deal.stage_changed': { description: 'A deal moved stage', since: 'S3' },
+  'deal.updated': { description: "A deal's details changed", since: 'S3' },
+  'deal.stage_changed': { description: 'A deal moved stage, including to won or lost', since: 'S3' },
   'deal.won': { description: 'A deal was won', since: 'S3' },
   'deal.lost': { description: 'A deal was lost', since: 'S3' },
+  'deal.archived': { description: 'A deal was archived', since: 'S3' },
+  'deal.restored': { description: 'An archived deal was restored', since: 'S3' },
+  'activity.logged': { description: 'A note, call, email, or meeting was recorded', since: 'S3' },
+  'activity.updated': { description: 'A recorded activity was edited', since: 'S3' },
+  'activity.deleted': { description: 'A recorded activity was deleted', since: 'S3' },
 
   'project.created': { description: 'A project was created', since: 'S5' },
   'project.status_changed': { description: "A project's status changed", since: 'S5' },
@@ -63,9 +84,12 @@ const definitions = {
 
 export type EventType = keyof typeof definitions
 
-export const EVENT_CATALOGUE: ReadonlyArray<{ type: EventType } & Definition> = Object.entries(
-  definitions,
-).map(([type, d]) => ({ type: type as EventType, ...d }))
+export const EVENT_CATALOGUE: ReadonlyArray<{ type: EventType; emitted: boolean } & Definition> =
+  Object.entries(definitions).map(([type, d]) => ({
+    type: type as EventType,
+    ...d,
+    emitted: SHIPPED_SLICES.has(d.since),
+  }))
 
 export const EVENT_TYPES = EVENT_CATALOGUE.map((e) => e.type)
 

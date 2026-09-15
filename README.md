@@ -7,8 +7,10 @@ Workloom connects the operational lifecycle of an agency into one system —
 so that a project is never separated from the commercial context around it.
 
 > **Status: pre-release.** In place: accounts, organizations, invitations, roles,
-> API keys, an audit log (S1), and signed webhooks with retries plus idempotent API
-> writes (S2). The CRM arrives in S3. See [Roadmap.md](Roadmap.md).
+> API keys, an audit log (S1); signed webhooks with retries and idempotent API
+> writes (S2); and the CRM — leads, companies, contacts, deals, a pipeline, activity
+> history, and lead-to-client conversion (S3). Projects arrive in S5. See
+> [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

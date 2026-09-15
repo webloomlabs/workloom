@@ -15,7 +15,7 @@ export default async function OrganizationSettingsPage() {
     <Card>
       <CardHeader title="Organization" description="How your organization appears, and the defaults for money and dates." />
       <div className="p-5">
-        <OrganizationForm organization={organization} canEdit={viewer.permissions.has('organization:update')} />
+        <OrganizationForm timezones={Intl.supportedValuesOf('timeZone')} organization={organization} canEdit={viewer.permissions.has('organization:update')} />
       </div>
     </Card>
   )

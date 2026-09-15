@@ -8,7 +8,19 @@ import { fieldError, FormMessage, SubmitButton } from './form-bits'
 
 type Organization = { name: string; baseCurrency: string; timezone: string; dateFormat: string }
 
-export function OrganizationForm({ organization, canEdit }: { organization: Organization; canEdit: boolean }) {
+export function OrganizationForm({
+  organization,
+  canEdit,
+  timezones,
+}: {
+  organization: Organization
+  canEdit: boolean
+  /**
+   * From the server. Browsers and Node ship different time zone data, so a list
+   * built here would differ between the server render and hydration.
+   */
+  timezones: string[]
+}) {
   const [state, action] = useActionState(updateOrganizationAction, idle)
   return (
     <form action={action} className="space-y-5" noValidate>
@@ -33,7 +45,7 @@ export function OrganizationForm({ organization, canEdit }: { organization: Orga
         </Field>
       </fieldset>
       <datalist id="timezones">
-        {Intl.supportedValuesOf('timeZone').map((zone) => (
+        {timezones.map((zone) => (
           <option key={zone} value={zone} />
         ))}
       </datalist>

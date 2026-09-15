@@ -75,7 +75,7 @@ The platform layer everything else sits on. Built first, but kept thin.
 Entities: `Lead`, `Company`, `Contact`, `Deal`, `Activity`, `Note`.
 
 - Lead capture and lead source
-- Sales pipeline with fixed stages: New Lead → Contacted → Qualified → Proposal Sent → Negotiation → Won / Lost
+- Sales pipeline with fixed stages: New Lead → Contacted → Qualified → Proposal Sent → Negotiation → Won / Lost (built as lead statuses up to qualification, then deal stages — see [S3](docs/development/slices/S3.md))
 - Deal value and expected close date
 - Contact and company profiles
 - Activity history and notes on every entity

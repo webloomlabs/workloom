@@ -25,6 +25,9 @@ export {
   sum,
   countDistinct,
 } from 'drizzle-orm'
+export type { SQL } from 'drizzle-orm'
+// For joining one table twice under different names.
+export { alias } from 'drizzle-orm/pg-core'
 export { db, getPool, closePool, type Database } from './client.ts'
 export { withTenant, withoutTenant, currentTenant, type TenantTransaction } from './tenant.ts'
 export { runMigrations } from './migrate.ts'

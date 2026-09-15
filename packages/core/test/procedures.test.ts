@@ -94,11 +94,59 @@ async function createHook(organizationId = ORG_A, userId = ownerA): Promise<stri
   return created.endpoint.id
 }
 
+const unique = () => core.newId().slice(-8)
+const ownerOfA = () => asOwner(ORG_A, ownerA)
+
+async function createCompany(input: Record<string, unknown> = {}): Promise<string> {
+  const company = (await run('company.create', ownerOfA(), { name: `Company ${unique()}`, ...input })) as { id: string }
+  return company.id
+}
+
+async function createContact(input: Record<string, unknown> = {}): Promise<string> {
+  const contact = (await run('contact.create', ownerOfA(), {
+    firstName: 'Ada',
+    email: `ada-${unique()}@example.com`,
+    ...input,
+  })) as { id: string }
+  return contact.id
+}
+
+async function createLead(input: Record<string, unknown> = {}): Promise<string> {
+  const lead = (await run('lead.create', ownerOfA(), {
+    contactName: 'Grace Hopper',
+    companyName: `Lead Co ${unique()}`,
+    email: `grace-${unique()}@example.com`,
+    ...input,
+  })) as { id: string }
+  return lead.id
+}
+
+async function createDeal(input: Record<string, unknown> = {}): Promise<string> {
+  const deal = (await run('deal.create', ownerOfA(), {
+    companyId: await createCompany(),
+    name: `Deal ${unique()}`,
+    valueMinor: 500_000,
+    ...input,
+  })) as { id: string }
+  return deal.id
+}
+
+async function archived(procedure: string, id: string): Promise<{ id: string }> {
+  await run(procedure, ownerOfA(), { id })
+  return { id }
+}
+
+type Fixture = () => Promise<unknown>
+
 /**
  * How to exercise each mutation against org A. Returning the input lets one
  * fixture create what the next one acts on.
+ *
+ * A mutation whose events depend on its input -- a deal can be won or lost --
+ * lists several fixtures. The first is the representative one; together they
+ * must demonstrate every event the mutation declares.
  */
-const MUTATIONS: Record<string, () => Promise<unknown>> = {
+const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   // A different name each call: an update that changes nothing correctly emits
   // nothing, which would make a repeated fixture look like a missing event.
   'organization.update': async () => ({ name: `Org A ${core.newId().slice(-6)}` }),
@@ -140,6 +188,73 @@ const MUTATIONS: Record<string, () => Promise<unknown>> = {
     })
     return { id: deliveryId }
   },
+
+  'company.create': [
+    async () => ({ name: `Company ${unique()}` }),
+    async () => ({ name: `Client ${unique()}`, lifecycleStage: 'client' }),
+  ],
+  'company.update': [
+    async () => ({ id: await createCompany(), description: `changed ${unique()}` }),
+    async () => ({ id: await createCompany(), lifecycleStage: 'client' }),
+  ],
+  'company.archive': async () => ({ id: await createCompany() }),
+  'company.restore': async () => archived('company.archive', await createCompany()),
+
+  'contact.create': async () => ({ firstName: 'Ada', email: `ada-${unique()}@example.com` }),
+  'contact.update': async () => ({ id: await createContact(), jobTitle: `Title ${unique()}` }),
+  'contact.archive': async () => ({ id: await createContact() }),
+  'contact.restore': async () => archived('contact.archive', await createContact()),
+
+  'lead.create': async () => ({ contactName: 'Grace Hopper', source: 'referral' }),
+  'lead.update': async () => ({ id: await createLead(), details: `changed ${unique()}` }),
+  'lead.changeStatus': async () => ({ id: await createLead(), status: 'contacted' }),
+  'lead.convert': [
+    // No deal: company, contact, and the company becomes a client at once.
+    async () => ({ id: await createLead() }),
+    async () => ({ id: await createLead(), deal: { valueMinor: 1_000_000 } }),
+  ],
+  'lead.archive': async () => ({ id: await createLead() }),
+  'lead.restore': async () => archived('lead.archive', await createLead()),
+
+  'deal.create': async () => ({ companyId: await createCompany(), name: `Deal ${unique()}`, valueMinor: 250_000 }),
+  'deal.update': async () => ({ id: await createDeal(), name: `Renamed ${unique()}` }),
+  'deal.changeStage': [
+    async () => ({ id: await createDeal(), stage: 'proposal_sent' }),
+    // A fresh prospect, so winning also makes it a client.
+    async () => ({ id: await createDeal(), stage: 'won' }),
+    async () => ({ id: await createDeal(), stage: 'lost', lostReason: 'Went with another agency' }),
+  ],
+  'deal.archive': async () => ({ id: await createDeal() }),
+  'deal.restore': async () => archived('deal.archive', await createDeal()),
+
+  'activity.create': async () => ({ companyId: await createCompany(), type: 'call', body: 'Discovery call' }),
+  'activity.update': async () => {
+    const activity = (await run('activity.create', ownerOfA(), {
+      companyId: await createCompany(),
+      body: 'first draft',
+    })) as { id: string }
+    return { id: activity.id, body: `edited ${unique()}` }
+  },
+  'activity.delete': async () => {
+    const activity = (await run('activity.create', ownerOfA(), {
+      contactId: await createContact(),
+      body: 'to delete',
+    })) as { id: string }
+    return { id: activity.id }
+  },
+}
+
+const fixturesFor = (name: string): Fixture[] => [MUTATIONS[name]!].flat()
+
+/** Reads that take a record reference, exercised by the cross-tenant probe. */
+const READS: Record<string, Fixture> = {
+  'webhook.get': async () => ({ id: await createHook() }),
+  'webhookDelivery.list': async () => ({ id: await createHook() }),
+  'company.get': async () => ({ id: await createCompany() }),
+  'contact.get': async () => ({ id: await createContact() }),
+  'lead.get': async () => ({ id: await createLead() }),
+  'deal.get': async () => ({ id: await createDeal() }),
+  'activity.list': async () => ({ companyId: await createCompany() }),
 }
 
 describe('audit coverage', () => {
@@ -153,7 +268,7 @@ describe('audit coverage', () => {
   })
 
   it.each(Object.keys(MUTATIONS))('%s writes an audit entry', async (name) => {
-    const input = await MUTATIONS[name]!()
+    const input = await fixturesFor(name)[0]!()
     const before = await auditCount(ORG_A)
     await run(name, asOwner(ORG_A, ownerA), input)
     expect(await auditCount(ORG_A)).toBeGreaterThan(before)
@@ -183,15 +298,23 @@ describe('event coverage', () => {
     expect(reads.map((p) => p.name)).toEqual([])
   })
 
-  it.each(Object.keys(MUTATIONS))('%s emits what it declares', async (name) => {
+  it.each(Object.keys(MUTATIONS))('%s emits what it declares, and nothing else', async (name) => {
     const procedure = registry.getProcedure(name)!
-    const input = await MUTATIONS[name]!()
-    const before = await eventTypes(ORG_A)
-    await run(name, asOwner(ORG_A, ownerA), input)
-    const emitted = (await eventTypes(ORG_A)).slice(before.length)
+    const emitted = new Set<string>()
+    for (const fixture of fixturesFor(name)) {
+      const input = await fixture()
+      const before = await eventTypes(ORG_A)
+      await run(name, asOwner(ORG_A, ownerA), input)
+      for (const type of (await eventTypes(ORG_A)).slice(before.length)) emitted.add(type)
+    }
 
     for (const type of procedure.emits ?? []) {
-      expect(emitted, `${name} declared ${type}`).toContain(type)
+      expect([...emitted], `${name} declared ${type}`).toContain(type)
+    }
+    // The reverse matters as much: an undeclared event is one the OpenAPI
+    // document and the webhook docs never mention.
+    for (const type of emitted) {
+      expect(procedure.emits ?? [], `${name} emitted undeclared ${type}`).toContain(type)
     }
   })
 
@@ -211,7 +334,31 @@ describe('event coverage', () => {
   })
 })
 
+const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId']
+
 describe('cross-tenant access through procedures', () => {
+  it('has a cross-tenant fixture for every read that takes a record id', () => {
+    const reads = registry
+      .allProcedures()
+      .filter((p) => p.readOnly && p.http.path.includes('{'))
+      .map((p) => p.name)
+    expect(Object.keys(READS)).toEqual(expect.arrayContaining(reads))
+  })
+
+  const referencing = [
+    ...Object.keys(MUTATIONS).flatMap((name) => fixturesFor(name).map((fixture, i) => [`${name} #${i + 1}`, name, fixture] as const)),
+    ...Object.entries(READS).map(([name, fixture]) => [name, name, fixture] as const),
+  ]
+
+  it.each(referencing)('%s refuses another organization\'s records', async (_, name, fixture) => {
+    // Every fixture builds its records in org A. Replayed by org B's owner, any
+    // input that references one of those records must fail as not found --
+    // never succeed, and never answer "forbidden", which would confirm the id.
+    const input = (await fixture()) as Record<string, unknown>
+    if (!REFERENCE_KEYS.some((key) => typeof input[key] === 'string')) return
+    await expect(run(name, asOwner(ORG_B, ownerB), input)).rejects.toBeInstanceOf(core.NotFoundError)
+  })
+
   it('cannot revoke another organization\'s API key', async () => {
     const created = (await run('apiKey.create', asOwner(ORG_A, ownerA), {
       name: 'belongs to A',

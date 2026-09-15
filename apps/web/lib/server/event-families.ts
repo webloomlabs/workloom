@@ -8,7 +8,7 @@ export function eventFamilies(): EventFamily[] {
   for (const event of EVENT_CATALOGUE) {
     const family = event.type.split('.')[0]!
     if (!byFamily.has(family)) byFamily.set(family, { family, types: [] })
-    byFamily.get(family)!.types.push({ type: event.type, description: event.description, since: event.since })
+    byFamily.get(family)!.types.push({ type: event.type, description: event.description, emitted: event.emitted })
   }
   return [...byFamily.values()]
 }
