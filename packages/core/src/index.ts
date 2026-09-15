@@ -42,3 +42,4 @@ export {
   minorToDecimalString,
   parseAmount,
 } from './money/currency.ts'
+export { SHIPPED_SLICES, isShipped } from './release.ts'

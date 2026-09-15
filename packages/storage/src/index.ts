@@ -3,7 +3,9 @@ import { LocalStorage } from './local.ts'
 import { S3Storage } from './s3.ts'
 import type { Storage } from './types.ts'
 
-export type { Storage, StoredObject, PutOptions } from './types.ts'
+export type { Storage, StoredObject, PutOptions, SignedUrlOptions } from './types.ts'
+export { attachmentDisposition } from './types.ts'
+export { LocalStorage } from './local.ts'
 
 let instance: Storage | undefined
 

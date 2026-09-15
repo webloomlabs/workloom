@@ -109,7 +109,7 @@ function operationFor(procedure: AnyProcedure) {
           requestBody: {
             required: true,
             content: {
-              'application/json': {
+              [procedure.http.body === 'multipart' ? 'multipart/form-data' : 'application/json']: {
                 schema: { type: 'object', properties: bodyProperties },
               },
             },

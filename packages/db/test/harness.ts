@@ -1,4 +1,7 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import pg from 'pg'
 
 /**
@@ -83,6 +86,9 @@ export async function loadDbWithEnv(databaseUrl: string) {
   process.env.WORKLOOM_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString('base64')
   process.env.MAIL_DRIVER = 'memory'
   process.env.MAIL_FROM ??= 'test@example.com'
+  // Attachments go to a throwaway directory, never the developer's own storage.
+  process.env.STORAGE_DRIVER = 'local'
+  process.env.STORAGE_LOCAL_PATH = mkdtempSync(join(tmpdir(), 'workloom-test-storage-'))
   return import('../src/index.ts')
 }
 

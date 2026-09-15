@@ -170,7 +170,10 @@ async function readInput(
 
   if (procedure.http.method !== 'GET' && procedure.http.method !== 'DELETE') {
     const contentType = c.req.raw.headers.get('content-type') ?? ''
-    if (contentType.includes('application/json')) {
+    if (procedure.http.body === 'multipart' && contentType.includes('multipart/form-data')) {
+      // Files arrive as File objects; the procedure's schema validates them.
+      Object.assign(input, await c.req.parseBody())
+    } else if (contentType.includes('application/json')) {
       try {
         const body = await c.req.json()
         if (body && typeof body === 'object') Object.assign(input, body)

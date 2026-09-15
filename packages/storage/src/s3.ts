@@ -7,7 +7,14 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { env } from '@workloom/config'
-import { assertSafeKey, type PutOptions, type Storage, type StoredObject } from './types.ts'
+import {
+  assertSafeKey,
+  attachmentDisposition,
+  type PutOptions,
+  type SignedUrlOptions,
+  type Storage,
+  type StoredObject,
+} from './types.ts'
 
 /**
  * S3-compatible object storage.
@@ -36,9 +43,7 @@ export class S3Storage implements Storage {
         Key: key,
         Body: body,
         ContentType: contentType,
-        ...(options?.filename
-          ? { ContentDisposition: `attachment; filename="${options.filename.replace(/"/g, '')}"` }
-          : {}),
+        ...(options?.filename ? { ContentDisposition: attachmentDisposition(options.filename) } : {}),
       }),
     )
     return { key, size: body.byteLength, contentType }
@@ -67,10 +72,14 @@ export class S3Storage implements Storage {
     }
   }
 
-  async signedUrl(key: string, expiresInSeconds = 300): Promise<string> {
+  async signedUrl(key: string, options: SignedUrlOptions = {}): Promise<string> {
     assertSafeKey(key)
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
-      expiresIn: expiresInSeconds,
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ResponseContentDisposition: attachmentDisposition(options.filename ?? key.split('/').pop()!),
+      ResponseContentType: options.contentType ?? 'application/octet-stream',
     })
+    return getSignedUrl(this.client, command, { expiresIn: options.expiresInSeconds ?? 300 })
   }
 }

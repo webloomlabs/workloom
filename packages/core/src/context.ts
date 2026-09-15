@@ -63,9 +63,43 @@ export type ActorContext = {
    * the entity's REST representation, as documented in the OpenAPI spec.
    */
   emit(type: EventType, data: unknown): Promise<string>
+  /**
+   * Runs once the transaction has committed. For side effects outside the
+   * database that must not happen if the change rolls back, such as deleting
+   * a stored file. A failure is logged, not thrown: the change already happened.
+   */
+  afterCommit(fn: () => Promise<void>): void
+  /**
+   * Runs if the transaction rolls back. For undoing side effects taken before
+   * the commit, such as a file already written to storage.
+   */
+  afterRollback(fn: () => Promise<void>): void
+}
+
+/**
+ * Error classes that transports recognise must be recognisable from any copy
+ * of this module.
+ *
+ * There can be several copies in one process: Next.js bundles each route and
+ * each rendering layer separately, so the procedure that throws a DomainError
+ * and the Server Action that catches it may hold different class objects. A
+ * plain `instanceof` then fails, and a validation message meant for the person
+ * becomes "Something went wrong" -- in production builds only, depending on how
+ * chunks happen to be split. Each class brands its instances with a global
+ * symbol and answers `instanceof` from the brand.
+ */
+const KIND = Symbol.for('workloom.error-kind')
+
+function hasKind(value: unknown, kind: string): boolean {
+  return typeof value === 'object' && value !== null && (value as { [KIND]?: string })[KIND] === kind
 }
 
 export class ForbiddenError extends Error {
+  readonly [KIND] = 'forbidden'
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    return hasKind(value, 'forbidden')
+  }
+
   constructor(readonly permission: Permission) {
     super(`Missing permission: ${permission}`)
     this.name = 'ForbiddenError'
@@ -80,6 +114,11 @@ export class ForbiddenError extends Error {
  * leaks the existence of other tenants' records.
  */
 export class NotFoundError extends Error {
+  readonly [KIND] = 'not-found'
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    return hasKind(value, 'not-found')
+  }
+
   constructor(entity: string, id?: string) {
     super(id ? `${entity} not found: ${id}` : `${entity} not found`)
     this.name = 'NotFoundError'
@@ -96,6 +135,11 @@ export class NotFoundError extends Error {
  * statement that the message is safe and useful to show.
  */
 export class DomainError extends Error {
+  readonly [KIND] = 'domain'
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    return hasKind(value, 'domain')
+  }
+
   constructor(
     message: string,
     /** Stable machine-readable reason, e.g. `last_owner`. */
@@ -109,6 +153,11 @@ export class DomainError extends Error {
 }
 
 export class ConflictError extends Error {
+  readonly [KIND] = 'conflict'
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    return hasKind(value, 'conflict')
+  }
+
   constructor(message: string) {
     super(message)
     this.name = 'ConflictError'

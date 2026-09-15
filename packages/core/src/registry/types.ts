@@ -16,6 +16,11 @@ export type HttpBinding = {
   path: string
   /** Overrides the default (200 for GET, 201 for creating POSTs). */
   successStatus?: number
+  /**
+   * `multipart` for operations that take a file. Other fields arrive as form
+   * fields alongside it. Defaults to `json`.
+   */
+  body?: 'json' | 'multipart'
 }
 
 /**

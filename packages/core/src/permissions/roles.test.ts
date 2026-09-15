@@ -59,6 +59,9 @@ describe('separation of duties', () => {
 
     ['manager', 'report:readFinancial', true, 'judging a project requires its margin'],
     ['manager', 'invoice:create', false, 'raising invoices is a finance duty'],
+    ['developer', 'comment:create', true, 'developers discuss the work'],
+    ['developer', 'comment:moderate', false, "but do not edit each other's comments"],
+    ['developer', 'project:update', false, 'nor change the project itself'],
   ]
 
   it.each(cases)('%s / %s -> %s (%s)', (role, permission, expected) => {

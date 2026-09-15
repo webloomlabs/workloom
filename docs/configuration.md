@@ -26,7 +26,7 @@ See [.env.example](../.env.example) for the annotated list.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `REDIS_URL` | unset | Queues and rate limiting run on Postgres by default. Redis is an opt-in upgrade for larger installations, not a requirement. |
-| `STORAGE_DRIVER` | `local` | `local` or `s3`. S3 requires `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. |
+| `STORAGE_DRIVER` | `local` | `local` or `s3`. S3 requires `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Attachments are up to 20 MB each; a reverse proxy in front must accept request bodies of at least 21 MB. |
 | `DATABASE_POOL_SIZE` | `10` | Per process. |
 | `MAIL_DRIVER` | `smtp` | `smtp` delivers mail. `memory` keeps messages in the process for tests to inspect, and is rejected in production — invitations would silently never arrive. |
 | `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` | `587`, unset, unset, `false` | Standard SMTP settings. |

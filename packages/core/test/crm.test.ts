@@ -462,3 +462,87 @@ describe('activities', () => {
     await expect(run('activity.create', asA(), { body: 'floating' })).rejects.toBeInstanceOf(ZodError)
   })
 })
+
+describe('the client view', () => {
+  type Summary = {
+    sections: Array<{ key: string; status: string; count: number | null }>
+    deals: { openCount: number; openValue: unknown[]; wonCount: number; wonValue: unknown[] } | null
+  }
+  const section = (summary: Summary, key: string) => summary.sections.find((s) => s.key === key)
+
+  it('counts what each section holds, and reports what is still to come', async () => {
+    const company = await run('company.create', asA(), { name: `Summary ${unique()}`, lifecycleStage: 'client' })
+    await run('contact.create', asA(), { firstName: 'One', companyId: company.id })
+    const archived = await run('contact.create', asA(), { firstName: 'Gone', companyId: company.id })
+    await run('contact.archive', asA(), { id: archived.id })
+    const open = await run('deal.create', asA(), { companyId: company.id, name: 'Open', valueMinor: 100_00 })
+    await run('deal.create', asA(), { companyId: company.id, name: 'Open USD', valueMinor: 50_00, currency: 'USD' })
+    const won = await run('deal.create', asA(), { companyId: company.id, name: 'Won', valueMinor: 999_00 })
+    await run('deal.changeStage', asA(), { id: won.id, stage: 'won' })
+    const lost = await run('deal.create', asA(), { companyId: company.id, name: 'Lost', valueMinor: 1 })
+    await run('deal.changeStage', asA(), { id: lost.id, stage: 'lost' })
+    await run('activity.create', asA(), { dealId: open.id, body: 'On the deal' })
+    await run('activity.create', asA(), { companyId: company.id, body: 'On the company' })
+
+    const summary = await run<Summary>('company.summary', asA(), { id: company.id })
+
+    expect(section(summary, 'overview')).toEqual({ key: 'overview', label: 'Overview', status: 'available', count: null })
+    expect(section(summary, 'contacts')).toMatchObject({ status: 'available', count: 1 })
+    expect(section(summary, 'deals')).toMatchObject({ status: 'available', count: 4 })
+    expect(section(summary, 'activity')).toMatchObject({ status: 'available', count: 2 })
+    expect(section(summary, 'projects')).toMatchObject({ status: 'available', count: 0 })
+    expect(section(summary, 'quotes')).toMatchObject({ status: 'upcoming', count: null })
+    expect(section(summary, 'invoices')).toMatchObject({ status: 'upcoming', count: null })
+    expect(section(summary, 'support')).toMatchObject({ status: 'planned', count: null })
+
+    expect(summary.deals).toEqual({
+      openCount: 2,
+      openValue: [
+        { currency: 'AUD', valueMinor: 100_00 },
+        { currency: 'USD', valueMinor: 50_00 },
+      ],
+      wonCount: 1,
+      wonValue: [{ currency: 'AUD', valueMinor: 999_00 }],
+    })
+  })
+
+  it('shows a developer only the sections and figures their role allows', async () => {
+    const company = await run('company.create', asA(), { name: `Dev view ${unique()}`, lifecycleStage: 'client' })
+    const deal = await run('deal.create', asA(), { companyId: company.id, name: 'Terms' })
+    await run('activity.create', asA(), { dealId: deal.id, body: 'Pricing discussion' })
+    await run('activity.create', asA(), { companyId: company.id, body: 'Kick-off' })
+
+    const summary = await run<Summary>('company.summary', asDeveloper(), { id: company.id })
+
+    const keys = summary.sections.map((s) => s.key)
+    for (const hidden of ['deals', 'quotes', 'invoices', 'payments', 'expenses']) expect(keys).not.toContain(hidden)
+    expect(keys).toEqual(expect.arrayContaining(['overview', 'contacts', 'projects', 'activity', 'support']))
+    expect(summary.deals).toBeNull()
+    // The deal note is not counted, just as it is not listed.
+    expect(section(summary, 'activity')).toMatchObject({ count: 1 })
+  })
+
+  it('lists clients and former clients with their figures, and never prospects', async () => {
+    const tag = unique()
+    const client = await run('company.create', asA(), { name: `Listed ${tag} client`, lifecycleStage: 'client' })
+    await run('company.create', asA(), { name: `Listed ${tag} former`, lifecycleStage: 'former_client' })
+    await run('company.create', asA(), { name: `Listed ${tag} prospect` })
+    await run('contact.create', asA(), { firstName: 'C', companyId: client.id })
+    await run('deal.create', asA(), { companyId: client.id, name: 'More work', valueMinor: 12_00 })
+
+    const all = await run('client.list', asA(), { q: `Listed ${tag}` })
+    expect(all.data.map((c: { name: string }) => c.name).sort()).toEqual([`Listed ${tag} client`, `Listed ${tag} former`])
+    expect(all.data.find((c: { id: string }) => c.id === client.id)).toMatchObject({
+      contactCount: 1,
+      openDeals: { count: 1, value: [{ currency: 'AUD', valueMinor: 12_00 }] },
+    })
+
+    const former = await run('client.list', asA(), { q: `Listed ${tag}`, lifecycleStage: 'former_client' })
+    expect(former.data).toHaveLength(1)
+
+    const asDev = await run('client.list', asDeveloper(), { q: `Listed ${tag}` })
+    expect(asDev.data.find((c: { id: string }) => c.id === client.id)).toMatchObject({ contactCount: 1, openDeals: null })
+
+    expect((await run('client.list', asB(), { q: `Listed ${tag}` })).data).toEqual([])
+  })
+})

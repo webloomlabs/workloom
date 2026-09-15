@@ -271,6 +271,25 @@ that encrypted it, so the key can be rotated through `WORKLOOM_PREVIOUS_ENCRYPTI
 Receiver-facing behaviour — payloads, verification, retries — is in
 [webhooks.md](webhooks.md).
 
+## Side effects outside the database
+
+A procedure's database work commits or rolls back as one transaction; storage and
+email do not take part in it. `ctx.afterCommit(fn)` runs once the transaction has
+committed, for effects that must not happen if the change is undone, such as deleting
+a stored file. `ctx.afterRollback(fn)` undoes effects taken before the commit, such as
+removing an uploaded file whose row never landed. A failing hook is logged; a commit
+hook cannot fail a request whose change has already happened.
+
+## Files
+
+Attachments live in object storage (`packages/storage`, local disk or S3) under keys
+built from ids alone. Nothing from a filename reaches a path. The only route to the
+bytes is `attachment.download`, which checks permission and returns a URL valid for
+five minutes: an S3 presigned URL, or `/api/files` signed over key, expiry, filename,
+and content type. Every download is served as `Content-Disposition: attachment` with
+`nosniff` and a sandbox CSP, so an uploaded HTML or SVG file never renders on the
+application's origin.
+
 ## Idempotency
 
 A mutation called with an `Idempotency-Key` header records the key **in the same
@@ -309,6 +328,16 @@ Server Actions have their own origin checking in Next.js.
   read *every* record it is linked to, so deal notes do not reach developers through the
   company page.
 
+### The client view
+
+The company page is the client view: one tab per section of `CLIENT_SECTIONS` in
+`packages/core/src/modules/crm/clients.ts`. Every section the specification gives a
+client is declared there, each with the slice that builds it; `company.summary`
+reports each as available, upcoming, or planned, with a record count, and leaves out
+sections the caller cannot read. `SHIPPED_SLICES` in `packages/core/src/release.ts`
+drives both this and which catalogue events are emitted, and a unit test fails if a
+shipped section has nothing counting its records.
+
 ## Data-access sharp edges
 
 - **Raw `execute()` returns strings.** Drizzle's typed queries map columns;
@@ -320,6 +349,11 @@ Server Actions have their own origin checking in Next.js.
   pool: a module that merely wanted a type would bind the pool to whatever
   `DATABASE_URL` was set at import time. In tests that pointed at the developer's
   own database.
+- **Modules can exist more than once in a production server.** Next bundles routes
+  and rendering layers separately, so a class thrown in one bundle may be a
+  different object from the class caught in another. The procedure registry lives
+  on `globalThis`, and the error classes in `packages/core/src/context.ts` answer
+  `instanceof` from a `Symbol.for` brand. `pnpm dev` does not reproduce this.
 - **Drizzle wraps driver errors.** The Postgres error — the policy or constraint
   that fired — is on `cause`. Tests unwrap before asserting, or they pass for the
   wrong reason.

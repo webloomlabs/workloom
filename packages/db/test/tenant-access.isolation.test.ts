@@ -77,6 +77,13 @@ describe('tenant tables', () => {
         'leads',
         'deals',
         'activities',
+        'projects',
+        'project_members',
+        'milestones',
+        'tasks',
+        'task_dependencies',
+        'comments',
+        'attachments',
       ]),
     )
   })

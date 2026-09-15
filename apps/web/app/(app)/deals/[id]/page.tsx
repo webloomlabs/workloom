@@ -49,7 +49,17 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
         {can('deal:archive') && <ArchiveControl entity="deal" id={deal.id} archived={!live} label="deal" />}
       </div>
 
-      {deal.stage === 'won' && <Alert tone="success">Won {formatDate(deal.closedAt, settings.timezone)}.</Alert>}
+      {deal.stage === 'won' && (
+        <Alert tone="success">
+          Won {formatDate(deal.closedAt, settings.timezone)}.
+          {can('project:create') && (
+            <>
+              {' '}
+              <Link href={`/projects/new?dealId=${deal.id}`} className="font-medium underline">Start the project</Link>
+            </>
+          )}
+        </Alert>
+      )}
       {deal.stage === 'lost' && (
         <Alert tone="warning">Lost {formatDate(deal.closedAt, settings.timezone)}{deal.lostReason ? `: ${deal.lostReason}` : '.'}</Alert>
       )}

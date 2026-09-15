@@ -17,6 +17,7 @@
   "dependencies": {
     "@workloom/config": "workspace:*",
     "@workloom/db": "workspace:*",
+    "@workloom/storage": "workspace:*",
     "undici": "^7.29.1",
     "uuid": "^14.0.0",
     "zod": "^4.5.0"

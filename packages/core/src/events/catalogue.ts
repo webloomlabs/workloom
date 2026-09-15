@@ -11,13 +11,9 @@
  * start receiving events the day invoicing ships, with nothing to reconfigure.
  */
 
-type Definition = { description: string; /** The slice that starts emitting it. */ since: string }
+import { isShipped } from '../release.ts'
 
-/**
- * Slices that have shipped. Types from later slices are declared, and can be
- * subscribed to, but nothing emits them yet.
- */
-const SHIPPED_SLICES = new Set(['S2', 'S3'])
+type Definition = { description: string; /** The slice that starts emitting it. */ since: string }
 
 const definitions = {
   'organization.updated': { description: 'Organization settings changed', since: 'S2' },
@@ -60,12 +56,32 @@ const definitions = {
   'activity.deleted': { description: 'A recorded activity was deleted', since: 'S3' },
 
   'project.created': { description: 'A project was created', since: 'S5' },
+  'project.updated': { description: "A project's details changed", since: 'S5' },
   'project.status_changed': { description: "A project's status changed", since: 'S5' },
   'project.completed': { description: 'A project was completed', since: 'S5' },
+  'project.archived': { description: 'A project was archived', since: 'S5' },
+  'project.restored': { description: 'An archived project was restored', since: 'S5' },
+  'project_member.added': { description: 'Someone was added to a project', since: 'S5' },
+  'project_member.updated': { description: "A project member's role changed", since: 'S5' },
+  'project_member.removed': { description: 'Someone was removed from a project', since: 'S5' },
+  'milestone.created': { description: 'A milestone was added', since: 'S5' },
+  'milestone.updated': { description: "A milestone's details changed", since: 'S5' },
   'milestone.completed': { description: 'A milestone was completed', since: 'S5' },
+  'milestone.reopened': { description: 'A completed milestone was reopened', since: 'S5' },
+  'milestone.deleted': { description: 'A milestone was deleted', since: 'S5' },
   'task.created': { description: 'A task was created', since: 'S5' },
+  'task.updated': { description: "A task's details changed", since: 'S5' },
   'task.assigned': { description: 'A task was assigned', since: 'S5' },
+  'task.status_changed': { description: "A task's status changed", since: 'S5' },
   'task.completed': { description: 'A task was completed', since: 'S5' },
+  'task.deleted': { description: 'A task was deleted', since: 'S5' },
+  'task_dependency.added': { description: 'A task was made to wait on another', since: 'S5' },
+  'task_dependency.removed': { description: 'A task dependency was removed', since: 'S5' },
+  'comment.created': { description: 'A comment or project update was posted', since: 'S5' },
+  'comment.updated': { description: 'A comment was edited', since: 'S5' },
+  'comment.deleted': { description: 'A comment was deleted', since: 'S5' },
+  'attachment.added': { description: 'A file was attached', since: 'S5' },
+  'attachment.deleted': { description: 'An attached file was deleted', since: 'S5' },
 
   'quote.sent': { description: 'A quote was sent', since: 'S7' },
   'quote.accepted': { description: 'A quote was accepted', since: 'S7' },
@@ -88,7 +104,8 @@ export const EVENT_CATALOGUE: ReadonlyArray<{ type: EventType; emitted: boolean 
   Object.entries(definitions).map(([type, d]) => ({
     type: type as EventType,
     ...d,
-    emitted: SHIPPED_SLICES.has(d.since),
+    // Types from later slices can be subscribed to, but nothing emits them yet.
+    emitted: isShipped(d.since),
   }))
 
 export const EVENT_TYPES = EVENT_CATALOGUE.map((e) => e.type)

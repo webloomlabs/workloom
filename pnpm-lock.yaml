@@ -234,6 +234,9 @@ importers:
       '@workloom/db':
         specifier: workspace:*
         version: link:../db
+      '@workloom/storage':
+        specifier: workspace:*
+        version: link:../storage
       undici:
         specifier: ^7.29.1
         version: 7.29.1

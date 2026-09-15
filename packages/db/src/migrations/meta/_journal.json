@@ -50,6 +50,20 @@
       "when": 1789469089400,
       "tag": "0006_crm_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789475288061,
+      "tag": "0007_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789475316321,
+      "tag": "0008_projects_rls",
+      "breakpoints": true
     }
   ]
 }

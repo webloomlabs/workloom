@@ -16,3 +16,14 @@ export function formatDate(value: Date | string | null | undefined, timeZone?: s
 export function formatDateTime(value: Date | null | undefined, timeZone?: string): string {
   return value ? new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(value) : '—'
 }
+
+/** Today's calendar date (YYYY-MM-DD) where the organization is, for comparing with due dates. */
+export function todayIn(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`
+  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`
+}

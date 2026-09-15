@@ -35,9 +35,9 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S1 — Identity & tenancy](S1.md) | Done |
 | [S2 — Outbox, events, webhooks](S2.md) | Done |
 | [S3 — CRM](S3.md) | Done |
-| S4 — Client view | Next |
-| S5 — Projects, milestones, tasks | |
-| S6 — Time tracking | |
+| [S4 — Client view](S4.md) | Done |
+| [S5 — Projects, milestones, tasks](S5.md) | Done |
+| S6 — Time tracking | Next |
 | S7 — Finance (7a/7b/7c) | |
 | S8 — Profitability & reporting | |
 | S9 — Dashboard | |

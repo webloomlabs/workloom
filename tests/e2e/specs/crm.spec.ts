@@ -59,7 +59,7 @@ test('a lead is worked, converted, and becomes a client with its history', async
 
   await expect(page).toHaveURL(/\/companies\/[0-9a-f-]{36}$/)
   await expect(page.getByRole('heading', { name: `Acme ${run}` })).toBeVisible()
-  await expect(page.getByLabel('Stage')).toHaveValue('client')
+  await expect(page.getByText('Client', { exact: true })).toBeVisible()
   await expect(page.getByText(/Client since/)).toBeVisible()
   await expect(page.getByRole('link', { name: 'Jane Doe' })).toBeVisible()
   // The call logged against the lead is on the client's timeline.
@@ -75,9 +75,10 @@ test('a deal moves through the pipeline, and winning it makes a client', async (
   await page.getByLabel('Name', { exact: true }).fill(`Prospect ${run}`)
   await page.getByRole('button', { name: 'Add company' }).click()
   await expect(page).toHaveURL(/\/companies\/[0-9a-f-]{36}$/)
-  await expect(page.getByLabel('Stage')).toHaveValue('prospect')
+  await expect(page.getByText('Prospect', { exact: true })).toBeVisible()
   const companyUrl = page.url()
 
+  await page.getByRole('link', { name: /^Deals/ }).click()
   await page.getByRole('link', { name: 'New deal' }).click()
   await page.getByLabel('Deal name').fill(`Rebuild ${run}`)
   await page.getByLabel('Value').fill('12,500.505')
@@ -98,7 +99,7 @@ test('a deal moves through the pipeline, and winning it makes a client', async (
   await expect(won.getByRole('link', { name: `Rebuild ${run}` })).toBeVisible()
 
   await page.goto(companyUrl)
-  await expect(page.getByLabel('Stage')).toHaveValue('client')
+  await expect(page.getByText('Client', { exact: true })).toBeVisible()
   await expect(page.getByText(/Client since/)).toBeVisible()
 })
 

@@ -15,6 +15,12 @@ const config: NextConfig = {
   outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
   // The Postgres driver is native and must not be bundled.
   serverExternalPackages: ['pg', 'nodemailer'],
+  experimental: {
+    serverActions: {
+      // Attachments are up to 20 MB (ATTACHMENT_MAX_BYTES), plus multipart overhead.
+      bodySizeLimit: '21mb',
+    },
+  },
 }
 
 export default config

@@ -20,8 +20,25 @@ export interface Storage {
    * A time-limited URL the browser can fetch directly. The local driver
    * returns an application route instead of a presigned URL, since there is
    * no separate storage host to sign against.
+   *
+   * Files are always served as downloads, never rendered inline: an uploaded
+   * HTML or SVG file shown by the browser on the application's own origin
+   * would run its scripts as the viewer.
    */
-  signedUrl(key: string, expiresInSeconds?: number): Promise<string>
+  signedUrl(key: string, options?: SignedUrlOptions): Promise<string>
+}
+
+export type SignedUrlOptions = {
+  expiresInSeconds?: number
+  /** The name the browser saves the file as. */
+  filename?: string
+  contentType?: string
+}
+
+/** A Content-Disposition header value that is safe for any filename. */
+export function attachmentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
 }
 
 /**

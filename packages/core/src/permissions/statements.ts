@@ -22,6 +22,11 @@ export const STATEMENTS = {
   project: ['read', 'create', 'update', 'archive'],
   milestone: ['read', 'create', 'update', 'delete'],
   task: ['read', 'create', 'update', 'delete'],
+  /**
+   * Discussion on projects and tasks. Reading follows `project:read`. `moderate`
+   * is editing or deleting other people's comments; everyone may edit their own.
+   */
+  comment: ['create', 'moderate'],
   timeEntry: ['read', 'create', 'update', 'delete'],
   /** Reading another person's time entries, as opposed to one's own. */
   timeEntryAll: ['read'],

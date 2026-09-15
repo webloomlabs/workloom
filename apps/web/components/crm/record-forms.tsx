@@ -50,13 +50,23 @@ function CompanyFields({ state, company, members }: { state: ActionState<unknown
   )
 }
 
-export function CreateCompanyForm({ members, currentUserId }: { members: Choice[]; currentUserId: string | null }) {
+export function CreateCompanyForm({
+  members,
+  currentUserId,
+  stage = 'prospect',
+  submitLabel = 'Add company',
+}: {
+  members: Choice[]
+  currentUserId: string | null
+  stage?: 'prospect' | 'client'
+  submitLabel?: string
+}) {
   const [state, action] = useActionState(createCompanyAction, idle)
   return (
     <form action={action} className="space-y-5" noValidate>
       <FormMessage state={state} />
-      <CompanyFields state={state} company={{ ownerId: currentUserId }} members={members} />
-      <SubmitButton pendingLabel="Adding…">Add company</SubmitButton>
+      <CompanyFields state={state} company={{ ownerId: currentUserId, lifecycleStage: stage }} members={members} />
+      <SubmitButton pendingLabel="Adding…">{submitLabel}</SubmitButton>
     </form>
   )
 }

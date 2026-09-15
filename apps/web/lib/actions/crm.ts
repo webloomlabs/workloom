@@ -226,8 +226,8 @@ export async function createContactAction(_: ActionState, form: FormData): Promi
   revalidatePath('/contacts')
   // Added from a company page: stay there, where the new contact now appears.
   const back = text(form, 'returnTo')
-  if (back.startsWith('/companies/')) {
-    revalidatePath(back)
+  if (/^\/companies\/[0-9a-f-]{36}(\?tab=contacts)?$/.test(back)) {
+    revalidatePath(back.split('?')[0]!)
     redirect(back)
   }
   redirect(`/contacts/${created.id}`)
@@ -353,11 +353,11 @@ export async function logActivityAction(_: ActionState, form: FormData): Promise
   } catch (error) {
     return failed(error, form)
   }
-  revalidatePath(text(form, 'returnTo') || '/')
+  revalidatePath(text(form, 'returnTo').split('?')[0] || '/')
   return { status: 'success', message: 'Logged.' }
 }
 
 export async function deleteActivityAction(form: FormData): Promise<void> {
   await call(activityDelete, { id: id(form) })
-  revalidatePath(text(form, 'returnTo') || '/')
+  revalidatePath(text(form, 'returnTo').split('?')[0] || '/')
 }

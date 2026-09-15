@@ -8,6 +8,8 @@ import { requireViewer } from '@/lib/server/viewer'
 export default async function Home() {
   const viewer = await requireViewer()
   if (viewer.permissions.has('deal:read')) redirect('/pipeline')
-  if (viewer.permissions.has('company:read')) redirect('/companies')
+  // Developers read companies too, but their day starts with their tasks.
+  if (viewer.permissions.has('task:update')) redirect('/tasks')
+  if (viewer.permissions.has('company:read')) redirect('/clients')
   redirect('/settings/organization')
 }

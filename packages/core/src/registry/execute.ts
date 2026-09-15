@@ -37,7 +37,10 @@ export type ExecutionRequest = {
 /** Keys sorted at every level, so `{a, b}` and `{b, a}` hash identically. */
 function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_, v) =>
-    v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+    // A file serialises to {} and would make every upload look identical.
+    typeof Blob !== 'undefined' && v instanceof Blob
+      ? { file: (v as File).name ?? null, size: v.size, type: v.type }
+      : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
       ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
       : v,
   )
@@ -55,9 +58,13 @@ function actorKey(actor: Actor): string {
  * Exported so that background jobs and tests can construct one directly, with
  * a fabricated actor, without going through HTTP.
  */
+export type TransactionHooks = { commit: Array<() => Promise<void>>; rollback: Array<() => Promise<void>> }
+
 export function buildContext(
   request: Omit<ExecutionRequest, 'input'>,
   tx: TenantTransaction,
+  /** Collected here and run by the caller once the transaction settles. */
+  hooks: TransactionHooks = { commit: [], rollback: [] },
 ): ActorContext {
   const requestId = request.requestId ?? newId()
   const context: ActorContext = {
@@ -86,6 +93,8 @@ export function buildContext(
       }),
     emit: (type, data) =>
       writeEvent(tx, { organizationId: request.organizationId, actor: request.actor, type, data }),
+    afterCommit: (fn) => void hooks.commit.push(fn),
+    afterRollback: (fn) => void hooks.rollback.push(fn),
   }
   return context
 }
@@ -118,6 +127,36 @@ export async function executeProcedure(name: string, request: ExecutionRequest):
     )
   }
 
+  const hooks: TransactionHooks = { commit: [], rollback: [] }
+  let output: unknown
+  try {
+    output = await runInTransaction(procedure, request, input, key, hooks)
+  } catch (error) {
+    await runHooks(hooks.rollback, `${procedure.name} rollback`)
+    throw error
+  }
+  await runHooks(hooks.commit, `${procedure.name} commit`)
+  return output
+}
+
+/** Hooks run in order; one failing does not stop the rest. */
+async function runHooks(fns: Array<() => Promise<void>>, label: string): Promise<void> {
+  for (const fn of fns) {
+    try {
+      await fn()
+    } catch (error) {
+      console.error(`[hooks] ${label} hook failed`, error)
+    }
+  }
+}
+
+async function runInTransaction(
+  procedure: NonNullable<ReturnType<typeof getProcedure>>,
+  request: ExecutionRequest,
+  input: unknown,
+  key: string | undefined,
+  hooks: TransactionHooks,
+): Promise<unknown> {
   return withTenant(request.organizationId, async (tx) => {
     if (key !== undefined) {
       const requestHash = createHash('sha256')
@@ -159,7 +198,7 @@ export async function executeProcedure(name: string, request: ExecutionRequest):
       }
     }
 
-    const context = buildContext(request, tx)
+    const context = buildContext(request, tx, hooks)
     const output = procedure.output.parse(await procedure.handler(context, input))
 
     if (key !== undefined) {

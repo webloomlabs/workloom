@@ -80,7 +80,7 @@ const LOADERS = { companyId: loadCompany, contactId: loadContact, leadId: loadLe
  * which also carries the deal's company -- must not surface on the company's
  * timeline for them. Negotiation notes are commercial terms.
  */
-function visibleTo(ctx: ActorContext): SQL | undefined {
+export function visibleTo(ctx: ActorContext): SQL | undefined {
   const a = schema.activities
   return and(
     ...TARGETS.filter((t) => !ctx.has(PERMISSION_FOR[t])).map((t) => isNull(a[t])),

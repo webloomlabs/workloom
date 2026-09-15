@@ -19,8 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const items: Array<{ href: string; label: string; permission: Permission; match?: string[] }> = [
     { href: '/pipeline', label: 'Pipeline', permission: 'deal:read', match: ['/deals'] },
     { href: '/leads', label: 'Leads', permission: 'lead:read' },
+    { href: '/clients', label: 'Clients', permission: 'company:read' },
     { href: '/companies', label: 'Companies', permission: 'company:read' },
     { href: '/contacts', label: 'Contacts', permission: 'contact:read' },
+    { href: '/projects', label: 'Projects', permission: 'project:read' },
+    { href: '/tasks', label: 'My tasks', permission: 'task:read' },
     { href: '/settings/organization', label: 'Settings', permission: 'organization:read', match: ['/settings'] },
   ]
   const nav = viewer
@@ -42,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {nav.length > 0 && <MainNav items={nav} />}
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <span className="hidden text-neutral-500 sm:inline">{session.user.email}</span>
+            <span className="hidden text-neutral-500 2xl:inline">{session.user.email}</span>
             <form action={signOutAction}>
               <button type="submit" className="text-neutral-700 hover:underline dark:text-neutral-300">
                 Sign out

@@ -131,6 +131,24 @@ async function createDeal(input: Record<string, unknown> = {}): Promise<string> 
   return deal.id
 }
 
+async function createProject(input: Record<string, unknown> = {}): Promise<string> {
+  const project = (await run('project.create', ownerOfA(), { name: `Project ${unique()}`, ...input })) as { id: string }
+  return project.id
+}
+
+async function createTask(input: Record<string, unknown> = {}): Promise<{ id: string; projectId: string }> {
+  const projectId = (input.projectId as string | undefined) ?? (await createProject())
+  const task = (await run('task.create', ownerOfA(), { projectId, title: `Task ${unique()}`, ...input })) as { id: string }
+  return { id: task.id, projectId }
+}
+
+async function createMilestone(input: Record<string, unknown> = {}): Promise<string> {
+  const milestone = (await run('milestone.create', ownerOfA(), { id: await createProject(), name: `Milestone ${unique()}`, ...input })) as { id: string }
+  return milestone.id
+}
+
+const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
+
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
   await run(procedure, ownerOfA(), { id })
   return { id }
@@ -242,6 +260,81 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     })) as { id: string }
     return { id: activity.id }
   },
+
+  'project.create': async () => ({ name: `Project ${unique()}`, budgetMinor: 1_000_000 }),
+  'project.update': async () => ({ id: await createProject(), description: `changed ${unique()}` }),
+  'project.changeStatus': [
+    async () => ({ id: await createProject(), status: 'in_progress' }),
+    async () => ({ id: await createProject(), status: 'completed' }),
+  ],
+  'project.archive': async () => ({ id: await createProject() }),
+  'project.restore': async () => archived('project.archive', await createProject()),
+  'projectMember.add': async () => ({ id: await createProject(), userId: developerA, billableRateMinor: 150_00 }),
+  'projectMember.update': async () => {
+    const projectId = await createProject()
+    const member = (await run('projectMember.add', ownerOfA(), { id: projectId, userId: developerA })) as { id: string }
+    return { id: member.id, role: 'manager' }
+  },
+  'projectMember.remove': async () => {
+    const member = (await run('projectMember.add', ownerOfA(), { id: await createProject(), userId: developerA })) as { id: string }
+    return { id: member.id }
+  },
+
+  'milestone.create': async () => ({ id: await createProject(), name: 'Launch', dueDate: '2026-12-01' }),
+  'milestone.update': [
+    async () => ({ id: await createMilestone(), name: `Renamed ${unique()}` }),
+    async () => ({ id: await createMilestone(), completed: true }),
+    async () => {
+      const id = await createMilestone()
+      await run('milestone.update', ownerOfA(), { id, completed: true })
+      return { id, completed: false }
+    },
+  ],
+  'milestone.delete': async () => ({ id: await createMilestone() }),
+
+  'task.create': [
+    async () => ({ projectId: await createProject(), title: 'Design homepage' }),
+    async () => ({ projectId: await createProject(), title: 'Build homepage', assigneeId: developerA }),
+  ],
+  'task.update': [
+    async () => ({ id: (await createTask()).id, title: `Retitled ${unique()}` }),
+    async () => ({ id: (await createTask()).id, assigneeId: developerA }),
+  ],
+  'task.changeStatus': [
+    async () => ({ id: (await createTask()).id, status: 'in_progress' }),
+    async () => ({ id: (await createTask()).id, status: 'done' }),
+  ],
+  'task.delete': async () => ({ id: (await createTask()).id }),
+  'taskDependency.add': async () => {
+    const first = await createTask()
+    const second = await createTask({ projectId: first.projectId })
+    return { id: second.id, dependsOnTaskId: first.id }
+  },
+  'taskDependency.remove': async () => {
+    const first = await createTask()
+    const second = await createTask({ projectId: first.projectId })
+    await run('taskDependency.add', ownerOfA(), { id: second.id, dependsOnTaskId: first.id })
+    return { id: second.id, dependsOnTaskId: first.id }
+  },
+
+  'comment.create': async () => {
+    const task = await createTask()
+    return { projectId: task.projectId, taskId: task.id, body: 'Looks good' }
+  },
+  'comment.update': async () => {
+    const comment = (await run('comment.create', ownerOfA(), { projectId: await createProject(), body: 'draft' })) as { id: string }
+    return { id: comment.id, body: `edited ${unique()}` }
+  },
+  'comment.delete': async () => {
+    const comment = (await run('comment.create', ownerOfA(), { projectId: await createProject(), body: 'to delete' })) as { id: string }
+    return { id: comment.id }
+  },
+
+  'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
+  'attachment.delete': async () => {
+    const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
+    return { id: attachment.id }
+  },
 }
 
 const fixturesFor = (name: string): Fixture[] => [MUTATIONS[name]!].flat()
@@ -251,10 +344,22 @@ const READS: Record<string, Fixture> = {
   'webhook.get': async () => ({ id: await createHook() }),
   'webhookDelivery.list': async () => ({ id: await createHook() }),
   'company.get': async () => ({ id: await createCompany() }),
+  'company.summary': async () => ({ id: await createCompany() }),
   'contact.get': async () => ({ id: await createContact() }),
   'lead.get': async () => ({ id: await createLead() }),
   'deal.get': async () => ({ id: await createDeal() }),
   'activity.list': async () => ({ companyId: await createCompany() }),
+  'project.get': async () => ({ id: await createProject() }),
+  'projectMember.list': async () => ({ id: await createProject() }),
+  'milestone.list': async () => ({ id: await createProject() }),
+  'task.get': async () => ({ id: (await createTask()).id }),
+  'task.list': async () => ({ projectId: await createProject() }),
+  'comment.list': async () => ({ projectId: await createProject() }),
+  'attachment.list': async () => ({ projectId: await createProject() }),
+  'attachment.download': async () => {
+    const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
+    return { id: attachment.id }
+  },
 }
 
 describe('audit coverage', () => {
@@ -334,7 +439,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId']
+const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {
