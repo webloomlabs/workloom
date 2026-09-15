@@ -15,8 +15,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@workloom/config": "workspace:*",
+    "@workloom/db": "workspace:*",
+    "undici": "^7.29.1",
     "uuid": "^14.0.0",
-    "zod": "^4.5.0",
-    "@workloom/db": "workspace:*"
+    "zod": "^4.5.0"
   }
 }

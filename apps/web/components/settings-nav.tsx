@@ -9,7 +9,7 @@ export function SettingsNav({ items }: { items: Array<{ href: string; label: str
   return (
     <nav aria-label="Settings" className="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
       {items.map((item) => {
-        const active = pathname === item.href
+        const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
         return (
           <Link
             key={item.href}

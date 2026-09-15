@@ -104,6 +104,9 @@ jobs:
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+          # The browser journeys deliver webhooks to a receiver on localhost,
+          # which the SSRF guard refuses unless this is set. Test-only.
+          echo "WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true" >> .env
       - run: docker compose -f docker-compose.dev.yml up -d --wait
       - run: pnpm --filter @workloom/web exec next build
       - name: start the app (migrates and verifies isolation on boot)
@@ -115,12 +118,20 @@ jobs:
           done
           curl -fs localhost:3000/api/health
           grep -q "boot: tenant isolation verified" web.log
+      - name: start the worker
+        run: |
+          pnpm --filter @workloom/worker start > worker.log 2>&1 &
+          for i in $(seq 1 30); do
+            grep -q "worker: tenant isolation verified" worker.log && break
+            sleep 1
+          done
+          grep -q "worker: tenant isolation verified" worker.log
       - run: pnpm --filter @workloom/e2e exec playwright install --with-deps chromium
       - run: pnpm test:e2e
         env:
           CI: "true"
       - if: failure()
-        run: cat web.log
+        run: cat web.log worker.log
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

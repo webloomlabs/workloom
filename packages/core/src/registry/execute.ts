@@ -1,6 +1,14 @@
-import { withTenant, type TenantTransaction } from '@workloom/db'
+import { createHash } from 'node:crypto'
+import { sql, withTenant, type TenantTransaction } from '@workloom/db'
 import { writeAuditEntry } from '../audit.ts'
-import { ForbiddenError, type Actor, type ActorContext, type AuditEntry } from '../context.ts'
+import { writeEvent } from '../events/emit.ts'
+import {
+  DomainError,
+  ForbiddenError,
+  type Actor,
+  type ActorContext,
+  type AuditEntry,
+} from '../context.ts'
 import { newId } from '../ids.ts'
 import type { Permission } from '../permissions/statements.ts'
 import type { Role } from '../permissions/roles.ts'
@@ -16,6 +24,29 @@ export type ExecutionRequest = {
   now?: Date
   ipAddress?: string | undefined
   userAgent?: string | undefined
+  /**
+   * From the `Idempotency-Key` header. Ignored for reads. A repeated key with
+   * the same input returns the original response without running the handler
+   * again; with different input it is refused.
+   */
+  idempotencyKey?: string | undefined
+  /** Called when the response is a replay rather than a fresh execution. */
+  onReplay?: (() => void) | undefined
+}
+
+/** Keys sorted at every level, so `{a, b}` and `{b, a}` hash identically. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_, v) =>
+    v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  )
+}
+
+function actorKey(actor: Actor): string {
+  if (actor.type === 'apiKey') return `api_key:${actor.id}`
+  if (actor.type === 'user') return `user:${actor.id}`
+  return actor.type
 }
 
 /**
@@ -53,6 +84,8 @@ export function buildContext(
         userAgent: request.userAgent,
         entry,
       }),
+    emit: (type, data) =>
+      writeEvent(tx, { organizationId: request.organizationId, actor: request.actor, type, data }),
   }
   return context
 }
@@ -76,10 +109,68 @@ export async function executeProcedure(name: string, request: ExecutionRequest):
   }
 
   const input = procedure.input.parse(request.input)
+  const key = procedure.readOnly ? undefined : request.idempotencyKey
+
+  if (key !== undefined && !/^[\x21-\x7e]{1,255}$/.test(key)) {
+    throw new DomainError(
+      'Idempotency-Key must be 1-255 printable ASCII characters, such as a UUID.',
+      'invalid_idempotency_key',
+    )
+  }
 
   return withTenant(request.organizationId, async (tx) => {
+    if (key !== undefined) {
+      const requestHash = createHash('sha256')
+        .update(`${procedure.name}\n${canonicalJson(input)}`)
+        .digest('hex')
+
+      /**
+       * Claim the key inside the same transaction as the mutation.
+       *
+       * A concurrent request with the same key blocks on this insert until the
+       * first transaction finishes. If the first committed, the insert is a
+       * no-op and the stored response is replayed. If it rolled back, the key
+       * was never recorded and this request simply proceeds. Either way the
+       * operation runs at most once -- with no "in progress" state to expire.
+       */
+      const claimed = await tx.execute(sql`
+        insert into idempotency_keys (organization_id, actor_key, key, procedure, request_hash, response)
+        values (${request.organizationId}::uuid, ${actorKey(request.actor)}, ${key},
+                ${procedure.name}, ${requestHash}, 'null'::jsonb)
+        on conflict do nothing
+        returning 1
+      `)
+
+      if (claimed.rows.length === 0) {
+        const { rows } = await tx.execute<{ procedure: string; request_hash: string; response: unknown }>(sql`
+          select procedure, request_hash, response from idempotency_keys
+          where organization_id = ${request.organizationId}::uuid
+            and actor_key = ${actorKey(request.actor)} and key = ${key}
+        `)
+        const existing = rows[0]!
+        if (existing.procedure !== procedure.name || existing.request_hash !== requestHash) {
+          throw new DomainError(
+            'This Idempotency-Key was already used for a different request. Use a new key for a new operation.',
+            'idempotency_key_reused',
+          )
+        }
+        request.onReplay?.()
+        return existing.response
+      }
+    }
+
     const context = buildContext(request, tx)
-    const output = await procedure.handler(context, input)
-    return procedure.output.parse(output)
+    const output = procedure.output.parse(await procedure.handler(context, input))
+
+    if (key !== undefined) {
+      // Stored as the wire form (dates as ISO strings), which is what a replay
+      // must return.
+      await tx.execute(sql`
+        update idempotency_keys set response = ${JSON.stringify(output)}::jsonb
+        where organization_id = ${request.organizationId}::uuid
+          and actor_key = ${actorKey(request.actor)} and key = ${key}
+      `)
+    }
+    return output
   })
 }

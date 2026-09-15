@@ -4,7 +4,7 @@
 
 ```
 apps/web        Next.js — the UI, and the host for the public REST API
-apps/worker     background jobs, the outbox dispatcher, scheduled work
+apps/worker     the outbox dispatcher and scheduled maintenance
 apps/cli        administrative commands
 
 packages/config environment schema, parsed once at boot
@@ -114,7 +114,11 @@ application code.
 
 The unscoped `db` handle is a separate, narrower allowlist enforced by
 `eslint.config.js`: `packages/auth` (Better Auth's tables are not tenant-scoped),
-`packages/core/src/rate-limit.ts`, the health route, and the boot sequence.
+`packages/core/src/rate-limit.ts`, the worker's outbox and maintenance modules,
+the health route, and the boot sequence.
+
+The worker's hourly maintenance prunes idempotency keys the documented way:
+it lists organizations, then opens one `withTenant` transaction per organization.
 
 ### Authenticating API keys
 
@@ -135,6 +139,22 @@ A `SECURITY DEFINER` function looks like the obvious tool here and **does not
 work**: `FORCE ROW LEVEL SECURITY` subjects the table owner to the policy, and
 the function's owner is the application role — so the function runs straight
 into the policy it was meant to step around.
+
+### Flag-gated policies
+
+Two jobs genuinely need to see across organizations, and each gets a second,
+narrow policy that applies only while a transaction-local flag is set:
+
+| Flag | Set only in | Grants |
+| --- | --- | --- |
+| `workloom.auth_lookup` | `packages/auth/src/api-keys.ts` | `SELECT` on `api_keys`, for one lookup by key digest |
+| `workloom.dispatcher` | `apps/worker/src/outbox/scope.ts` | `SELECT`/`UPDATE` on `events` and `webhook_endpoints`; `SELECT`/`INSERT`/`UPDATE` on `webhook_deliveries`. No `DELETE`, nothing else |
+
+A lint rule rejects either flag's name anywhere else. The dispatcher could instead
+enumerate organizations every poll, but that is a query per organization per second
+indefinitely. Deliveries reference their endpoint and event through composite keys
+on `(organization_id, id)`, so even inside the flag a delivery cannot point across
+organizations.
 
 ### How this is enforced
 
@@ -203,6 +223,68 @@ Actions, so anything the UI can do is available — and audited — through the 
 - `packages/core/test/procedures.test.ts` requires a fixture for every mutation
   in the registry and asserts each writes an audit entry. Adding a mutation
   without one fails the suite.
+
+## Events and webhooks
+
+`ctx.emit(type, data)` writes to the `events` table **inside the caller's
+transaction**. It is the only way an event comes into existence. If the change
+commits, the event exists; if it rolls back, it does not. There is no dual write,
+and no webhook announcing something that never happened.
+
+The worker (`apps/worker`) polls once a second:
+
+1. **Publish.** Claim unpublished events with `FOR UPDATE SKIP LOCKED`, insert one
+   `webhook_deliveries` row per matching enabled endpoint, and stamp the events
+   published — in one transaction. `SKIP LOCKED` lets several workers run without
+   double-publishing.
+2. **Deliver.** Claim due deliveries, take a two-minute lease, and count the attempt
+   *before* sending, so a worker that dies mid-request neither loses the delivery
+   nor restarts its retry schedule. Sign, POST, and record the outcome.
+
+The delivery table is the queue. What the delivery log shows is exactly what happens
+next, with no second system to reconcile, and no Redis. Polling rather than
+`LISTEN/NOTIFY` is deliberate: a lost notification during a reconnect would strand
+events, while a missed poll is simply the next poll. `NOTIFY` can later be added to
+cut latency, with polling kept as the floor.
+
+**Every mutation declares its events.** `defineProcedure({ emits: [...] })`, and
+`packages/core/test/procedures.test.ts` fails if a mutation omits the declaration,
+or runs without emitting what it declares. `emits: []` is allowed but has to be
+written down.
+
+**The catalogue is frozen** in `packages/core/src/events/catalogue.ts` and includes
+events from later slices, so an integration can subscribe to `invoice.*` before
+invoicing ships. Types are added, never renamed.
+
+**SSRF.** Webhook URLs are checked when saved and again inside the HTTP client's DNS
+lookup at every connection, which defeats DNS rebinding. IP-literal URLs skip DNS
+entirely, so they are checked separately before connecting; the first version
+missed this and the unit tests caught it. Redirects are never followed.
+
+**Signing secrets are encrypted, not hashed** — signing needs the secret itself. AES-256-GCM
+under `WORKLOOM_ENCRYPTION_KEY`, with each value recording a fingerprint of the key
+that encrypted it, so the key can be rotated through `WORKLOOM_PREVIOUS_ENCRYPTION_KEYS`.
+
+Receiver-facing behaviour — payloads, verification, retries — is in
+[webhooks.md](webhooks.md).
+
+## Idempotency
+
+A mutation called with an `Idempotency-Key` header records the key **in the same
+transaction** as the operation. A concurrent request with the same key blocks on that
+insert until the first finishes, then replays its response; if the first rolled back,
+the key was never recorded and the retry simply runs. There is no "in progress" state
+to expire. Keys are scoped to organization **and** actor, so two integrations choosing
+the same key string never receive each other's responses, and are pruned after 24 hours.
+
+## Cross-site request forgery
+
+The REST API accepts the browser's session cookie as well as API keys. A
+cookie-authenticated `POST`, `PATCH` or `DELETE` must carry an `Origin` matching
+`APP_URL`. The session cookie's `SameSite=Lax` already blocks the classic cross-site
+form post; the origin check makes the guarantee explicit rather than dependent on a
+cookie attribute. Requests with an API key carry no ambient credential and are exempt.
+Server Actions have their own origin checking in Next.js.
 
 ## Data-access sharp edges
 

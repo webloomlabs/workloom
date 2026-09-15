@@ -1,0 +1,19 @@
+{
+  "name": "@workloom/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workloom/config": "workspace:*",
+    "@workloom/core": "workspace:*",
+    "@workloom/db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

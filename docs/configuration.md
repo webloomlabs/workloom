@@ -30,5 +30,6 @@ See [.env.example](../.env.example) for the annotated list.
 | `DATABASE_POOL_SIZE` | `10` | Per process. |
 | `MAIL_DRIVER` | `smtp` | `smtp` delivers mail. `memory` keeps messages in the process for tests to inspect, and is rejected in production — invitations would silently never arrive. |
 | `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` | `587`, unset, unset, `false` | Standard SMTP settings. |
-| `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` | `false` | Webhook URLs resolving to loopback, private, or link-local addresses are rejected. Workloom usually runs inside a private network, where such a URL is an SSRF vector against internal services. |
+| `WORKLOOM_PREVIOUS_ENCRYPTION_KEYS` | unset | Comma-separated keys that used to be `WORKLOOM_ENCRYPTION_KEY`. Secrets encrypted under them stay readable after rotation. Remove an old key only once nothing references it. |
+| `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` | `false` | Webhook URLs resolving to loopback, private, or link-local addresses are rejected, and `https://` is required. Workloom usually runs inside a private network, where such a URL is an SSRF vector against internal services. Set to `true` only for local development, on both the app and the worker. |
 | `DANGEROUSLY_ALLOW_SUPERUSER_DB` | `false` | Lets the app boot despite failing isolation checks. Rejected outright in production. For tooling only. |

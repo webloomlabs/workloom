@@ -1,4 +1,11 @@
-import { newId, writeAuditEntry, type Actor, type AuditEntry } from '@workloom/core'
+import {
+  newId,
+  writeAuditEntry,
+  writeEvent,
+  type Actor,
+  type AuditEntry,
+  type EventType,
+} from '@workloom/core'
 import { db, eq, schema, withTenant } from '@workloom/db'
 
 /**
@@ -38,18 +45,30 @@ export async function recordAuthEvent(options: {
   organizationId: string
   actor: Actor
   entry: AuditEntry
+  /** The outbox event to publish alongside the audit entry, if any. */
+  event?: { type: EventType; data: unknown }
   context?: RequestContext
 }): Promise<void> {
   try {
-    await withTenant(options.organizationId, (tx) =>
-      writeAuditEntry(tx, {
+    // One transaction, so the audit entry and the webhook event agree: either
+    // both record the change or neither does.
+    await withTenant(options.organizationId, async (tx) => {
+      await writeAuditEntry(tx, {
         organizationId: options.organizationId,
         actor: options.actor,
         requestId: newId(),
         ...requestMeta(options.context),
         entry: options.entry,
-      }),
-    )
+      })
+      if (options.event) {
+        await writeEvent(tx, {
+          organizationId: options.organizationId,
+          actor: options.actor,
+          type: options.event.type,
+          data: options.event.data,
+        })
+      }
+    })
   } catch (error) {
     console.error(
       `[audit] FAILED to record ${options.entry.action} for organization ` +
@@ -91,6 +110,10 @@ export const organizationAuditHooks = {
         entityLabel: data.invitation.email,
         changes: { role: { from: null, to: data.invitation.role } },
       },
+      event: {
+        type: 'member.invited',
+        data: { invitationId: data.invitation.id, email: data.invitation.email, role: data.invitation.role },
+      },
     })
   },
 
@@ -109,6 +132,10 @@ export const organizationAuditHooks = {
         entityLabel: data.user.email,
         changes: { role: { from: null, to: data.member.role } },
       },
+      event: {
+        type: 'member.joined',
+        data: { memberId: data.member.id, userId: data.user.id, email: data.user.email, role: data.member.role },
+      },
     })
   },
 
@@ -125,6 +152,10 @@ export const organizationAuditHooks = {
         entityType: 'invitation',
         entityId: data.invitation.id,
         entityLabel: data.invitation.email,
+      },
+      event: {
+        type: 'invitation.cancelled',
+        data: { invitationId: data.invitation.id, email: data.invitation.email },
       },
     })
   },
@@ -148,6 +179,10 @@ export const organizationAuditHooks = {
         entityLabel: data.user.email,
         changes: { role: { from: data.previousRole, to: data.member.role } },
       },
+      event: {
+        type: 'member.role_changed',
+        data: { memberId: data.member.id, userId: data.user.id, from: data.previousRole, to: data.member.role },
+      },
     })
   },
 
@@ -166,6 +201,7 @@ export const organizationAuditHooks = {
         entityLabel: data.user.email,
         changes: { role: { from: data.member.role, to: null } },
       },
+      event: { type: 'member.removed', data: { userId: data.user.id, role: data.member.role } },
     })
   },
 }

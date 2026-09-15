@@ -112,6 +112,7 @@ export const memberRemove = defineProcedure({
   input: z.object({ userId: z.uuid() }),
   output: z.object({ removed: z.boolean() }),
   http: { method: 'DELETE', path: '/members/{userId}' },
+  emits: ['member.removed'],
   async handler(ctx, input) {
     const [existing] = await ctx.tx
       .select({ id: schema.member.id, role: schema.member.role })
@@ -155,6 +156,7 @@ export const memberRemove = defineProcedure({
       entityId: existing.id,
       changes: { role: { from: existing.role, to: null } },
     })
+    await ctx.emit('member.removed', { userId: input.userId, role: existing.role })
 
     return { removed: true }
   },

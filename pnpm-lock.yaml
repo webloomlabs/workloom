@@ -186,6 +186,22 @@ importers:
         specifier: ^4.0.0
         version: 4.3.3
 
+  apps/worker:
+    dependencies:
+      '@workloom/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@workloom/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@workloom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+    devDependencies:
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.13
+
   packages/auth:
     dependencies:
       '@workloom/config':
@@ -212,9 +228,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@workloom/config':
+        specifier: workspace:*
+        version: link:../config
       '@workloom/db':
         specifier: workspace:*
         version: link:../db
+      undici:
+        specifier: ^7.29.1
+        version: 7.29.1
       uuid:
         specifier: ^14.0.0
         version: 14.0.2

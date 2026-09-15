@@ -1,10 +1,11 @@
 'use client'
 
-import { Alert, Button, Field, Input } from '@workloom/ui'
-import { useActionState, useState } from 'react'
+import { Button, Field, Input } from '@workloom/ui'
+import { useActionState } from 'react'
 import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from '@/lib/actions/settings'
 import { idle, type ActionState } from '@/lib/actions/state'
 import { fieldError, FormMessage, SubmitButton } from './form-bits'
+import { OneTimeSecret } from './one-time-secret'
 
 /**
  * Scopes grouped by resource. Only permissions the viewer holds are offered --
@@ -59,31 +60,23 @@ export function CreateApiKeyForm({ grantable }: { grantable: Record<string, stri
 }
 
 function SecretReveal({ created }: { created: CreatedKey }) {
-  const [copied, setCopied] = useState(false)
   return (
-    <div className="space-y-3">
-      <Alert tone="warning">
-        Copy the key for <strong>{created.name}</strong> now. It is not stored, so it can&apos;t be
-        shown again — if it&apos;s lost, revoke it and create another.
-      </Alert>
-      <div className="flex gap-2">
-        <label htmlFor="secret" className="sr-only">API key</label>
-        <Input id="secret" readOnly value={created.secret} className="font-mono text-xs"
-          onFocus={(e) => e.currentTarget.select()} />
-        <Button type="button" variant="secondary"
-          onClick={async () => {
-            await navigator.clipboard.writeText(created.secret)
-            setCopied(true)
-          }}>
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
-      </div>
+    <OneTimeSecret
+      label="API key"
+      secret={created.secret}
+      warning={
+        <>
+          Copy the key for <strong>{created.name}</strong> now. It is not stored, so it can&apos;t be
+          shown again — if it&apos;s lost, revoke it and create another.
+        </>
+      }
+    >
       <p className="text-xs text-neutral-500">
         Use it as <code className="font-mono">Authorization: Bearer …</code>. The API is described at{' '}
         <a href="/api/v1/openapi.json" className="underline">/api/v1/openapi.json</a>.
       </p>
       <Button type="button" variant="ghost" size="sm" onClick={() => location.reload()}>Done</Button>
-    </div>
+    </OneTimeSecret>
   )
 }
 

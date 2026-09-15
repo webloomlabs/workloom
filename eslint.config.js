@@ -108,6 +108,33 @@ export default tseslint.config(
   },
 
   /**
+   * The cross-organization flags. Each widens row-level security for one narrow
+   * purpose, so each may be set in exactly one place. A new use means a new
+   * entry here and in docs/architecture.md, not a quiet string in a module.
+   */
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['apps/worker/src/outbox/scope.ts', 'packages/auth/src/api-keys.ts', '**/test/**', '**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "Literal[value=/workloom\\.(dispatcher|auth_lookup)/]",
+          message:
+            'This flag widens row-level security across organizations and may only be set in ' +
+            'its one documented location. See docs/architecture.md.',
+        },
+        {
+          selector: "TemplateElement[value.raw=/workloom\\.(dispatcher|auth_lookup)/]",
+          message:
+            'This flag widens row-level security across organizations and may only be set in ' +
+            'its one documented location. See docs/architecture.md.',
+        },
+      ],
+    },
+  },
+
+  /**
    * Client components run in the browser. Importing server packages here does
    * not fail typechecking -- it fails the build, or worse, ships a database
    * driver and email transport to every visitor. Server Actions are fine to
@@ -144,6 +171,7 @@ export default tseslint.config(
       'packages/auth/src/**/*.ts',
       'packages/core/src/rate-limit.ts',
       'apps/worker/src/outbox/**/*.ts',
+      'apps/worker/src/maintenance.ts',
       'apps/web/app/api/health/**/*.ts',
       'apps/web/app/api/auth/**/*.ts',
       'apps/web/instrumentation.ts',

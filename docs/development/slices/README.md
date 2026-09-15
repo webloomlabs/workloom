@@ -33,8 +33,8 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | --- | --- |
 | [S0 — Platform skeleton](S0.md) | Done |
 | [S1 — Identity & tenancy](S1.md) | Done |
-| S2 — Outbox, events, webhooks | Next |
-| S3 — CRM | |
+| [S2 — Outbox, events, webhooks](S2.md) | Done |
+| S3 — CRM | Next |
 | S4 — Client view | |
 | S5 — Projects, milestones, tasks | |
 | S6 — Time tracking | |

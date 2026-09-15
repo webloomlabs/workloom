@@ -1,6 +1,7 @@
 import type { TenantTransaction } from '@workloom/db'
 import type { Permission } from './permissions/statements.ts'
 import type { Role } from './permissions/roles.ts'
+import type { EventType } from './events/catalogue.ts'
 
 /**
  * Who is acting.
@@ -56,6 +57,12 @@ export type ActorContext = {
   require(permission: Permission): void
   /** Records an intent. Written inside `tx`, so it commits with the change. */
   audit(entry: AuditEntry): Promise<void>
+  /**
+   * Announces a change to webhooks and automations. Written to the outbox
+   * inside `tx`: if the change rolls back, so does the event. `data` should be
+   * the entity's REST representation, as documented in the OpenAPI spec.
+   */
+  emit(type: EventType, data: unknown): Promise<string>
 }
 
 export class ForbiddenError extends Error {

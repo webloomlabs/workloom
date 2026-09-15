@@ -69,6 +69,7 @@ export const apiKeyCreate = defineProcedure({
     secret: z.string(),
   }),
   http: { method: 'POST', path: '/api-keys', successStatus: 201 },
+  emits: ['api_key.created'],
   async handler(ctx, input) {
     if (ctx.actor.type !== 'user') {
       // Otherwise a key could mint further keys, outliving its owner's
@@ -111,6 +112,16 @@ export const apiKeyCreate = defineProcedure({
       entityId: row!.id,
       entityLabel: input.name,
     })
+    // The summary only. The secret goes to the caller once and nowhere else --
+    // certainly not into an outbox that fans out to third-party URLs.
+    await ctx.emit('api_key.created', {
+      id: row!.id,
+      name: row!.name,
+      keyPrefix: row!.keyPrefix,
+      scopes: row!.scopes,
+      expiresAt: row!.expiresAt,
+      createdAt: row!.createdAt,
+    })
 
     return { key: row!, secret: generated.secret }
   },
@@ -123,6 +134,7 @@ export const apiKeyRevoke = defineProcedure({
   input: z.object({ id: z.uuid() }),
   output: z.object({ revoked: z.boolean() }),
   http: { method: 'DELETE', path: '/api-keys/{id}' },
+  emits: ['api_key.revoked'],
   async handler(ctx, input) {
     const [existing] = await ctx.tx
       .select({ id: schema.apiKeys.id, name: schema.apiKeys.name })
@@ -146,6 +158,7 @@ export const apiKeyRevoke = defineProcedure({
       entityId: existing.id,
       entityLabel: existing.name,
     })
+    await ctx.emit('api_key.revoked', { id: existing.id, name: existing.name, revokedAt: ctx.now })
 
     return { revoked: true }
   },

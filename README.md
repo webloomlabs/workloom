@@ -6,9 +6,9 @@ Workloom connects the operational lifecycle of an agency into one system —
 `Lead → Client → Proposal → Project → Tasks → Invoice → Payment → Maintenance` —
 so that a project is never separated from the commercial context around it.
 
-> **Status: pre-release.** The platform skeleton (S0) and identity and tenancy
-> (S1) are in place: accounts, organizations, invitations, roles, API keys, and
-> an audit log. The CRM arrives in S3. See [Roadmap.md](Roadmap.md).
+> **Status: pre-release.** In place: accounts, organizations, invitations, roles,
+> API keys, an audit log (S1), and signed webhooks with retries plus idempotent API
+> writes (S2). The CRM arrives in S3. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 
@@ -24,6 +24,7 @@ openssl rand -base64 32   # -> WORKLOOM_ENCRYPTION_KEY
 
 pnpm services:up          # postgres, mail catcher, object storage
 pnpm dev                  # http://localhost:3000
+pnpm worker               # in a second terminal: delivers webhooks
 ```
 
 Check it came up: `curl localhost:3000/api/health`
@@ -38,6 +39,7 @@ Check it came up: `curl localhost:3000/api/health`
 
 ```bash
 pnpm dev              # run the web app
+pnpm worker           # run the worker (webhook delivery, maintenance)
 pnpm typecheck        # the only type gate — packages ship source, not builds
 pnpm lint
 pnpm test             # everything
@@ -62,6 +64,7 @@ tell you.
 
 - [Architecture](docs/architecture.md) — tenant isolation, money, events
 - [Configuration](docs/configuration.md) — every environment variable
+- [Webhooks](docs/webhooks.md) — payloads, signature verification, retries
 - API reference — served by a running instance at `/api/v1/openapi.json`
 - [Roadmap](Roadmap.md)
 

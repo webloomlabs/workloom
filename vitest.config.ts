@@ -15,8 +15,8 @@ export default defineConfig({
         // Real Postgres, real migrations, real row-level security.
         test: {
           name: 'integration',
-          include: ['packages/*/test/**/*.test.ts'],
-          exclude: ['packages/*/test/**/*.isolation.test.ts'],
+          include: ['{packages,apps}/*/test/**/*.test.ts'],
+          exclude: ['{packages,apps}/*/test/**/*.isolation.test.ts'],
           environment: 'node',
           testTimeout: 60_000,
           hookTimeout: 120_000,

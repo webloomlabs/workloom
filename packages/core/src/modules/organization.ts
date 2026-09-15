@@ -50,6 +50,7 @@ export const organizationUpdate = defineProcedure({
   }),
   output: organizationOutput,
   http: { method: 'PATCH', path: '/organization' },
+  emits: ['organization.updated'],
   async handler(ctx, input) {
     const [before] = await ctx.tx
       .select()
@@ -78,6 +79,7 @@ export const organizationUpdate = defineProcedure({
       entityLabel: after?.name ?? before.name,
       changes,
     })
+    await ctx.emit('organization.updated', { ...after!, changes })
 
     return after!
   },

@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { ActorContext } from '../context.ts'
 import type { Permission } from '../permissions/statements.ts'
+import type { EventType } from '../events/catalogue.ts'
 
 /**
  * How expensive an operation is, for rate limiting. Kept coarse on purpose --
@@ -41,6 +42,13 @@ export type ProcedureDefinition<TInput extends z.ZodType, TOutput extends z.ZodT
    * the UI -- and therefore outside automation and outside the audit trail.
    */
   http: HttpBinding
+  /**
+   * The events this procedure emits. Required in practice for every mutation:
+   * the procedure test suite fails if a mutation omits it, or if running the
+   * mutation does not actually emit what it declares. `[]` is a valid answer,
+   * but it has to be a deliberate one.
+   */
+  emits?: readonly EventType[]
   rateLimit?: RateLimitClass
   /** True for reads. Used to pick the default rate-limit class and status. */
   readOnly?: boolean

@@ -57,6 +57,35 @@ function mount(app: Hono<ApiEnv>, procedure: AnyProcedure) {
     c.set('requestId', requestId)
 
     try {
+      /**
+       * Cross-site request forgery.
+       *
+       * The API accepts the browser's session cookie as well as API keys. For a
+       * cookie-authenticated write, require the request to come from this
+       * application's own origin. SameSite=Lax cookies already stop the classic
+       * cross-site form post; this makes the guarantee explicit rather than
+       * dependent on a cookie attribute and browser behaviour. API-key requests
+       * carry no ambient credential, so they are exempt.
+       */
+      const headers = c.req.raw.headers
+      const usesCookie = !headers.get('authorization')?.startsWith('Bearer ')
+      if (usesCookie && procedure.http.method !== 'GET') {
+        const origin = headers.get('origin')
+        if (!origin || origin !== new URL(env.APP_URL).origin) {
+          return c.json(
+            {
+              error: {
+                code: 'cross_origin_forbidden',
+                message:
+                  'Cookie-authenticated writes must come from this application. Use an API key for programmatic access.',
+                request_id: requestId,
+              },
+            },
+            403,
+          )
+        }
+      }
+
       const resolution = await resolveActor({ headers: c.req.raw.headers })
       if (!resolution.ok) {
         return c.json(
@@ -111,6 +140,8 @@ function mount(app: Hono<ApiEnv>, procedure: AnyProcedure) {
         requestId,
         ipAddress: clientIp(c.req.raw.headers),
         userAgent: c.req.raw.headers.get('user-agent') ?? undefined,
+        idempotencyKey: c.req.raw.headers.get('idempotency-key') ?? undefined,
+        onReplay: () => c.header('Idempotent-Replayed', 'true'),
       })
 
       const status = procedure.http.successStatus ?? 200

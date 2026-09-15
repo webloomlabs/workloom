@@ -19,7 +19,8 @@
     "db:migrate": "pnpm --filter @workloom/db migrate",
     "services:up": "docker compose -f docker-compose.dev.yml up -d",
     "services:down": "docker compose -f docker-compose.dev.yml down",
-    "test:e2e": "pnpm --filter @workloom/e2e test"
+    "test:e2e": "pnpm --filter @workloom/e2e test",
+    "worker": "pnpm --filter @workloom/worker dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

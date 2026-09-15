@@ -49,6 +49,16 @@ const schema = z
     BETTER_AUTH_SECRET: z.string().min(32),
     /** Encrypts webhook signing secrets and integration credentials at rest. */
     WORKLOOM_ENCRYPTION_KEY: encryptionKey,
+    /**
+     * Keys that USED to be WORKLOOM_ENCRYPTION_KEY, comma-separated. Secrets
+     * encrypted under them stay readable while they are re-encrypted under the
+     * current key. Remove an old key only once nothing references it.
+     */
+    WORKLOOM_PREVIOUS_ENCRYPTION_KEYS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.split(',').map((k) => k.trim()).filter(Boolean) : []))
+      .pipe(z.array(encryptionKey)),
 
     /**
      * Optional. When unset, queues and rate limiting run on Postgres, which

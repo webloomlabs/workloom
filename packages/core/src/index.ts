@@ -22,3 +22,14 @@ export {
   type RateLimitDecision,
 } from './rate-limit.ts'
 export * from './permissions/index.ts'
+export * from './events/index.ts'
+export * from './webhooks/index.ts'
+export {
+  decryptSecret,
+  DecryptionError,
+  encryptSecret,
+  fingerprint,
+  keyringFromEnv,
+  needsReencryption,
+  type Keyring,
+} from './crypto.ts'

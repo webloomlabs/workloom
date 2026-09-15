@@ -22,6 +22,20 @@
       "when": 1789002532816,
       "tag": "0002_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789463317516,
+      "tag": "0003_events_webhooks_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789463360350,
+      "tag": "0004_events_rls",
+      "breakpoints": true
     }
   ]
 }

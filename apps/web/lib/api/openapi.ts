@@ -31,6 +31,10 @@ export function buildOpenApiDocument(serverUrl: string) {
         'service layer.',
     },
     servers: [{ url: serverUrl }],
+    externalDocs: {
+      description: 'Webhooks: payloads, signatures, and retries',
+      url: 'https://github.com/webloomlabs/workloom/blob/main/docs/webhooks.md',
+    },
     security: [{ apiKey: [] }],
     components: {
       securitySchemes: {
@@ -72,6 +76,22 @@ function operationFor(procedure: AnyProcedure) {
         schema,
       })
     }
+  }
+
+  if (procedure.http.method !== 'GET') {
+    parameters.push({
+      name: 'Idempotency-Key',
+      in: 'header',
+      required: false,
+      schema: {
+        type: 'string',
+        maxLength: 255,
+        description:
+          'Makes a retry safe. A repeated key with the same body returns the original response ' +
+          '(with `Idempotent-Replayed: true`) without performing the operation again; the same ' +
+          'key with a different body is rejected. Keys are remembered for 24 hours, per API key.',
+      },
+    })
   }
 
   const bodyProperties = Object.fromEntries(
