@@ -82,6 +82,11 @@ const definitions = {
   'comment.deleted': { description: 'A comment was deleted', since: 'S5' },
   'attachment.added': { description: 'A file was attached', since: 'S5' },
   'attachment.deleted': { description: 'An attached file was deleted', since: 'S5' },
+  'time_entry.created': { description: 'Time was logged by hand', since: 'S6' },
+  'time_entry.started': { description: 'A timer was started', since: 'S6' },
+  'time_entry.stopped': { description: 'A running timer was stopped', since: 'S6' },
+  'time_entry.updated': { description: 'A time entry was edited', since: 'S6' },
+  'time_entry.deleted': { description: 'A time entry was deleted', since: 'S6' },
 
   'quote.sent': { description: 'A quote was sent', since: 'S7' },
   'quote.accepted': { description: 'A quote was accepted', since: 'S7' },

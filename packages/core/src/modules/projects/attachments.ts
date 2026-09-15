@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { DomainError, ForbiddenError, NotFoundError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
-import { actingUserId, queryFlag } from '../crm/shared.ts'
+import { actingUserId, optionalFlag } from '../crm/shared.ts'
 import { loadActiveProject, loadProject } from './projects.ts'
 import { loadTask } from './tasks.ts'
 
@@ -117,7 +117,7 @@ export const attachmentUpload = defineProcedure({
     taskId: z.uuid().nullish(),
     file: z.file(),
     /** Share with the client portal. Requires `project:update`. */
-    clientVisible: queryFlag.optional(),
+    clientVisible: optionalFlag,
   }),
   output: attachmentOutput,
   http: { method: 'POST', path: '/attachments', successStatus: 201, body: 'multipart' },

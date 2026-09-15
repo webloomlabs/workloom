@@ -9,7 +9,8 @@
     "./permissions": "./src/permissions/index.ts",
     "./context": "./src/context.ts",
     "./registry": "./src/registry/index.ts",
-    "./modules": "./src/modules/index.ts"
+    "./modules": "./src/modules/index.ts",
+    "./time": "./src/time/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

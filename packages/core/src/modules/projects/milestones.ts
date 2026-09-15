@@ -4,7 +4,7 @@ import { diff } from '../../audit.ts'
 import { NotFoundError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
-import { actingUserId, optionalText, provided, queryFlag, requiredText } from '../crm/shared.ts'
+import { actingUserId, optionalFlag, optionalText, provided, requiredText } from '../crm/shared.ts'
 import { loadActiveProject, loadProject, progressPercent } from './projects.ts'
 
 export const milestoneOutput = z.object({
@@ -85,7 +85,7 @@ const details = {
   description: optionalText(10_000),
   dueDate: z.iso.date().nullish(),
   /** Whether a client may see it once the portal exists. */
-  clientVisible: queryFlag.optional(),
+  clientVisible: optionalFlag,
 }
 
 export const milestoneCreate = defineProcedure({

@@ -4,7 +4,7 @@ import { diff } from '../../audit.ts'
 import { ForbiddenError, NotFoundError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
-import { actingUserId, pageInput, paginate, provided, queryFlag, requiredText } from '../crm/shared.ts'
+import { actingUserId, optionalFlag, pageInput, paginate, provided, requiredText } from '../crm/shared.ts'
 import { loadActiveProject, loadProject } from './projects.ts'
 import { loadTask } from './tasks.ts'
 
@@ -113,7 +113,7 @@ export const commentCreate = defineProcedure({
     taskId: z.uuid().nullish(),
     body: requiredText(20_000, 'Comment'),
     /** Publish to the client portal. Requires `project:update`. */
-    clientVisible: queryFlag.optional(),
+    clientVisible: optionalFlag,
   }),
   output: commentOutput,
   http: { method: 'POST', path: '/comments', successStatus: 201 },
@@ -144,7 +144,7 @@ export const commentUpdate = defineProcedure({
   name: 'comment.update',
   summary: 'Edit a comment. Your own, unless you moderate.',
   permission: 'comment:create',
-  input: z.object({ id: z.uuid(), body: requiredText(20_000, 'Comment').optional(), clientVisible: queryFlag.optional() }),
+  input: z.object({ id: z.uuid(), body: requiredText(20_000, 'Comment').optional(), clientVisible: optionalFlag }),
   output: commentOutput,
   http: { method: 'PATCH', path: '/comments/{id}' },
   emits: ['comment.updated'],

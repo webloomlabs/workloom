@@ -9,6 +9,7 @@ import {
   actingUserId,
   assertMember,
   contains,
+  optionalFlag,
   optionalText,
   pageInput,
   paginate,
@@ -213,7 +214,7 @@ const details = {
   dueDate: z.iso.date().nullish(),
   labels: labels.optional(),
   estimateMinutes: z.number().int().min(0).max(100_000).nullish(),
-  clientVisible: queryFlag.optional(),
+  clientVisible: optionalFlag,
 }
 
 export const taskCreate = defineProcedure({
@@ -333,7 +334,7 @@ export const taskChangeStatus = defineProcedure({
 
 export const taskDelete = defineProcedure({
   name: 'task.delete',
-  summary: 'Delete a task, with its comments, files, and dependencies',
+  summary: 'Delete a task, with its comments, files, and dependencies. A task with time logged against it cannot be deleted.',
   permission: 'task:delete',
   input: z.object({ id: z.uuid() }),
   output: z.object({ deleted: z.boolean() }),
@@ -342,6 +343,18 @@ export const taskDelete = defineProcedure({
   async handler(ctx, input) {
     const task = await getTask(ctx, input.id)
     await loadActiveProject(ctx, task.projectId)
+    // Logged time is financial history; it cannot lose the task it was spent on.
+    const [logged] = await ctx.tx
+      .select({ id: schema.timeEntries.id })
+      .from(schema.timeEntries)
+      .where(eq(schema.timeEntries.taskId, task.id))
+      .limit(1)
+    if (logged) {
+      throw new DomainError(
+        'Time has been logged against this task, so it cannot be deleted. Cancel it instead.',
+        'task_has_time',
+      )
+    }
     const files = await ctx.tx
       .select({ key: schema.attachments.storageKey })
       .from(schema.attachments)

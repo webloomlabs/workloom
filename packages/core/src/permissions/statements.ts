@@ -27,9 +27,18 @@ export const STATEMENTS = {
    * is editing or deleting other people's comments; everyone may edit their own.
    */
   comment: ['create', 'moderate'],
+  /** One's own time. */
   timeEntry: ['read', 'create', 'update', 'delete'],
-  /** Reading another person's time entries, as opposed to one's own. */
-  timeEntryAll: ['read'],
+  /**
+   * Other people's time: `read` to see it, `manage` to log, edit, stop, or
+   * delete it on their behalf.
+   */
+  timeEntryAll: ['read', 'manage'],
+  /**
+   * Default hourly rates for the organization and each person. Reading them
+   * follows `report:readFinancial`.
+   */
+  rate: ['update'],
 
   service: ['read', 'create', 'update', 'archive'],
   taxRate: ['read', 'create', 'update', 'archive'],

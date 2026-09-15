@@ -10,9 +10,9 @@ so that a project is never separated from the commercial context around it.
 > API keys, an audit log (S1); signed webhooks with retries and idempotent API
 > writes (S2); and the CRM — leads, companies, contacts, deals, a pipeline, activity
 > history, and lead-to-client conversion (S3); a unified client view (S4); and
-> projects with milestones, tasks, dependencies, comments, and files (S5). Time
-> tracking arrives in S6. See
-> [Roadmap.md](Roadmap.md).
+> projects with milestones, tasks, dependencies, comments, and files (S5); and time
+> tracking with timers, timesheets, and rates copied onto each entry (S6). Finance
+> arrives in S7. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

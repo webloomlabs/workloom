@@ -76,10 +76,16 @@ export function Badge({ tone = 'neutral', children }: { tone?: keyof typeof badg
   )
 }
 
-/** A table that scrolls inside its own container instead of widening the page. */
+/**
+ * A table that scrolls inside its own container instead of widening the page.
+ *
+ * `relative` matters: without a positioned container, absolutely positioned
+ * cells' contents -- screen-reader-only labels -- escape the scroll area and
+ * widen the page anyway.
+ */
 export function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full text-left text-sm">{children}</table>
     </div>
   )

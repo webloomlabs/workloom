@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 export function MainNav({ items }: { items: Array<{ href: string; label: string; match?: string[] | undefined }> }) {
   const pathname = usePathname()
   return (
-    <nav aria-label="Main" className="flex gap-1 overflow-x-auto">
+    <nav aria-label="Main" className="flex min-w-0 max-w-full gap-1 overflow-x-auto">
       {items.map((item) => {
         const active = [item.href, ...(item.match ?? [])].some(
           (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),

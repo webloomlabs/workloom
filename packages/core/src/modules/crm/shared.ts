@@ -69,10 +69,19 @@ export const minorAmount = z
   .min(0)
   .max(Number.MAX_SAFE_INTEGER)
 
+const flag = z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+
 /** A boolean that also accepts "true"/"false", since GET inputs arrive as query strings. */
-export const queryFlag = z
-  .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
-  .default(false)
+export const queryFlag = flag.default(false)
+
+/**
+ * The same, left undefined when absent -- for filters that are off unless
+ * given, and for updates, where absent means "unchanged".
+ *
+ * Not `optionalFlag`: in Zod 4 a default still applies inside
+ * `.optional()`, so an omitted field would arrive as `false`.
+ */
+export const optionalFlag = flag.optional()
 
 export const pageInput = {
   limit: z.coerce.number().int().min(1).max(100).default(50),

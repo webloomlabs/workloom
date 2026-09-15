@@ -1,6 +1,7 @@
 import type { Permission } from '@workloom/core'
-import { ATTACHMENT_MAX_BYTES, attachmentList, commentList, milestoneList, projectGet, taskGet, taskList } from '@workloom/core/modules'
-import { Alert, Card, CardHeader } from '@workloom/ui'
+import { ATTACHMENT_MAX_BYTES, attachmentList, commentList, milestoneList, projectGet, taskGet, taskList, timeEntryList } from '@workloom/core/modules'
+import { formatDuration } from '@workloom/core/time'
+import { Alert, Badge, Card, CardHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -13,7 +14,8 @@ import {
   RemoveDependencyButton,
   TaskStatusControl,
 } from '@/components/projects/task-forms'
-import { formatBytes, formatDate, formatDateTime } from '@/lib/format'
+import { LogTimeForm, StartTimerForm } from '@/components/time/time-forms'
+import { formatBytes, formatDate, formatDateTime, todayIn } from '@/lib/format'
 import { minutesToHours } from '@/lib/project-labels'
 import { memberChoices, organizationSettings } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
@@ -30,7 +32,7 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
   // The URL names the project too; a task under the wrong project is not here.
   if (task.projectId !== projectId) notFound()
 
-  const [project, members, settings, milestones, siblings, comments, files] = await Promise.all([
+  const [project, members, settings, milestones, siblings, comments, files, time] = await Promise.all([
     call(projectGet, { id: projectId }),
     memberChoices(),
     organizationSettings(),
@@ -38,7 +40,10 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
     call(taskList, { projectId, limit: 200 }),
     call(commentList, { projectId, taskId, limit: 100 }),
     call(attachmentList, { projectId, taskId }),
+    can('timeEntry:read') ? call(timeEntryList, { taskId, limit: 100 }) : { data: [] },
   ])
+  const tracked = time.data.reduce((sum, e) => sum + (e.durationSeconds ?? 0), 0)
+  const running = time.data.find((e) => e.running && e.userId === (viewer.actor.type === 'user' ? viewer.actor.id : viewer.actor.type === 'apiKey' ? viewer.actor.userId : null))
 
   const live = !project.archivedAt
   const canUpdate = can('task:update') && live
@@ -109,6 +114,42 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
         </div>
 
         <div className="space-y-6">
+          {can('timeEntry:read') && (
+            <Card>
+              <CardHeader
+                title="Time"
+                description={`${formatDuration(tracked)} ${can('timeEntryAll:read') ? 'tracked' : 'tracked by you'}${task.estimateMinutes !== null ? ` of ${formatDuration(task.estimateMinutes * 60)} estimated` : ''}`}
+              />
+              <div className="space-y-4 p-5">
+                {live && can('timeEntry:create') && (
+                  <>
+                    {running ? (
+                      <p className="flex items-center gap-2 text-sm"><Badge tone="green">Running</Badge> Your timer is on this task. Stop it from the header.</p>
+                    ) : (
+                      <StartTimerForm work={`task:${task.id}`} />
+                    )}
+                    <details className="text-sm">
+                      <summary className="cursor-pointer text-neutral-600 dark:text-neutral-400">Log time by hand</summary>
+                      <div className="pt-3"><LogTimeForm work={`task:${task.id}`} defaultDate={todayIn(settings.timezone)} /></div>
+                    </details>
+                  </>
+                )}
+                {time.data.length > 0 && (
+                  <ul className="space-y-1 border-t border-neutral-200 pt-3 text-sm dark:border-neutral-800">
+                    {time.data.slice(0, 10).map((e) => (
+                      <li key={e.id} className="flex justify-between gap-2">
+                        <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">
+                          {formatDate(e.spentOn)} · {e.userName}{e.description ? ` · ${e.description}` : ''}
+                        </span>
+                        <span className="tabular-nums">{e.running ? 'Running' : formatDuration(e.durationSeconds!)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </Card>
+          )}
+
           <Card>
             <CardHeader title="Waits on" description="This task cannot be completed until these are done or cancelled." />
             <div className="space-y-4 p-5">

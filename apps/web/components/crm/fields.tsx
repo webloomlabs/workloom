@@ -12,11 +12,19 @@ export function initial(state: ActionState<unknown>, name: string, fallback: str
   return (state.status === 'error' ? state.values?.[name] : undefined) ?? fallback ?? ''
 }
 
-type Common = { state: ActionState<unknown>; name: string; label: string; hint?: string | undefined }
+type Common = {
+  state: ActionState<unknown>
+  name: string
+  label: string
+  hint?: string | undefined
+  /** Defaults to `name`. Set it when one page holds several forms with the same fields. */
+  id?: string | undefined
+}
 
 export function TextField({
   state,
   name,
+  id = name,
   label,
   hint,
   defaultValue,
@@ -26,16 +34,16 @@ export function TextField({
 }: Common & { defaultValue?: string | null | undefined; type?: string | undefined; required?: boolean | undefined; placeholder?: string | undefined }) {
   const error = fieldError(state, name)
   return (
-    <Field id={name} label={label} hint={hint} error={error}>
+    <Field id={id} label={label} hint={hint} error={error}>
       <Input
-        id={name}
+        id={id}
         name={name}
         type={type}
         required={required}
         placeholder={placeholder}
         defaultValue={initial(state, name, defaultValue)}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${name}-error` : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
       />
     </Field>
   )
@@ -53,6 +61,7 @@ export function TextAreaField({ state, name, label, hint, defaultValue }: Common
 export function SelectField({
   state,
   name,
+  id = name,
   label,
   hint,
   defaultValue,
@@ -61,8 +70,8 @@ export function SelectField({
 }: Common & { defaultValue?: string | null | undefined; options: Option[]; empty?: string | undefined }) {
   const error = fieldError(state, name)
   return (
-    <Field id={name} label={label} hint={hint} error={error}>
-      <Select id={name} name={name} defaultValue={initial(state, name, defaultValue)} aria-invalid={error ? true : undefined}>
+    <Field id={id} label={label} hint={hint} error={error}>
+      <Select id={id} name={name} defaultValue={initial(state, name, defaultValue)} aria-invalid={error ? true : undefined}>
         {empty !== undefined && <option value="">{empty}</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>

@@ -48,6 +48,12 @@ describe('separation of duties', () => {
     ['developer', 'report:readFinancial', false, 'margins are not delivery information'],
     ['developer', 'timeEntry:create', true, 'developers log their own time'],
     ['developer', 'timeEntryAll:read', false, 'but not each other\'s'],
+    ['developer', 'timeEntryAll:manage', false, 'nor change it'],
+    ['developer', 'rate:update', false, 'rates are commercial terms'],
+    ['manager', 'timeEntryAll:manage', true, 'managers correct their team\'s timesheets'],
+    ['manager', 'rate:update', true, 'and set what people cost and bill'],
+    ['finance', 'rate:update', true, 'finance owns rates'],
+    ['finance', 'timeEntryAll:manage', false, 'but does not rewrite what people worked'],
 
     ['finance', 'task:update', false, 'finance does not reassign delivery work'],
     ['finance', 'invoice:send', true, 'finance owns billing'],

@@ -8,8 +8,11 @@ import {
   projectGet,
   projectMemberList,
   taskList,
+  timeEntryList,
+  timeEntrySummary,
 } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { formatDuration } from '@workloom/core/time'
+import { Alert, Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -28,7 +31,8 @@ import {
   ProjectStatusControl,
 } from '@/components/projects/project-forms'
 import { QuickTaskForm, TaskStatusControl } from '@/components/projects/task-forms'
-import { formatBytes, formatDate, formatDateTime } from '@/lib/format'
+import { EntryControls, LogTimeForm } from '@/components/time/time-forms'
+import { formatBytes, formatDate, formatDateTime, todayIn } from '@/lib/format'
 import { PRIORITY_RANK, TASK_STATUS_LABELS } from '@/lib/project-labels'
 import { memberChoices, money, organizationSettings } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
@@ -42,11 +46,13 @@ const loadProject = (id: string) => call(projectGet, { id })
 type Context = {
   project: Project
   can: (permission: Permission) => boolean
+  /** The person viewing: the user, or an API key's owner. */
+  selfId: string | null
   timezone: string
   members: Awaited<ReturnType<typeof memberChoices>>
 }
 
-const TABS = ['tasks', 'milestones', 'team', 'updates', 'files', 'details'] as const
+const TABS = ['tasks', 'milestones', 'time', 'team', 'updates', 'files', 'details'] as const
 type Tab = (typeof TABS)[number]
 
 export default async function ProjectPage({ params, searchParams }: PageProps<'/projects/[id]'>) {
@@ -57,11 +63,13 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
 
   const [project, members, settings] = await Promise.all([loadProject(id), memberChoices(), organizationSettings()])
   const active: Tab = TABS.find((t) => t === param(query.tab)) ?? 'tasks'
-  const context: Context = { project, can, timezone: settings.timezone, members }
+  const selfId = viewer.actor.type === 'user' ? viewer.actor.id : viewer.actor.type === 'apiKey' ? viewer.actor.userId : null
+  const context: Context = { project, can, selfId, timezone: settings.timezone, members }
   const base = `/projects/${id}`
 
-  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
-  const tabs: SectionTab[] = TABS.filter((t) => t !== 'milestones' || can('milestone:read')).map((t) => ({
+  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
+  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read' }
+  const tabs: SectionTab[] = TABS.filter((t) => !visible[t] || can(visible[t])).map((t) => ({
     key: t,
     label: labels[t],
     status: 'available',
@@ -69,7 +77,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
     ...(t === 'tasks' ? { count: project.progress.tasksTotal } : t === 'milestones' ? { count: project.progress.milestonesTotal } : {}),
   }))
 
-  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, team: Team, updates: Updates, files: Files, details: Details }
+  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, team: Team, updates: Updates, files: Files, details: Details }
   const live = !project.archivedAt
 
   return (
@@ -212,6 +220,145 @@ async function Milestones({ project, can }: Context) {
           <div className="p-5"><CreateMilestoneForm projectId={project.id} canPublish={can('project:update')} /></div>
         </Card>
       )}
+    </div>
+  )
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail?: string | undefined }) {
+  return (
+    <Card className="space-y-1 p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      {detail && <div className="text-xs text-neutral-500">{detail}</div>}
+    </Card>
+  )
+}
+
+async function Time({ project, can, selfId, timezone }: Context) {
+  const everyone = can('timeEntryAll:read')
+  const financial = can('report:readFinancial')
+  const live = !project.archivedAt
+  const [summary, { data: entries }, openTasks] = await Promise.all([
+    everyone ? call(timeEntrySummary, { id: project.id }) : null,
+    call(timeEntryList, { projectId: project.id, limit: 50 }),
+    live && can('timeEntry:create') ? call(taskList, { projectId: project.id, open: true, limit: 200 }) : { data: [] },
+  ])
+  const value = (minor: number | null) => (minor === null ? '—' : money(minor, project.currency))
+
+  return (
+    <div className="space-y-6">
+      {summary && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Tracked" value={formatDuration(summary.totals.seconds)} detail={summary.runningTimers > 0 ? `${summary.runningTimers} running, not yet counted` : undefined} />
+            <Stat label="Billable" value={formatDuration(summary.totals.billableSeconds)} />
+            {financial && (
+              <Stat
+                label="Billable value"
+                value={value(summary.totals.billableValueMinor)}
+                detail={summary.totals.unratedBillableSeconds > 0 ? `${formatDuration(summary.totals.unratedBillableSeconds)} billable time has no rate` : 'At the rates each entry was logged at'}
+              />
+            )}
+            {financial && (
+              <Stat
+                label="Labour cost"
+                value={value(summary.totals.costMinor)}
+                detail={summary.totals.unratedCostSeconds > 0 ? `${formatDuration(summary.totals.unratedCostSeconds)} has no cost rate` : undefined}
+              />
+            )}
+          </div>
+
+          {summary.byPerson.length > 0 && (
+            <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+              <Card>
+                <CardHeader title="By person" />
+                <Table>
+                  <thead><tr><Th>Person</Th><Th className="text-right">Tracked</Th><Th className="text-right">Billable</Th>{financial && <Th className="text-right">Value</Th>}{financial && <Th className="text-right">Cost</Th>}</tr></thead>
+                  <tbody>
+                    {summary.byPerson.map((row) => (
+                      <tr key={row.userId}>
+                        <Td>{row.name}</Td>
+                        <Td className="text-right tabular-nums">{formatDuration(row.seconds)}</Td>
+                        <Td className="text-right tabular-nums">{formatDuration(row.billableSeconds)}</Td>
+                        {financial && <Td className="text-right tabular-nums">{value(row.billableValueMinor)}</Td>}
+                        {financial && <Td className="text-right tabular-nums">{value(row.costMinor)}</Td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </Card>
+              <Card>
+                <CardHeader title="By task" />
+                <Table>
+                  <thead><tr><Th>Task</Th><Th className="text-right">Estimate</Th><Th className="text-right">Tracked</Th></tr></thead>
+                  <tbody>
+                    {summary.byTask.map((row) => {
+                      const over = row.estimateMinutes !== null && row.seconds > row.estimateMinutes * 60
+                      return (
+                        <tr key={row.taskId ?? 'project'}>
+                          <Td>
+                            {row.taskId ? (
+                              <Link href={`/projects/${project.id}/tasks/${row.taskId}`} className="hover:underline">{row.title}</Link>
+                            ) : (
+                              <span className="text-neutral-500">No task</span>
+                            )}
+                          </Td>
+                          <Td className="text-right tabular-nums text-neutral-500">{row.estimateMinutes === null ? '—' : formatDuration(row.estimateMinutes * 60)}</Td>
+                          <Td className={`text-right tabular-nums ${over ? 'font-medium text-red-600' : ''}`}>{formatDuration(row.seconds)}</Td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </Table>
+              </Card>
+            </div>
+          )}
+        </>
+      )}
+
+      {live && can('timeEntry:create') && (
+        <Card>
+          <CardHeader title="Log time" description="For work you didn't time. Timers start from a task or your timesheet." />
+          <div className="p-5">
+            <LogTimeForm
+              groups={[{ projectId: project.id, projectName: project.name, tasks: openTasks.data.map((t) => ({ id: t.id, title: t.title })) }]}
+              defaultDate={todayIn(timezone)}
+            />
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader title={everyone ? 'Recent time' : 'Your recent time'} />
+        {entries.length === 0 ? (
+          <EmptyState>No time logged on this project yet.</EmptyState>
+        ) : (
+          <Table>
+            <thead><tr><Th>Date</Th>{everyone && <Th>Person</Th>}<Th>Work</Th><Th className="text-right">Time</Th><Th /></tr></thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id}>
+                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(e.spentOn)}</Td>
+                  {everyone && <Td>{e.userName}</Td>}
+                  <Td>
+                    <div>{e.taskId ? <Link href={`/projects/${project.id}/tasks/${e.taskId}`} className="hover:underline">{e.taskTitle}</Link> : <span className="text-neutral-500">No task</span>}</div>
+                    {e.description && <div className="text-xs text-neutral-500">{e.description}</div>}
+                    {!e.billable && <Badge>Not billable</Badge>}
+                  </Td>
+                  <Td className="text-right tabular-nums">{e.running ? <Badge tone="green">Running</Badge> : formatDuration(e.durationSeconds!)}</Td>
+                  <Td>
+                    {live && (e.userId === selfId ? can('timeEntry:update') : can('timeEntryAll:manage')) && (
+                      <EntryControls
+                        entry={{ id: e.id, running: e.running, spentOn: e.spentOn, duration: e.running ? '' : formatDuration(e.durationSeconds!), description: e.description, billable: e.billable }}
+                      />
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
     </div>
   )
 }

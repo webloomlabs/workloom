@@ -343,6 +343,19 @@ export const projectUpdate = defineProcedure({
       refuseArchived(await loadCompany(ctx, patch.companyId), 'company')
     }
     if (patch.ownerId) await assertMember(ctx, patch.ownerId)
+    if (patch.currency && patch.currency !== before.currency) {
+      // Logged time holds rates in the project's currency. Relabelling the
+      // project would leave those amounts, and its member rates, meaning
+      // something they never did.
+      const [logged] = await ctx.tx
+        .select({ id: schema.timeEntries.id })
+        .from(schema.timeEntries)
+        .where(eq(schema.timeEntries.projectId, id))
+        .limit(1)
+      if (logged) {
+        throw new DomainError("Time has been logged on this project, so its currency can't change.", 'currency_locked', 'currency')
+      }
+    }
     assertDates(
       patch.startDate !== undefined ? patch.startDate : before.startDate,
       patch.dueDate !== undefined ? patch.dueDate : before.dueDate,

@@ -1,6 +1,6 @@
 import 'server-only'
 import { authErrorMessage } from '@workloom/auth'
-import { DomainError, ForbiddenError, NotFoundError } from '@workloom/core'
+import { ConflictError, DomainError, ForbiddenError, NotFoundError } from '@workloom/core'
 import { unstable_rethrow } from 'next/navigation'
 import { ZodError } from 'zod'
 import type { ActionState } from './state.ts'
@@ -31,6 +31,9 @@ export function toActionError(error: unknown): ActionState<never> {
       message: error.message,
       ...(error.field ? { fieldErrors: { [error.field]: error.message } } : {}),
     }
+  }
+  if (error instanceof ConflictError) {
+    return { status: 'error', message: error.message }
   }
   if (error instanceof ForbiddenError) {
     return { status: 'error', message: "You don't have permission to do that." }

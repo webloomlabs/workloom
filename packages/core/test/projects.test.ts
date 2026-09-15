@@ -315,6 +315,25 @@ describe('comments', () => {
   })
 })
 
+describe('client visibility', () => {
+  it('survives edits that do not mention it', async () => {
+    // Regression: an omitted flag used to arrive as false, so any edit quietly
+    // unpublished the record -- or refused an author editing their own words.
+    const p = await project()
+    const t = await task(p.id, { clientVisible: true })
+    expect(await run('task.update', developer(), { id: t.id, title: 'Renamed' })).toMatchObject({ clientVisible: true })
+
+    const m = await run('milestone.create', owner(), { id: p.id, name: 'Launch', clientVisible: true })
+    expect(await run('milestone.update', owner(), { id: m.id, name: 'Go live' })).toMatchObject({ clientVisible: true })
+
+    const update = await run('comment.create', owner(), { projectId: p.id, body: 'Shipping Friday', clientVisible: true })
+    expect(await run('comment.update', owner(), { id: update.id, body: 'Shipping Monday' })).toMatchObject({ clientVisible: true })
+    const mine = await run('comment.create', developer(), { projectId: p.id, taskId: t.id, body: 'Draft' })
+    await run('comment.update', owner(), { id: mine.id, clientVisible: true })
+    expect(await run('comment.update', developer(), { id: mine.id, body: 'Final' })).toMatchObject({ body: 'Final', clientVisible: true })
+  })
+})
+
 describe('attachments', () => {
   const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0x0a, 0x0d, 0x7f])
 

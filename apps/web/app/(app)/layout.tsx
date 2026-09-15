@@ -1,11 +1,14 @@
 import { auth } from '@workloom/auth'
+import { timerGet } from '@workloom/core/modules'
 import type { Permission } from '@workloom/core/permissions'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { MainNav } from '@/components/main-nav'
 import { OrganizationSwitcher } from '@/components/org-switcher'
+import { RunningTimer } from '@/components/time/time-forms'
 import { signOutAction } from '@/lib/actions/auth'
+import { call } from '@/lib/server/procedures'
 import { getSession, getViewer } from '@/lib/server/viewer'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -24,17 +27,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/contacts', label: 'Contacts', permission: 'contact:read' },
     { href: '/projects', label: 'Projects', permission: 'project:read' },
     { href: '/tasks', label: 'My tasks', permission: 'task:read' },
+    { href: '/time', label: 'Time', permission: 'timeEntry:read' },
     { href: '/settings/organization', label: 'Settings', permission: 'organization:read', match: ['/settings'] },
   ]
   const nav = viewer
     ? items.filter((item) => viewer.permissions.has(item.permission)).map(({ permission: _, ...item }) => item)
     : []
+  const timer = viewer?.permissions.has('timeEntry:read') ? (await call(timerGet, {})).entry : null
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-4 gap-y-2">
             <Link href="/" className="text-sm font-semibold tracking-tight">Workloom</Link>
             {organizations.length > 0 && (
               <OrganizationSwitcher
@@ -45,6 +50,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {nav.length > 0 && <MainNav items={nav} />}
           </div>
           <div className="flex items-center gap-3 text-sm">
+            {timer && (
+              <RunningTimer
+                // A new timer restarts the clock.
+                key={timer.id}
+                entry={{
+                  id: timer.id,
+                  projectId: timer.projectId,
+                  projectName: timer.projectName,
+                  taskId: timer.taskId,
+                  taskTitle: timer.taskTitle,
+                  startedAt: timer.startedAt!.toISOString(),
+                }}
+              />
+            )}
             <span className="hidden text-neutral-500 2xl:inline">{session.user.email}</span>
             <form action={signOutAction}>
               <button type="submit" className="text-neutral-700 hover:underline dark:text-neutral-300">

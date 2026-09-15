@@ -84,6 +84,8 @@ describe('tenant tables', () => {
         'task_dependencies',
         'comments',
         'attachments',
+        'time_entries',
+        'default_rates',
       ]),
     )
   })

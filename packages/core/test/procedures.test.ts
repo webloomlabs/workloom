@@ -147,6 +147,15 @@ async function createMilestone(input: Record<string, unknown> = {}): Promise<str
   return milestone.id
 }
 
+async function createEntry(): Promise<string> {
+  const entry = (await run('timeEntry.create', ownerOfA(), { projectId: await createProject(), durationSeconds: 3600 })) as { id: string }
+  return entry.id
+}
+
+async function stopTimer(): Promise<void> {
+  await run('timer.stop', ownerOfA(), {}).catch(() => undefined)
+}
+
 const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
 
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
@@ -330,6 +339,32 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     return { id: comment.id }
   },
 
+  'rate.set': [
+    async () => ({ billableRateMinor: 120_00 + Number.parseInt(unique(), 16) % 1000, costRateMinor: 60_00 }),
+    async () => ({ userId: developerA, billableRateMinor: 150_00 + Number.parseInt(unique(), 16) % 1000, costRateMinor: null }),
+  ],
+  'timeEntry.create': async () => {
+    const task = await createTask()
+    return { projectId: task.projectId, taskId: task.id, durationSeconds: 5400, description: 'Design review' }
+  },
+  'timeEntry.update': async () => ({ id: await createEntry(), description: `edited ${unique()}` }),
+  'timeEntry.delete': async () => ({ id: await createEntry() }),
+  'timer.start': [
+    async () => {
+      await stopTimer()
+      return { projectId: await createProject() }
+    },
+    // With a timer already running, starting another stops it first.
+    async () => {
+      await run('timer.start', ownerOfA(), { projectId: await createProject() })
+      return { taskId: (await createTask()).id }
+    },
+  ],
+  'timer.stop': async () => {
+    const started = (await run('timer.start', ownerOfA(), { projectId: await createProject() })) as { entry: { id: string } }
+    return { id: started.entry.id }
+  },
+
   'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
   'attachment.delete': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
@@ -356,6 +391,9 @@ const READS: Record<string, Fixture> = {
   'task.list': async () => ({ projectId: await createProject() }),
   'comment.list': async () => ({ projectId: await createProject() }),
   'attachment.list': async () => ({ projectId: await createProject() }),
+  'timeEntry.get': async () => ({ id: await createEntry() }),
+  'timeEntry.list': async () => ({ projectId: await createProject() }),
+  'timeEntry.summary': async () => ({ id: await createProject() }),
   'attachment.download': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
     return { id: attachment.id }

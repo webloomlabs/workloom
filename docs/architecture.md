@@ -357,6 +357,46 @@ shipped section has nothing counting its records.
 - **Drizzle wraps driver errors.** The Postgres error — the policy or constraint
   that fired — is on `cause`. Tests unwrap before asserting, or they pass for the
   wrong reason.
+- **In Zod 4, a default still applies inside `.optional()`.**
+  `queryFlag.optional()` turned an omitted field into `false`, so editing a
+  client-visible task quietly unpublished it. Use `optionalFlag` from
+  `modules/crm/shared.ts` for fields where absent means "unchanged" or "no filter".
+- **A screen-reader-only label escapes a scroll container that is not positioned.**
+  `sr-only` is `position: absolute`; its containing block is the nearest positioned
+  ancestor, not the `overflow-x-auto` box, so it can widen the page. The shared
+  `Table` wrapper is `relative` for this reason.
+
+## Time tracking
+
+A time entry belongs to one person, one project, and optionally one of that
+project's tasks. The task's foreign key includes `project_id`, as dependencies'
+do, and is not cascaded: a task with time logged against it cannot be deleted,
+only cancelled.
+
+**Rates are copied onto the entry when it is created**, from the most specific
+source: the person's override on the project, then their default, then the
+organization's default. Billable and cost rates resolve independently, and each
+entry records where each came from. Changing any rate afterwards leaves logged
+time alone. Moving an entry to another project resolves its rates again, because
+the old ones belong to a different project. Defaults are kept per currency and
+apply only to projects in that currency; there is no exchange-rate feed. For the
+same reason, a project's currency cannot change once time is logged.
+
+**One running timer per person, per organization**, enforced by a partial unique
+index on `(organization_id, user_id) WHERE started_at IS NOT NULL AND ended_at IS
+NULL`. Starting a timer stops the running one inside the same transaction; a
+concurrent start that loses the race fails on the index and is answered with 409.
+The index is per organization because row-level security would stop one
+organization from seeing, and so from stopping, a timer in another.
+
+**Who sees what.** `timeEntry:*` covers one's own time. Other people's needs
+`timeEntryAll:read`, and changing it needs `timeEntryAll:manage`; without them it
+is "not found". Rates and values need `report:readFinancial` and never appear in
+events. Setting default rates needs `rate:update` as well.
+
+**Valuation.** An entry is worth `duration × rate ÷ 3600`, rounded half away from
+zero once per entry, then summed. A running timer counts for nothing until it
+stops. Time with no rate is reported separately rather than counted as zero.
 
 ## Money
 
