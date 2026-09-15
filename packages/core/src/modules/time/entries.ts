@@ -5,7 +5,7 @@ import { ConflictError, DomainError, NotFoundError, type ActorContext } from '..
 import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
 import { dateIn, MAX_ENTRY_SECONDS } from '../../time/index.ts'
-import { actingUserId, optionalFlag, optionalText, provided, queryFlag, violatedConstraint } from '../crm/shared.ts'
+import { actingUserId, optionalFlag, optionalText, organizationTimezone, provided, queryFlag, violatedConstraint } from '../crm/shared.ts'
 import { loadActiveProject, loadProject } from '../projects/projects.ts'
 import { loadTask } from '../projects/tasks.ts'
 import { memberName, snapshotRates } from './rates.ts'
@@ -127,15 +127,6 @@ async function loadChangeableEntry(ctx: ActorContext, id: string): Promise<Entry
   const entry = await loadVisibleEntry(ctx, id, { lock: true })
   if (!isOwn(ctx, entry)) ctx.require('timeEntryAll:manage')
   return entry
-}
-
-async function organizationTimezone(ctx: ActorContext): Promise<string> {
-  const [org] = await ctx.tx
-    .select({ timezone: schema.organization.timezone })
-    .from(schema.organization)
-    .where(eq(schema.organization.id, ctx.organizationId))
-    .limit(1)
-  return org?.timezone ?? 'UTC'
 }
 
 /** The person a timer belongs to. System and job actors have no time of their own. */

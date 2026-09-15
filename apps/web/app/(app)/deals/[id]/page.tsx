@@ -1,10 +1,11 @@
 import { minorToDecimalString } from '@workloom/core'
-import { activityList, contactList, dealGet } from '@workloom/core/modules'
-import { Alert, Card, CardHeader } from '@workloom/ui'
+import { activityList, contactList, dealGet, quoteList } from '@workloom/core/modules'
+import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LogActivityForm, Timeline } from '@/components/crm/activity'
 import { ArchivedBadge, DealStageBadge } from '@/components/crm/badges'
+import { QuoteStatusBadge } from '@/components/finance/badges'
 import { ArchiveControl, DealStageControl, EditDealForm } from '@/components/crm/record-forms'
 import { formatDate } from '@/lib/format'
 import { memberChoices, money, organizationSettings, timeline } from '@/lib/server/crm'
@@ -19,9 +20,10 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
   const can = (p: Parameters<typeof viewer.permissions.has>[0]) => viewer.permissions.has(p)
 
   const [deal, members, settings] = await Promise.all([call(dealGet, { id }), memberChoices(), organizationSettings()])
-  const [activities, contacts] = await Promise.all([
+  const [activities, contacts, quotes] = await Promise.all([
     can('activity:read') ? call(activityList, { dealId: id, limit: 100 }) : null,
     can('deal:update') && can('contact:read') ? call(contactList, { companyId: deal.companyId, limit: 100 }) : null,
+    can('quote:read') ? call(quoteList, { dealId: id, limit: 50 }) : null,
   ])
   const returnTo = `/deals/${id}`
   const live = !deal.archivedAt
@@ -89,6 +91,34 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
               )}
             </div>
           </Card>
+
+          {quotes && (
+            <Card>
+              <CardHeader
+                title="Quotes"
+                action={live && can('quote:create') && deal.stage !== 'lost' ? <Link href={`/quotes/new?dealId=${deal.id}`} className="text-sm font-medium hover:underline">Create quote</Link> : null}
+              />
+              {quotes.data.length === 0 ? (
+                <EmptyState>No quotes for this deal.</EmptyState>
+              ) : (
+                <Table>
+                  <thead><tr><Th>Quote</Th><Th>Status</Th><Th className="text-right">Total</Th></tr></thead>
+                  <tbody>
+                    {quotes.data.map((q) => (
+                      <tr key={q.id}>
+                        <Td>
+                          <Link href={`/quotes/${q.id}`} className="font-medium hover:underline">{q.title}</Link>
+                          <div className="text-xs text-neutral-500">{q.number ?? 'Draft'}</div>
+                        </Td>
+                        <Td><QuoteStatusBadge status={q.status} /></Td>
+                        <Td className="whitespace-nowrap text-right tabular-nums">{money(q.totalMinor, q.currency)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+          )}
         </div>
 
         {activities && (

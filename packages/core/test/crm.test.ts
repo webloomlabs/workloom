@@ -491,7 +491,7 @@ describe('the client view', () => {
     expect(section(summary, 'deals')).toMatchObject({ status: 'available', count: 4 })
     expect(section(summary, 'activity')).toMatchObject({ status: 'available', count: 2 })
     expect(section(summary, 'projects')).toMatchObject({ status: 'available', count: 0 })
-    expect(section(summary, 'quotes')).toMatchObject({ status: 'upcoming', count: null })
+    expect(section(summary, 'quotes')).toMatchObject({ status: 'available', count: 0 })
     expect(section(summary, 'invoices')).toMatchObject({ status: 'upcoming', count: null })
     expect(section(summary, 'support')).toMatchObject({ status: 'planned', count: null })
 

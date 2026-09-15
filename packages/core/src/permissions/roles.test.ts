@@ -61,6 +61,9 @@ describe('separation of duties', () => {
 
     ['accountManager', 'payment:create', false, 'recording money received is a finance duty'],
     ['accountManager', 'quote:send', true, 'account managers quote'],
+    ['accountManager', 'taxRate:read', true, 'and choose the tax on each line'],
+    ['accountManager', 'taxRate:create', false, 'but tax configuration is a finance duty'],
+    ['developer', 'quote:read', false, 'quotes are commercial terms'],
     ['accountManager', 'lead:convert', true, 'and convert won work'],
 
     ['manager', 'report:readFinancial', true, 'judging a project requires its margin'],

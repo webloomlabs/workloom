@@ -10,6 +10,8 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     { href: '/settings/organization', label: 'Organization', permission: 'organization:read' },
     { href: '/settings/members', label: 'Members', permission: 'member:read' },
     { href: '/settings/rates', label: 'Rates', permission: 'report:readFinancial' },
+    { href: '/settings/services', label: 'Services', permission: 'service:read' },
+    { href: '/settings/tax-rates', label: 'Tax rates', permission: 'taxRate:read' },
     { href: '/settings/api-keys', label: 'API keys', permission: 'apiKey:read' },
     { href: '/settings/webhooks', label: 'Webhooks', permission: 'webhook:read' },
     { href: '/settings/audit-log', label: 'Audit log', permission: 'auditLog:read' },

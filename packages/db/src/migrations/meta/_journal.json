@@ -78,6 +78,20 @@
       "when": 1789480804152,
       "tag": "0010_time_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789483395166,
+      "tag": "0011_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789483395921,
+      "tag": "0012_finance_rls",
+      "breakpoints": true
     }
   ]
 }

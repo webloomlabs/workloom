@@ -144,6 +144,16 @@ export async function baseCurrency(ctx: ActorContext): Promise<string> {
   return org?.baseCurrency ?? 'AUD'
 }
 
+/** The organization's IANA time zone, which decides what "today" is. */
+export async function organizationTimezone(ctx: ActorContext): Promise<string> {
+  const [org] = await ctx.tx
+    .select({ timezone: schema.organization.timezone })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, ctx.organizationId))
+    .limit(1)
+  return org?.timezone ?? 'UTC'
+}
+
 /** The constraint a Postgres error violated, looking through driver wrappers. */
 export function violatedConstraint(error: unknown): string | undefined {
   let current = error as { code?: string; constraint?: string; cause?: unknown } | undefined

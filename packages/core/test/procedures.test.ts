@@ -156,6 +156,31 @@ async function stopTimer(): Promise<void> {
   await run('timer.stop', ownerOfA(), {}).catch(() => undefined)
 }
 
+async function createTaxRate(): Promise<string> {
+  const taxRate = (await run('taxRate.create', ownerOfA(), { name: `Tax ${unique()}`, rate: '10' })) as { id: string }
+  return taxRate.id
+}
+
+async function createService(): Promise<string> {
+  const service = (await run('service.create', ownerOfA(), { name: `Service ${unique()}`, defaultPriceMinor: 100_00, defaultTaxRateId: await createTaxRate() })) as { id: string }
+  return service.id
+}
+
+async function createQuote(): Promise<string> {
+  const quote = (await run('quote.create', ownerOfA(), {
+    companyId: await createCompany(),
+    title: `Quote ${unique()}`,
+    lines: [{ description: 'Discovery workshop', unitAmountMinor: 2_000_00 }],
+  })) as { id: string }
+  return quote.id
+}
+
+async function sentQuote(): Promise<string> {
+  const id = await createQuote()
+  await run('quote.send', ownerOfA(), { id })
+  return id
+}
+
 const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
 
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
@@ -365,6 +390,36 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     return { id: started.entry.id }
   },
 
+  'taxRate.create': async () => ({ name: `GST ${unique()}`, rate: '10' }),
+  'taxRate.update': async () => ({ id: await createTaxRate(), description: `changed ${unique()}` }),
+  'taxRate.archive': async () => ({ id: await createTaxRate() }),
+  'taxRate.restore': async () => archived('taxRate.archive', await createTaxRate()),
+  'service.create': async () => ({ name: `Design ${unique()}`, pricingModel: 'hourly', unit: 'hour', defaultPriceMinor: 150_00, defaultTaxRateId: await createTaxRate() }),
+  'service.update': async () => ({ id: await createService(), description: `changed ${unique()}` }),
+  'service.archive': async () => ({ id: await createService() }),
+  'service.restore': async () => archived('service.archive', await createService()),
+
+  'quote.create': async () => ({
+    companyId: await createCompany(),
+    title: 'Website rebuild',
+    lines: [{ serviceId: await createService(), quantity: '12.5' }, { description: 'Hosting setup', unitAmountMinor: 500_00, taxRateId: await createTaxRate() }],
+  }),
+  'quote.update': async () => ({ id: await createQuote(), title: `Retitled ${unique()}`, discountPercent: '5' }),
+  'quote.delete': async () => ({ id: await createQuote() }),
+  'quote.send': async () => ({ id: await createQuote() }),
+  'quote.accept': async () => ({ id: await sentQuote() }),
+  'quote.decline': async () => ({ id: await sentQuote(), reason: 'Budget moved to next year' }),
+  'quote.duplicate': async () => ({ id: await sentQuote() }),
+  'quoteLine.add': async () => ({ id: await createQuote(), serviceId: await createService(), quantity: 3 }),
+  'quoteLine.update': async () => {
+    const quote = (await run('quote.get', ownerOfA(), { id: await createQuote() })) as { lines: Array<{ id: string }> }
+    return { id: quote.lines[0]!.id, quantity: `${2 + (Number.parseInt(unique(), 16) % 50)}` }
+  },
+  'quoteLine.remove': async () => {
+    const quote = (await run('quote.get', ownerOfA(), { id: await createQuote() })) as { lines: Array<{ id: string }> }
+    return { id: quote.lines[0]!.id }
+  },
+
   'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
   'attachment.delete': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
@@ -394,6 +449,9 @@ const READS: Record<string, Fixture> = {
   'timeEntry.get': async () => ({ id: await createEntry() }),
   'timeEntry.list': async () => ({ projectId: await createProject() }),
   'timeEntry.summary': async () => ({ id: await createProject() }),
+  'service.get': async () => ({ id: await createService() }),
+  'quote.get': async () => ({ id: await createQuote() }),
+  'quote.list': async () => ({ companyId: await createCompany() }),
   'attachment.download': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
     return { id: attachment.id }
@@ -477,7 +535,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId']
+const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {

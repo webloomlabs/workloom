@@ -5,6 +5,7 @@ import {
   contactList,
   dealList,
   projectList,
+  quoteList,
   type ClientSectionKey,
 } from '@workloom/core/modules'
 import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
@@ -16,6 +17,7 @@ import { ArchivedBadge, DealStageBadge, LifecycleBadge } from '@/components/crm/
 import { Pager, param } from '@/components/crm/list-controls'
 import { ArchiveControl, CreateContactForm, EditCompanyForm } from '@/components/crm/record-forms'
 import { SectionTabs, type SectionTab } from '@/components/crm/section-tabs'
+import { QuoteStatusBadge } from '@/components/finance/badges'
 import { ProgressBar, ProjectStatusBadge } from '@/components/projects/badges'
 import { formatDate } from '@/lib/format'
 import { memberChoices, money, organizationSettings, timeline } from '@/lib/server/crm'
@@ -52,7 +54,7 @@ const SECTION_CONTENT: Record<ClientSectionKey, ((ctx: Context) => Promise<React
   deals: Deals,
   activity: Activity,
   projects: Projects,
-  quotes: null,
+  quotes: Quotes,
   invoices: null,
   payments: null,
   expenses: null,
@@ -376,6 +378,40 @@ async function Projects({ id, summary, can, cursor, members }: Context) {
         </Table>
       )}
       <Pager base={`/companies/${id}`} params={{ tab: 'projects' }} cursor={cursor} nextCursor={projects.nextCursor} />
+    </Card>
+  )
+}
+
+async function Quotes({ id, summary, can, cursor }: Context) {
+  const quotes = await call(quoteList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Quotes"
+        action={live && can('quote:create') ? <Link href={`/quotes/new?companyId=${id}`} className="text-sm font-medium hover:underline">New quote</Link> : null}
+      />
+      {quotes.data.length === 0 ? (
+        <EmptyState>No quotes yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Quote</Th><Th>Status</Th><Th className="text-right">Total</Th><Th>Valid until</Th></tr></thead>
+          <tbody>
+            {quotes.data.map((q) => (
+              <tr key={q.id}>
+                <Td>
+                  <Link href={`/quotes/${q.id}`} className="font-medium hover:underline">{q.title}</Link>
+                  <div className="text-xs text-neutral-500">{q.number ?? 'Draft'}</div>
+                </Td>
+                <Td><QuoteStatusBadge status={q.status} /></Td>
+                <Td className="whitespace-nowrap text-right tabular-nums">{money(q.totalMinor, q.currency)}</Td>
+                <Td className="whitespace-nowrap text-neutral-500">{formatDate(q.validUntil)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'quotes' }} cursor={cursor} nextCursor={quotes.nextCursor} />
     </Card>
   )
 }

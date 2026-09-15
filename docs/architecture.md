@@ -361,6 +361,8 @@ shipped section has nothing counting its records.
   `queryFlag.optional()` turned an omitted field into `false`, so editing a
   client-visible task quietly unpublished it. Use `optionalFlag` from
   `modules/crm/shared.ts` for fields where absent means "unchanged" or "no filter".
+- **A `CardHeader` action must be able to wrap.** A header whose action held filter tabs
+  and a search box was a few pixels wider than a phone. The header now wraps.
 - **A screen-reader-only label escapes a scroll container that is not positioned.**
   `sr-only` is `position: absolute`; its containing block is the nearest positioned
   ancestor, not the `overflow-x-auto` box, so it can widen the page. The shared
@@ -414,6 +416,40 @@ Over the API, an amount is a JSON integer of minor units with its currency
 arithmetic in `packages/core/src/money/currency.ts`, which knows each currency's
 exponent: JPY has no minor unit and KWD has three.
 
-Details of the `Money` primitive, tax calculation, and multi-currency handling
-land with S7a, specified by a golden-fixture file written before the
-implementation.
+### Arithmetic
+
+`packages/core/src/money/money.ts` works in `bigint` throughout: intermediate
+products leave the safe-integer range long before results do. Division happens
+once, at the end, rounding half away from zero. Splitting a total across parts
+(`allocate`, `apportion`) uses largest remainder, so the parts always sum to the
+total and each is within one unit of its exact share. Quantities, percentages, and
+exchange rates are exact decimal strings, never floats: `numeric` columns, parsed
+to scaled integers, and accepted over the API as a string or a JSON number.
+
+### How a document adds up
+
+`packages/core/src/tax/calculate.ts` prices a quote (and, from S7b, an invoice). Its
+rules are specified by `tax/fixtures.ts`: 42 cases written by hand before the
+calculator, run against the calculator and against a quote stored and read back.
+In short: line amounts round per line; a document discount is shared among lines in
+proportion to their nets; tax rounds once per tax rate on that rate's total, then is
+apportioned back to lines, so line totals always sum to the document total.
+
+Totals and each line's computed amounts are **stored**, recalculated on every change
+to a draft. Each line keeps a snapshot of its tax's name and rate, and a tax rate's
+percentage cannot change once a document uses it.
+
+### Issued documents
+
+- **Numbers are gapless.** `document_sequences` holds the next number per organization
+  and kind, locked `FOR UPDATE` in the transaction that issues the document. A rollback
+  returns the number. Drafts have none.
+- **An issued document never changes.** The service refuses, and a trigger
+  (`workloom_quote_guard`, migration 0012) refuses too, even for a superuser. After
+  sending, only the status and the client's answer may change, and the comparison
+  covers the whole row, so a new column is frozen without being listed. Deleting a
+  sent quote is refused (409). The one exemption is a cascade from deleting the
+  organization.
+- **The exchange rate is captured when a document is issued**, with the base currency
+  at that moment and the total converted. There is no rate feed: the rate is 1 in the
+  base currency, and must be given otherwise.

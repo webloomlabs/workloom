@@ -86,6 +86,11 @@ describe('tenant tables', () => {
         'attachments',
         'time_entries',
         'default_rates',
+        'document_sequences',
+        'tax_rates',
+        'services',
+        'quotes',
+        'quote_lines',
       ]),
     )
   })

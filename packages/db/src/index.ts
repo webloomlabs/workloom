@@ -23,6 +23,7 @@ export {
   desc,
   count,
   sum,
+  max,
   countDistinct,
 } from 'drizzle-orm'
 export type { SQL } from 'drizzle-orm'
