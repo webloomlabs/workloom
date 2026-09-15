@@ -85,6 +85,48 @@ jobs:
             exit 1
           fi
 
+  build-and-e2e:
+    # Two things only a real build and a real browser catch: server modules
+    # leaking into client bundles (which the dev server reports as nothing more
+    # than a missing manifest), and flows that depend on emailed links.
+    name: build & browser journeys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: configure from .env.example, as a self-hoster would
+        run: |
+          cp .env.example .env
+          sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
+          sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
+          sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+      - run: docker compose -f docker-compose.dev.yml up -d --wait
+      - run: pnpm --filter @workloom/web exec next build
+      - name: start the app (migrates and verifies isolation on boot)
+        run: |
+          pnpm --filter @workloom/web exec next start > web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fs localhost:3000/api/health && break
+            sleep 2
+          done
+          curl -fs localhost:3000/api/health
+          grep -q "boot: tenant isolation verified" web.log
+      - run: pnpm --filter @workloom/e2e exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          CI: "true"
+      - if: failure()
+        run: cat web.log
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: tests/e2e/test-results
+
   clean-install:
     # The mechanical proof that a stranger can self-host this: a fresh
     # checkout, the documented commands, nothing else.

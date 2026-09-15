@@ -3,10 +3,18 @@ import type { NextConfig } from 'next'
 const config: NextConfig = {
   // Workspace packages ship TypeScript source rather than a build artifact,
   // so there is no build step in the dev loop. Next compiles them itself.
-  transpilePackages: ['@workloom/config', '@workloom/db', '@workloom/storage'],
+  transpilePackages: [
+    '@workloom/config',
+    '@workloom/db',
+    '@workloom/storage',
+    '@workloom/core',
+    '@workloom/auth',
+    '@workloom/emails',
+    '@workloom/ui',
+  ],
   outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
   // The Postgres driver is native and must not be bundled.
-  serverExternalPackages: ['pg'],
+  serverExternalPackages: ['pg', 'nodemailer'],
 }
 
 export default config

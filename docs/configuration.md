@@ -19,7 +19,7 @@ See [.env.example](../.env.example) for the annotated list.
 | `DATABASE_URL` | Must **not** be a superuser — see [Architecture](architecture.md). |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` |
 | `WORKLOOM_ENCRYPTION_KEY` | 32 bytes, base64. Encrypts webhook signing secrets and integration credentials at rest. **Back it up** — losing it makes those secrets unrecoverable. |
-| `SMTP_HOST`, `MAIL_FROM` | Invitations and invoice delivery depend on mail. |
+| `SMTP_HOST`, `MAIL_FROM` | Invitations, email confirmation, password resets and invoice delivery depend on mail. `SMTP_HOST` is required while `MAIL_DRIVER` is `smtp`. |
 
 ## Optional
 
@@ -28,5 +28,7 @@ See [.env.example](../.env.example) for the annotated list.
 | `REDIS_URL` | unset | Queues and rate limiting run on Postgres by default. Redis is an opt-in upgrade for larger installations, not a requirement. |
 | `STORAGE_DRIVER` | `local` | `local` or `s3`. S3 requires `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. |
 | `DATABASE_POOL_SIZE` | `10` | Per process. |
+| `MAIL_DRIVER` | `smtp` | `smtp` delivers mail. `memory` keeps messages in the process for tests to inspect, and is rejected in production — invitations would silently never arrive. |
+| `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` | `587`, unset, unset, `false` | Standard SMTP settings. |
 | `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` | `false` | Webhook URLs resolving to loopback, private, or link-local addresses are rejected. Workloom usually runs inside a private network, where such a URL is an SSRF vector against internal services. |
 | `DANGEROUSLY_ALLOW_SUPERUSER_DB` | `false` | Lets the app boot despite failing isolation checks. Rejected outright in production. For tooling only. |

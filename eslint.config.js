@@ -2,94 +2,168 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
 /**
- * The architectural rules that reviewers should not have to remember.
+ * Lint configuration.
  *
- * Two of these guard invariants that are otherwise enforced only by
- * convention -- and convention does not survive a growing codebase, a
- * background worker, a CLI, and future contributors.
+ * Most of this file is not style. The `no-restricted-imports` blocks encode the
+ * architecture: which layers may reach the database, and which may not reach
+ * each other. Each boundary exists because crossing it breaks a guarantee that
+ * is otherwise easy to lose without noticing:
+ *
+ *   - The unscoped `db` handle and `withoutTenant` bypass tenant scoping. Every
+ *     use outside the allowlist below is a potential cross-tenant query.
+ *   - `drizzle-orm` and `pg` stay behind @workloom/db, so data access has one
+ *     home and one place to audit.
+ *   - @workloom/core never imports @workloom/auth. That is what lets the same
+ *     business logic run from HTTP, background jobs, and tests.
+ *   - The web app does not query the database. Transport code that reads data
+ *     directly is business logic the public API cannot reach.
+ *
+ * ESLint applies the LAST matching block for a given rule, so blocks run from
+ * general to specific.
  */
+
+const DRIZZLE_AND_DRIVER = [
+  { name: 'drizzle-orm', message: 'Import query helpers from @workloom/db instead.' },
+  { name: 'pg', message: 'Database connections belong to @workloom/db.' },
+]
+const DRIZZLE_PATTERNS = [
+  { group: ['drizzle-orm/*'], message: 'Import query helpers from @workloom/db instead.' },
+]
+
+const UNSCOPED_DB = {
+  name: '@workloom/db',
+  importNames: ['db', 'withoutTenant', 'getPool'],
+  message:
+    'The unscoped handle bypasses tenant isolation. Use withTenant(), or a procedure ' +
+    'context (ctx.tx). If this really is instance-wide work, it belongs on the allowlist ' +
+    'in eslint.config.js and in docs/architecture.md.',
+}
+
+const restrict = (paths, patterns = DRIZZLE_PATTERNS) => ({
+  'no-restricted-imports': ['error', { paths, patterns }],
+})
+
 export default tseslint.config(
-  { ignores: ['**/node_modules/**', '**/.next/**', '**/dist/**', '**/.turbo/**'] },
+  {
+    ignores: [
+      '**/node_modules/**',
+      '**/.next/**',
+      '**/dist/**',
+      '**/.turbo/**',
+      'packages/db/src/migrations/**',
+      '**/next-env.d.ts',
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
 
   {
     rules: {
-      '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
+      ],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        // `typeof import('...')` stays allowed: integration tests load modules
+        // lazily, after the test database's environment is in place.
+        { fixStyle: 'inline-type-imports', disallowTypeAnnotations: false },
       ],
     },
   },
 
-  /**
-   * Rule 1: the unscoped database client is off limits.
-   *
-   * Tenant data is reached through `withTenant`, which opens the transaction
-   * that row-level security filters against. A query issued on the raw client
-   * has no organization scope. The allowlist below is exhaustive and each
-   * entry is documented in docs/architecture.
-   */
+  // Default for all source: no driver, no ORM, no unscoped handle.
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: [
-      'packages/db/**',
-      'packages/auth/**',
-      'apps/worker/src/outbox/**',
-      'apps/web/instrumentation.ts',
-    ],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@workloom/db',
-              importNames: ['db', 'getPool'],
-              message:
-                'Reach tenant data through withTenant(orgId, ...) instead. The raw client has ' +
-                'no organization scope, so row-level security filters it to nothing -- and a ' +
-                'query that appears to work is one that has escaped the tenant boundary.',
-            },
-          ],
-        },
-      ],
-    },
+    rules: restrict([...DRIZZLE_AND_DRIVER, UNSCOPED_DB]),
+  },
+
+  // Core is domain logic: additionally, it must not know how requests arrive.
+  {
+    files: ['packages/core/src/**/*.ts'],
+    rules: restrict([
+      ...DRIZZLE_AND_DRIVER,
+      UNSCOPED_DB,
+      {
+        name: '@workloom/auth',
+        message:
+          'core must not depend on auth. Services receive an ActorContext; they never build one.',
+      },
+    ]),
+  },
+
+  // The web app is transport. It calls procedures; it does not query.
+  {
+    files: ['apps/web/**/*.ts', 'apps/web/**/*.tsx'],
+    rules: restrict([
+      ...DRIZZLE_AND_DRIVER,
+      {
+        name: '@workloom/db',
+        message:
+          'The web app is a transport layer. Call a procedure from @workloom/core/registry ' +
+          'so the operation is also available through the public API and the audit trail.',
+      },
+    ]),
   },
 
   /**
-   * Rule 2: transports carry no business logic.
-   *
-   * A Server Action that implements behaviour rather than delegating to a
-   * service silently removes that behaviour from the public REST API and from
-   * the audit log. Route handlers and actions may only call into the
-   * procedure registry.
+   * Client components run in the browser. Importing server packages here does
+   * not fail typechecking -- it fails the build, or worse, ships a database
+   * driver and email transport to every visitor. Server Actions are fine to
+   * import: Next replaces them with references.
    */
   {
-    files: ['apps/web/app/api/**/*.ts', 'apps/web/lib/actions/**/*.ts'],
-    ignores: ['apps/web/app/api/health/**', 'apps/web/app/api/auth/**'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@workloom/db', '@workloom/db/*'],
-              message:
-                'Transports build an ActorContext and call a registered procedure; they do not ' +
-                'query the database. Put the logic in packages/core so the UI, the REST API, ' +
-                'the worker and the CLI all share it.',
-            },
-          ],
-        },
+    files: ['apps/web/components/**/*.tsx', 'apps/web/components/**/*.ts'],
+    rules: restrict(
+      [
+        ...DRIZZLE_AND_DRIVER,
+        { name: '@workloom/db', message: 'Server-only. Pass data in as props.' },
+        { name: '@workloom/auth', message: 'Server-only. Pass data in as props.' },
+        { name: '@workloom/core', message: 'Server-only. @workloom/core/permissions is safe to import.' },
+        { name: '@workloom/core/modules', message: 'Server-only. Call a Server Action instead.' },
+        { name: '@workloom/core/registry', message: 'Server-only. Call a Server Action instead.' },
+        { name: '@/lib/actions/errors', message: 'Server-only.' },
       ],
+      [...DRIZZLE_PATTERNS, { group: ['@/lib/server/*'], message: 'Server-only. Pass data in as props.' }],
+    ),
+  },
+
+  /**
+   * The allowlist for the unscoped handle. Every entry is instance-wide by
+   * nature, and each is described in docs/architecture.md:
+   *
+   *   packages/auth       Better Auth's tables are not tenant-scoped.
+   *   rate-limit.ts       Counters are keyed by opaque strings, not tenants.
+   *   worker outbox       Enumerates organizations, then scopes per org (S2).
+   *   health, boot        Report on the database itself.
+   *   auth route          Hands requests to Better Auth, which owns its tables.
+   */
+  {
+    files: [
+      'packages/auth/src/**/*.ts',
+      'packages/core/src/rate-limit.ts',
+      'apps/worker/src/outbox/**/*.ts',
+      'apps/web/app/api/health/**/*.ts',
+      'apps/web/app/api/auth/**/*.ts',
+      'apps/web/instrumentation.ts',
+    ],
+    rules: restrict(DRIZZLE_AND_DRIVER),
+  },
+
+  // Tests set up and inspect fixtures across organizations, so they may use
+  // the unscoped handle -- but still not the driver or the ORM directly.
+  {
+    files: ['**/test/**/*.ts', '**/*.test.ts'],
+    rules: {
+      ...restrict(DRIZZLE_AND_DRIVER),
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 
+  // The data layer itself.
   {
-    files: ['**/*.test.ts', 'packages/db/test/**'],
-    rules: { 'no-restricted-imports': 'off', '@typescript-eslint/no-explicit-any': 'off' },
+    files: ['packages/db/**/*.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 )

@@ -7,16 +7,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@workloom/auth": "workspace:*",
     "@workloom/config": "workspace:*",
+    "@workloom/core": "workspace:*",
     "@workloom/db": "workspace:*",
     "@workloom/storage": "workspace:*",
+    "@workloom/ui": "workspace:*",
+    "hono": "^4.13.7",
     "next": "^16.3.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

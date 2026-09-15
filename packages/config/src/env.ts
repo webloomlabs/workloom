@@ -57,7 +57,12 @@ const schema = z
      */
     REDIS_URL: z.url().optional(),
 
-    SMTP_HOST: z.string().min(1),
+    /**
+     * `smtp` delivers mail. `memory` keeps sent messages in process for tests
+     * to inspect, and is refused in production.
+     */
+    MAIL_DRIVER: z.enum(['smtp', 'memory']).default('smtp'),
+    SMTP_HOST: z.string().min(1).optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(587),
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
@@ -91,6 +96,16 @@ const schema = z
           })
         }
       }
+    }
+    if (v.MAIL_DRIVER === 'smtp' && !v.SMTP_HOST) {
+      ctx.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'required when MAIL_DRIVER is "smtp"' })
+    }
+    if (v.NODE_ENV === 'production' && v.MAIL_DRIVER === 'memory') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MAIL_DRIVER'],
+        message: 'cannot be "memory" in production -- invitations and invoices would silently never send',
+      })
     }
     if (v.NODE_ENV === 'production' && v.DANGEROUSLY_ALLOW_SUPERUSER_DB) {
       ctx.addIssue({

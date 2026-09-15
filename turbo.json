@@ -11,11 +11,6 @@
         "dist/**"
       ]
     },
-    "lint": {
-      "dependsOn": [
-        "^lint"
-      ]
-    },
     "dev": {
       "cache": false,
       "persistent": true

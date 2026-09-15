@@ -81,7 +81,7 @@ export async function loadDbWithEnv(databaseUrl: string) {
   process.env.APP_URL ??= 'http://localhost:3000'
   process.env.BETTER_AUTH_SECRET ??= 'a'.repeat(32)
   process.env.WORKLOOM_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString('base64')
-  process.env.SMTP_HOST ??= 'localhost'
+  process.env.MAIL_DRIVER = 'memory'
   process.env.MAIL_FROM ??= 'test@example.com'
   return import('../src/index.ts')
 }

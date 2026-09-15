@@ -29,6 +29,14 @@ export function getPool(): pg.Pool {
   return pool
 }
 
+export type Database = ReturnType<typeof createDatabase>
+
+function createDatabase() {
+  return drizzle(getPool(), { schema, casing: 'snake_case' })
+}
+
+let instance: Database | undefined
+
 /**
  * The unscoped database handle.
  *
@@ -40,12 +48,26 @@ export function getPool(): pg.Pool {
  * Legitimate callers: migrations, Better Auth (whose tables are not tenant
  * -scoped), the outbox dispatcher (which enumerates organizations), and the
  * boot-time isolation self-test.
+ *
+ * Resolved lazily, on first use. Opening a connection pool as a side effect of
+ * an `import` is a trap: any module that merely wants a type or a helper binds
+ * the pool to whatever DATABASE_URL happened to be set at load time. In tests
+ * that silently pointed at the developer's own database instead of the
+ * throwaway one -- which looks like passing tests until the data collides.
  */
-export const db = drizzle(getPool(), { schema, casing: 'snake_case' })
-
-export type Database = typeof db
+export const db: Database = new Proxy({} as Database, {
+  get(_, property, receiver) {
+    instance ??= createDatabase()
+    return Reflect.get(instance, property, receiver)
+  },
+  has(_, property) {
+    instance ??= createDatabase()
+    return Reflect.has(instance, property)
+  },
+})
 
 export async function closePool(): Promise<void> {
   await pool?.end()
   pool = undefined
+  instance = undefined
 }

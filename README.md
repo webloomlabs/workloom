@@ -6,8 +6,9 @@ Workloom connects the operational lifecycle of an agency into one system —
 `Lead → Client → Proposal → Project → Tasks → Invoice → Payment → Maintenance` —
 so that a project is never separated from the commercial context around it.
 
-> **Status: pre-release.** The platform skeleton (S0) is in place. Identity and
-> tenancy land in S1. See [Roadmap.md](Roadmap.md) for what MVP contains.
+> **Status: pre-release.** The platform skeleton (S0) and identity and tenancy
+> (S1) are in place: accounts, organizations, invitations, roles, API keys, and
+> an audit log. The CRM arrives in S3. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 
@@ -41,6 +42,7 @@ pnpm typecheck        # the only type gate — packages ship source, not builds
 pnpm lint
 pnpm test             # everything
 pnpm test:isolation   # tenant isolation only
+pnpm test:e2e         # browser journeys against a running app (pnpm dev)
 pnpm db:generate      # generate a migration from the schema
 pnpm services:down
 ```
@@ -60,6 +62,7 @@ tell you.
 
 - [Architecture](docs/architecture.md) — tenant isolation, money, events
 - [Configuration](docs/configuration.md) — every environment variable
+- API reference — served by a running instance at `/api/v1/openapi.json`
 - [Roadmap](Roadmap.md)
 
 ## Licence

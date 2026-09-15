@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Tailwind only scans this app by default; the shared components live elsewhere. */
+@source '../../../packages/ui/src';
+
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }

@@ -2,6 +2,16 @@ import { sql } from 'drizzle-orm'
 import { db, type Database } from './client.ts'
 
 /**
+ * Anything that can run a query.
+ *
+ * Deliberately structural rather than the full `Database` type: the checks
+ * only ever issue raw introspection SQL, and the superuser-refusal test needs
+ * to pass in a handle built on a different connection (and without the schema
+ * generic) to prove the gate fires.
+ */
+export type IsolationHandle = Pick<Database, 'execute'>
+
+/**
  * Tenant-isolation invariants.
  *
  * Run at boot (see apps/web/instrumentation.ts) and as a dedicated CI job.
@@ -27,7 +37,6 @@ const UNSCOPED_TABLES = [
   'organization',
   'member',
   'invitation',
-  'apikey',
   '__drizzle_migrations',
 ] as const
 
@@ -36,7 +45,7 @@ export type IsolationViolation = { check: string; object: string; detail: string
 const excluded = sql.raw(UNSCOPED_TABLES.map((t) => `'${t}'`).join(', '))
 
 /** The connection must not be a superuser: superusers bypass RLS outright. */
-async function checkNotSuperuser(handle: Database): Promise<IsolationViolation[]> {
+async function checkNotSuperuser(handle: IsolationHandle): Promise<IsolationViolation[]> {
   const { rows } = await handle.execute<{ is_superuser: boolean; role: string }>(
     sql`select current_setting('is_superuser') = 'on' as is_superuser, current_user as role`,
   )
@@ -55,7 +64,7 @@ async function checkNotSuperuser(handle: Database): Promise<IsolationViolation[]
 }
 
 /** Every table with organization_id has RLS enabled AND forced. */
-async function checkRlsEnabled(handle: Database): Promise<IsolationViolation[]> {
+async function checkRlsEnabled(handle: IsolationHandle): Promise<IsolationViolation[]> {
   const { rows } = await handle.execute<{ table: string; enabled: boolean; forced: boolean }>(sql`
     select c.relname as table, c.relrowsecurity as enabled, c.relforcerowsecurity as forced
     from pg_class c
@@ -78,7 +87,7 @@ async function checkRlsEnabled(handle: Database): Promise<IsolationViolation[]> 
 }
 
 /** Every tenant table has a policy covering all four verbs. */
-async function checkPolicies(handle: Database): Promise<IsolationViolation[]> {
+async function checkPolicies(handle: IsolationHandle): Promise<IsolationViolation[]> {
   const { rows } = await handle.execute<{ table: string; commands: string }>(sql`
     select c.relname as table,
            coalesce(string_agg(distinct p.polcmd::text, ','), '') as commands
@@ -104,7 +113,7 @@ async function checkPolicies(handle: Database): Promise<IsolationViolation[]> {
 }
 
 /** Every tenant table has an index leading with organization_id. */
-async function checkIndexes(handle: Database): Promise<IsolationViolation[]> {
+async function checkIndexes(handle: IsolationHandle): Promise<IsolationViolation[]> {
   const { rows } = await handle.execute<{ table: string }>(sql`
     select c.relname as table
     from pg_class c
@@ -135,7 +144,7 @@ async function checkIndexes(handle: Database): Promise<IsolationViolation[]> {
  * bypasses every tenant policy. Nothing about it looks wrong, and a test that
  * exercises a single organization sees entirely correct data.
  */
-async function checkViews(handle: Database): Promise<IsolationViolation[]> {
+async function checkViews(handle: IsolationHandle): Promise<IsolationViolation[]> {
   const { rows } = await handle.execute<{ view: string }>(sql`
     select c.relname as view
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -152,7 +161,7 @@ async function checkViews(handle: Database): Promise<IsolationViolation[]> {
 }
 
 export async function findIsolationViolations(
-  handle: Database = db,
+  handle: IsolationHandle = db,
 ): Promise<IsolationViolation[]> {
   const results = await Promise.all([
     checkNotSuperuser(handle),
@@ -184,7 +193,7 @@ export class IsolationError extends Error {
  * self-hoster pointing DATABASE_URL at the superuser their platform handed
  * them. Failing loudly at boot is what closes that gap.
  */
-export async function assertIsolationIntact(handle: Database = db): Promise<void> {
+export async function assertIsolationIntact(handle: IsolationHandle = db): Promise<void> {
   const violations = await findIsolationViolations(handle)
   if (violations.length > 0) throw new IsolationError(violations)
 }

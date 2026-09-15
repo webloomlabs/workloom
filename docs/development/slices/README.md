@@ -32,8 +32,8 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | Slice | State |
 | --- | --- |
 | [S0 — Platform skeleton](S0.md) | Done |
-| S1 — Identity & tenancy | Next |
-| S2 — Outbox, events, webhooks | |
+| [S1 — Identity & tenancy](S1.md) | Done |
+| S2 — Outbox, events, webhooks | Next |
 | S3 — CRM | |
 | S4 — Client view | |
 | S5 — Projects, milestones, tasks | |
