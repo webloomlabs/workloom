@@ -22,6 +22,7 @@ export {
   type RateLimitDecision,
 } from './rate-limit.ts'
 export * from './permissions/index.ts'
+export * from './reports/margin.ts'
 export * from './events/index.ts'
 export * from './webhooks/index.ts'
 export {

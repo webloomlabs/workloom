@@ -6,6 +6,7 @@ import {
   companyList,
   milestoneList,
   projectGet,
+  projectFinancials,
   projectMemberList,
   taskList,
   timeEntryList,
@@ -52,7 +53,7 @@ type Context = {
   members: Awaited<ReturnType<typeof memberChoices>>
 }
 
-const TABS = ['tasks', 'milestones', 'time', 'team', 'updates', 'files', 'details'] as const
+const TABS = ['tasks', 'milestones', 'time', 'financials', 'team', 'updates', 'files', 'details'] as const
 type Tab = (typeof TABS)[number]
 
 export default async function ProjectPage({ params, searchParams }: PageProps<'/projects/[id]'>) {
@@ -67,8 +68,8 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
   const context: Context = { project, can, selfId, timezone: settings.timezone, members }
   const base = `/projects/${id}`
 
-  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
-  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read' }
+  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', financials: 'Financials', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
+  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read', financials: 'report:readFinancial' }
   const tabs: SectionTab[] = TABS.filter((t) => !visible[t] || can(visible[t])).map((t) => ({
     key: t,
     label: labels[t],
@@ -77,7 +78,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
     ...(t === 'tasks' ? { count: project.progress.tasksTotal } : t === 'milestones' ? { count: project.progress.milestonesTotal } : {}),
   }))
 
-  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, team: Team, updates: Updates, files: Files, details: Details }
+  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, financials: Financials, team: Team, updates: Updates, files: Files, details: Details }
   const live = !project.archivedAt
 
   return (
@@ -231,6 +232,113 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
       <div className="text-lg font-semibold tabular-nums">{value}</div>
       {detail && <div className="text-xs text-neutral-500">{detail}</div>}
     </Card>
+  )
+}
+
+/**
+ * What the project earned and what it cost.
+ *
+ * Every figure is derived from what was stored when it happened: time at the
+ * rate it was logged at, revenue from the lines of issued invoices. Raising
+ * someone's rate today moves none of it.
+ */
+async function Financials({ project }: Context) {
+  const report = await call(projectFinancials, { id: project.id })
+
+  return (
+    <div className="space-y-6">
+      {report.currencies.map((figures) => {
+        const money_ = (minor: number) => money(minor, figures.currency)
+        const negative = figures.marginMinor < 0
+        return (
+          <div key={figures.currency} className="space-y-4">
+            {report.currencies.length > 1 && (
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{figures.currency}</h2>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Billed" value={money_(figures.billedMinor)} detail={`${money_(figures.collectedMinor)} collected`} />
+              <Stat label="Cost" value={money_(figures.costMinor)} detail={`${money_(figures.labourCostMinor)} time · ${money_(figures.expenseCostMinor)} expenses`} />
+              <Stat
+                label="Margin"
+                value={money_(figures.marginMinor)}
+                detail={figures.marginPercent === null ? 'Nothing billed yet' : `${figures.marginPercent}% of what was billed`}
+              />
+              <Stat
+                label="To invoice"
+                value={money_(figures.uninvoicedMinor)}
+                detail="Billable time nobody has billed yet"
+              />
+            </div>
+
+            {negative && figures.billedMinor > 0 && (
+              <Alert tone="warning">This project has cost more than it has billed.</Alert>
+            )}
+            {figures.entriesWithoutCostRate > 0 && (
+              <Alert tone="info">
+                {figures.entriesWithoutCostRate} time {figures.entriesWithoutCostRate === 1 ? 'entry has' : 'entries have'} no cost rate, so that
+                time is missing from the cost above. Set rates in Settings, then re-log or correct those entries.
+              </Alert>
+            )}
+
+            <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+              <Card>
+                <CardHeader title="Profit and loss" description="Over the whole life of the project." />
+                <dl className="space-y-2 p-5 text-sm" aria-label={`Profit and loss in ${figures.currency}`}>
+                  <Row label="Billed, excluding tax" value={money_(figures.billedMinor)} />
+                  <Row label="Time" value={`-${money_(figures.labourCostMinor)}`} />
+                  <Row label="Expenses" value={`-${money_(figures.expenseCostMinor)}`} />
+                  <div className={`flex justify-between gap-4 border-t border-neutral-200 pt-2 text-base font-semibold dark:border-neutral-800 ${negative ? 'text-red-600' : ''}`}>
+                    <dt>Margin</dt>
+                    <dd className="tabular-nums">{money_(figures.marginMinor)}</dd>
+                  </div>
+                  {figures.rebilledCostMinor > 0 && (
+                    <p className="pt-2 text-xs text-neutral-500">
+                      {money_(figures.rebilledCostMinor)} of those expenses was rebilled to the client, so it appears in both lines above and only
+                      the markup reaches the margin.
+                    </p>
+                  )}
+                </dl>
+              </Card>
+
+              <Card>
+                <CardHeader title="What the hours earned" />
+                <dl className="space-y-2 p-5 text-sm" aria-label={`Hours in ${figures.currency}`}>
+                  <Row label="Billable time" value={formatDuration(figures.billableSeconds)} />
+                  <Row label="Unbillable time" value={formatDuration(figures.nonBillableSeconds)} />
+                  <Row label="Billable share" value={figures.utilisationPercent === null ? '—' : `${figures.utilisationPercent}%`} />
+                  <Row
+                    label="Earned per hour tracked"
+                    value={figures.effectiveHourlyMinor === null ? '—' : money_(figures.effectiveHourlyMinor)}
+                  />
+                  <Row label="Still owed" value={money_(figures.outstandingMinor)} />
+                  {report.budgetMinor !== null && figures.currency === report.currency && (
+                    <Row
+                      label={`Budget of ${money_(report.budgetMinor)}`}
+                      value={report.budgetUsedPercent === null ? '—' : `${report.budgetUsedPercent}% spent`}
+                    />
+                  )}
+                </dl>
+              </Card>
+            </div>
+          </div>
+        )
+      })}
+      {report.currencies.length > 1 && (
+        <p className="text-xs text-neutral-500">
+          Nothing above is converted between currencies: an exchange rate is recorded only on a document when it is issued, and tracked time is not
+          a document.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-neutral-500">{label}</dt>
+      <dd className="tabular-nums">{value}</dd>
+    </div>
   )
 }
 

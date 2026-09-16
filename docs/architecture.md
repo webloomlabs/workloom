@@ -171,11 +171,25 @@ Point 5 is the sharpest edge in the design. A view over RLS-protected tables
 runs with its *owner's* privileges by default, silently bypassing every policy —
 and a test exercising a single organization still sees entirely correct data.
 
+**When that actually bites is narrower than it sounds, and worth knowing.**
+Isolation here is driven by a transaction-local setting, not by the connected
+role, so a view owned by the application role still applies the policy: the
+predicate compares `organization_id` against the same GUC either way. The danger
+is a view owned by a role that *outranks* the caller — which is what happens
+when migrations run as the database owner, the default on most hosting
+platforms. Such a view reads its base tables with that role's privileges, RLS
+does not apply, and every tenant sees every other tenant. A nested view is safe
+if the inner one carries the option: `security_invoker` resolves against the real
+session role, not the outer view's owner. The isolation suite proves all of this
+rather than asserting it — it builds the leaky view as a privileged role, reads
+another tenant's rows through it, then adds the option and watches them vanish.
+
 The checks are introspective rather than enumerated, so they cover tables that
 do not exist yet: adding a tenant table without a policy fails CI without
-anyone remembering to update a list. The suite includes a canary test that
-creates an unprotected table and asserts it *is* reported, so the suite cannot
-pass by silently checking nothing.
+anyone remembering to update a list. The suite includes canary tests that create
+an unprotected table and an unprotected view and assert both *are* reported, so
+it cannot pass by silently checking nothing. Views are probed for real rows as
+well as for the reloption, for the same reason.
 
 ## Identity and permissions
 
@@ -537,3 +551,45 @@ by the service and by `workloom_expense_guard`.
 - **The exchange rate is captured when a document is issued**, with the base currency
   at that moment and the total converted. There is no rate feed: the rate is 1 in the
   base currency, and must be given otherwise.
+
+## Profitability
+
+`project_financials_v` (migration 0018) is the one view in the system, and it
+answers one question: what did this project earn, and what did it cost?
+
+**Every figure is derived from what was stored when it happened.** Time is
+costed at the rate copied onto each entry when it was logged (S6), never at a
+rate resolved now; revenue comes from the lines of issued invoices, which cannot
+change once issued. That is why raising someone's pay today cannot move last
+quarter's margin — and the test that raises a rate and re-reads the margin is
+what keeps it true.
+
+**One row per project *and currency*, and nothing is converted.** The MVP
+records an exchange rate only on a document, and only when it is issued; a time
+entry is not a document and has no rate to be restated at. Converting at a rate
+nobody recorded would be a made-up number on a page about profit, so a project
+whose money spans currencies reports each separately. A project working in one
+currency — the normal case — reads as a single P&L.
+
+**Revenue is attributed line by line, not invoice by invoice.** An invoice can
+bill work from several projects, so the line is the unit: it belongs to the
+project of the time it billed, then to the project of the expense it rebilled,
+and only then to the invoice's own project. A payment settles the whole invoice,
+so each project takes its share in proportion to its lines; across projects
+those shares can differ from the invoice by a cent, and the report says so.
+Revenue no project claims is named in the revenue report rather than dropped.
+
+**Revenue excludes tax and cost excludes reclaimable tax**, so a rebilled
+expense appears as both a cost and revenue and only its markup reaches the
+margin — which is the point of rebilling.
+
+**A project's P&L covers its whole life; the revenue report covers a period.**
+They are different questions, so they are different queries: the view has no
+dates in it, and `report.revenue` reads the underlying tables. There, each
+figure is dated the way that thing is dated — an invoice by its issue date, a
+payment by the day the money moved, an expense by the day it was incurred, time
+by the day it was worked. Those are not the same calendar, and averaging them
+would put September's work against October's invoice.
+
+**Everything in S8 needs `report:readFinancial`.** `report:read`, which every
+role has, is left for non-financial dashboard metrics.

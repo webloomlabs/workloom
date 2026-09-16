@@ -127,6 +127,13 @@
       "when": 1789540010441,
       "tag": "0017_invoice_paid_check",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789540011441,
+      "tag": "0018_project_financials",
+      "breakpoints": true
     }
   ]
 }

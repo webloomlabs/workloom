@@ -14,8 +14,9 @@ so that a project is never separated from the commercial context around it.
 > tracking with timers, timesheets, and rates copied onto each entry (S6); quotes,
 > tax rates, and a service catalogue on an exact money and tax engine (S7a); invoices
 > with PDFs, email delivery, and a client link that records when it is opened (S7b);
-> and payments, refunds, expenses, and the overdue sweep (S7c).
-> Profitability and reporting arrive in S8. See [Roadmap.md](Roadmap.md).
+> payments, refunds, expenses, and the overdue sweep (S7c); and project
+> profitability and revenue reporting (S8).
+> The dashboard arrives in S9. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

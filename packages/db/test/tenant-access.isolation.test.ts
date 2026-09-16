@@ -11,7 +11,10 @@ import { captureError } from './errors.ts'
  * modify, delete, or forge rows belonging to org A.
  *
  * The table list is derived from the live database rather than hard-coded, so
- * a tenant table added in a later slice is probed automatically.
+ * a tenant table added in a later slice is probed automatically. Views are
+ * probed the same way: a view is where isolation is most easily lost, and a
+ * `security_invoker` reloption is a declaration, not a proof that no rows come
+ * back.
  */
 
 let database: TestDatabase
@@ -151,6 +154,106 @@ describe('cross-tenant access', () => {
                        where organization_id = ${ORG_A}::uuid`),
       )
       expect(rows[0], `${table} leaked rows from another organization`).toEqual({ count: 0 })
+    }
+  })
+})
+
+/** Views, discovered from the database, in the schema the application owns. */
+async function tenantViews(): Promise<string[]> {
+  const { rows } = await mod.withoutTenant('test: enumerate views', async (db) =>
+    db.execute<{ view: string }>(sql`
+      select c.relname as view
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind = 'v' and n.nspname = 'public'
+      order by c.relname
+    `),
+  )
+  return rows.map((r) => r.view)
+}
+
+/** A project of org A's, with an hour of time against it, so a report has something to leak. */
+async function seedProjectForA(): Promise<string> {
+  const companyId = crypto.randomUUID()
+  const projectId = crypto.randomUUID()
+  const userId = crypto.randomUUID()
+  await mod.withoutTenant('test setup: a user to log the time', async (db) => {
+    await db.execute(sql`insert into "user" (id, name, email) values (${userId}::uuid, 'A worker', ${`w-${userId.slice(0, 8)}@example.com`})`)
+  })
+  await mod.withTenant(ORG_A, async (tx) => {
+    await tx.execute(sql`insert into companies (id, organization_id, name) values (${companyId}::uuid, ${ORG_A}::uuid, 'A client')`)
+    await tx.execute(sql`
+      insert into projects (id, organization_id, company_id, name, currency)
+      values (${projectId}::uuid, ${ORG_A}::uuid, ${companyId}::uuid, 'A project', 'AUD')`)
+    await tx.execute(sql`
+      insert into time_entries (id, organization_id, user_id, project_id, spent_on, duration_seconds, billable, currency,
+                                cost_rate_minor, cost_rate_source)
+      values (${crypto.randomUUID()}::uuid, ${ORG_A}::uuid, ${userId}::uuid, ${projectId}::uuid, current_date, 3600, true, 'AUD',
+              5000, 'organization')`)
+  })
+  return projectId
+}
+
+describe('cross-tenant access through views', () => {
+  it('has views to probe, so the checks below are not vacuous', async () => {
+    expect(await tenantViews()).toContain('project_financials_v')
+  })
+
+  it('shows org A nothing of its own that org B can also see', async () => {
+    const projectId = await seedProjectForA()
+
+    const seenByA = await mod.withTenant(ORG_A, async (tx) =>
+      tx.execute(sql`select project_id from project_financials_v where project_id = ${projectId}::uuid`),
+    )
+    expect(seenByA.rows, 'org A cannot see its own project financials').toHaveLength(1)
+
+    for (const view of await tenantViews()) {
+      const { rows } = await mod.withTenant(ORG_B, async (tx) =>
+        tx.execute(sql`select count(*)::int as count from ${sql.identifier(view)}
+                       where organization_id = ${ORG_A}::uuid`),
+      )
+      expect(rows[0], `${view} leaked rows from another organization`).toEqual({ count: 0 })
+    }
+  })
+
+  it('leaks without security_invoker when its owner outranks the caller', async () => {
+    // Why the option matters, demonstrated rather than asserted.
+    //
+    // Isolation here is driven by a transaction-local setting, not by the
+    // connected role, so a view owned by the *application* role still applies
+    // the policy and shows nothing. The danger is a view created by a
+    // privileged role -- which is exactly what happens when migrations run as
+    // the database owner, the default on most hosting platforms. Such a view
+    // runs with that role's privileges, row-level security does not apply to
+    // it, and every tenant sees every other tenant.
+    const projectId = await seedProjectForA()
+    const pg = (await import('pg')).default
+    const admin = new pg.Client({ connectionString: database.adminUrl })
+    await admin.connect()
+    try {
+      // Over a base table, which is what a reporting view is written over. A
+      // view over `project_financials_v` would not leak: that view carries the
+      // option itself, and a nested view resolves it against the real session
+      // role, not the outer view's owner.
+      await admin.query('create view canary_leaky_v as select project_id, organization_id from time_entries')
+      await admin.query('grant select on canary_leaky_v to workloom_app_test')
+
+      const violations = await mod.findIsolationViolations()
+      expect(violations.filter((v) => v.object === 'canary_leaky_v').map((v) => v.check)).toContain('view-security-invoker')
+
+      const { rows } = await mod.withTenant(ORG_B, async (tx) =>
+        tx.execute<{ count: number }>(sql`select count(*)::int as count from canary_leaky_v where project_id = ${projectId}::uuid`),
+      )
+      expect(rows[0]!.count, "org B read org A's rows -- which is the point: the check above is not decorative").toBe(1)
+
+      // The same view with the option restores isolation, and nothing else changed.
+      await admin.query('create or replace view canary_leaky_v with (security_invoker = true) as select project_id, organization_id from time_entries')
+      const sealed = await mod.withTenant(ORG_B, async (tx) =>
+        tx.execute<{ count: number }>(sql`select count(*)::int as count from canary_leaky_v where project_id = ${projectId}::uuid`),
+      )
+      expect(sealed.rows[0]!.count).toBe(0)
+    } finally {
+      await admin.query('drop view if exists canary_leaky_v')
+      await admin.end()
     }
   })
 })
