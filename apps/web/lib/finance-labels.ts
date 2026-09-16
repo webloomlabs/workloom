@@ -34,3 +34,32 @@ export const BILLING_TYPE_LABELS: Record<string, string> = {
   one_off: 'One-off',
   recurring: 'Recurring',
 }
+
+export const PAYMENT_KIND_LABELS: Record<string, string> = {
+  payment: 'Payment',
+  refund: 'Refund',
+}
+
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: 'Bank transfer',
+  card: 'Card',
+  direct_debit: 'Direct debit',
+  cash: 'Cash',
+  cheque: 'Cheque',
+  paypal: 'PayPal',
+  stripe: 'Stripe',
+  other: 'Other',
+}
+
+export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  software: 'Software',
+  hosting: 'Hosting',
+  domains: 'Domains',
+  hardware: 'Hardware',
+  contractor: 'Contractor',
+  advertising: 'Advertising',
+  travel: 'Travel',
+  office: 'Office',
+  fees: 'Fees',
+  other: 'Other',
+}

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   bigint,
+  boolean,
   check,
   date,
   foreignKey,
@@ -21,7 +22,8 @@ import { companies, contacts, deals } from './crm.ts'
 import { projects } from './projects.ts'
 
 /**
- * Finance: tax rates, the service catalogue, document numbering, and quotes.
+ * Finance: tax rates, the service catalogue, document numbering, quotes,
+ * invoices, the payments that settle them, and what the agency spent.
  *
  * Amounts are integer minor units beside an explicit currency. Quantities,
  * percentages, and exchange rates are `numeric`, returned as strings and parsed
@@ -35,8 +37,9 @@ import { projects } from './projects.ts'
 
 export const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
 /**
- * The whole invoice lifecycle. S7b issues, views, and cancels; the states that
- * follow a payment -- partially paid, paid, overdue, refunded -- arrive with S7c.
+ * The whole invoice lifecycle. S7b issues, views, and cancels; S7c settles.
+ * Which of these an issued invoice is in follows from what is stored -- see
+ * `settlementStatus` in core, which is the only thing that decides.
  */
 export const INVOICE_STATUSES = ['draft', 'sent', 'viewed', 'partially_paid', 'paid', 'overdue', 'cancelled', 'refunded'] as const
 export const TAX_MODES = ['exclusive', 'inclusive'] as const
@@ -315,6 +318,8 @@ export const invoices = pgTable(
   },
   (t) => [
     unique('invoices_organization_id_id_key').on(t.organizationId, t.id),
+    // Carries the currency, so an allocation in another currency cannot reference it.
+    unique('invoices_organization_id_id_currency_key').on(t.organizationId, t.id, t.currency),
     uniqueIndex('invoices_organization_number_key').on(t.organizationId, t.number),
     index('invoices_organization_status_idx').on(t.organizationId, t.status),
     index('invoices_organization_company_idx').on(t.organizationId, t.companyId),
@@ -339,7 +344,8 @@ export const invoices = pgTable(
     check('invoices_due_date_check', sql`${t.dueDate} is null or ${t.dueDate} >= ${t.issueDate}`),
     check('invoices_payment_terms_check', sql`${t.paymentTermsDays} between 0 and 365`),
     check('invoices_cancelled_check', sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
-    check('invoices_paid_check', sql`${t.amountPaidMinor} >= 0 and (${t.paidAt} is null or ${t.status} in ('paid', 'refunded'))`),
+    /** Having been paid is a fact about the past: refunding or cancelling does not unmake it. */
+    check('invoices_paid_check', sql`${t.amountPaidMinor} >= 0 and (${t.paidAt} is null or ${t.status} in ('paid', 'refunded', 'cancelled'))`),
     check('invoices_viewed_check', sql`${t.viewedAt} is null or ${t.status} <> 'draft'`),
   ],
 )
@@ -379,5 +385,187 @@ export const invoiceLines = pgTable(
     check('invoice_lines_discount_check', sql`${t.discountPercent} between 0 and 100`),
     check('invoice_lines_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
     check('invoice_lines_totals_check', sql`${t.netMinor} = ${t.amountMinor} - ${t.lineDiscountMinor}`),
+  ],
+)
+
+/**
+ * Money received, and money given back.
+ *
+ * A payment is recorded against a client, then allocated across the invoices it
+ * settles -- a header and its allocations from the start, because a client who
+ * pays three invoices with one transfer is ordinary, and retrofitting the split
+ * after payments exist is a painful migration.
+ *
+ * A refund is a payment with `kind = 'refund'`: its allocations subtract from
+ * what the invoice has been paid, which is what lets a wrongly paid invoice be
+ * cancelled.
+ */
+export const PAYMENT_KINDS = ['payment', 'refund'] as const
+export const PAYMENT_METHODS = ['bank_transfer', 'card', 'direct_debit', 'cash', 'cheque', 'paypal', 'stripe', 'other'] as const
+
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    companyId: uuid('company_id').notNull(),
+    kind: text('kind').notNull().default('payment'),
+    /** The day the money moved, in the organization's time zone. */
+    receivedOn: date('received_on', { mode: 'string' }).notNull(),
+    method: text('method').notNull().default('bank_transfer'),
+    /** The bank reference, receipt number, or gateway id. */
+    reference: text('reference'),
+    currency: text('currency').notNull(),
+    /** Always positive; `kind` says which way the money went. */
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+
+    /** As on a document: what this was worth in the base currency when recorded. */
+    baseCurrency: text('base_currency').notNull(),
+    exchangeRateToBase: numeric('exchange_rate_to_base', { precision: 18, scale: 8 }).notNull(),
+    amountBaseMinor: bigint('amount_base_minor', { mode: 'number' }).notNull(),
+
+    notes: text('notes'),
+    createdBy: createdBy(),
+    ...timestamps,
+  },
+  (t) => [
+    unique('payments_organization_id_id_key').on(t.organizationId, t.id),
+    // Carries the currency, so an allocation in another currency cannot reference it.
+    unique('payments_organization_id_id_currency_key').on(t.organizationId, t.id, t.currency),
+    index('payments_organization_company_idx').on(t.organizationId, t.companyId),
+    index('payments_organization_received_on_idx').on(t.organizationId, t.receivedOn),
+    foreignKey({ name: 'payments_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
+    check('payments_kind_check', sql`${t.kind} in ${oneOf(PAYMENT_KINDS)}`),
+    check('payments_method_check', sql`${t.method} in ${oneOf(PAYMENT_METHODS)}`),
+    check('payments_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and ${t.baseCurrency} ~ '^[A-Z]{3}$'`),
+    check('payments_amount_check', sql`${t.amountMinor} > 0`),
+    check('payments_exchange_rate_check', sql`${t.exchangeRateToBase} > 0`),
+  ],
+)
+
+/**
+ * What part of a payment settles which invoice.
+ *
+ * `currency` is not redundant: it is part of the foreign key to both sides, so
+ * a payment can only ever be allocated to an invoice in the same currency.
+ * That removes FX gain and loss from the MVP structurally rather than by rule.
+ *
+ * `invoices.amount_paid_minor` is recomputed from these rows by a trigger
+ * (migration 0016), which also refuses an over-allocation -- so
+ * `amount_due = total - sum(allocations)` holds even against hand-written SQL.
+ */
+export const paymentAllocations = pgTable(
+  'payment_allocations',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    paymentId: uuid('payment_id').notNull(),
+    invoiceId: uuid('invoice_id').notNull(),
+    /** Equal to both sides' currency, by foreign key. */
+    currency: text('currency').notNull(),
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('payment_allocations_organization_id_id_key').on(t.organizationId, t.id),
+    /** One row per payment and invoice: a second allocation changes the first. */
+    unique('payment_allocations_payment_invoice_key').on(t.organizationId, t.paymentId, t.invoiceId),
+    index('payment_allocations_organization_invoice_idx').on(t.organizationId, t.invoiceId),
+    foreignKey({
+      name: 'payment_allocations_payment_fk',
+      columns: [t.organizationId, t.paymentId, t.currency],
+      foreignColumns: [payments.organizationId, payments.id, payments.currency],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'payment_allocations_invoice_fk',
+      columns: [t.organizationId, t.invoiceId, t.currency],
+      foreignColumns: [invoices.organizationId, invoices.id, invoices.currency],
+    }).onDelete('cascade'),
+    check('payment_allocations_amount_check', sql`${t.amountMinor} > 0`),
+    check('payment_allocations_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
+  ],
+)
+
+/**
+ * What the agency spent: a supplier's invoice, a licence, a contractor, travel.
+ *
+ * Priced like an invoice line -- a net amount plus a snapshot of the tax that
+ * applied -- because that is what a billable expense becomes when it is
+ * rebilled. Profitability costs `amount_minor`, net of the tax, which is
+ * reclaimed.
+ *
+ * A billable expense freezes once `invoice_line_id` is set, exactly as tracked
+ * time does; removing the line releases it to be billed again.
+ */
+export const EXPENSE_CATEGORIES = [
+  'software',
+  'hosting',
+  'domains',
+  'hardware',
+  'contractor',
+  'advertising',
+  'travel',
+  'office',
+  'fees',
+  'other',
+] as const
+
+export const expenses = pgTable(
+  'expenses',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    /** The project it belongs to, when it is one project's cost. */
+    projectId: uuid('project_id'),
+    /** The client it is for. Implied by the project; null for the agency's own overhead. */
+    companyId: uuid('company_id'),
+    description: text('description').notNull(),
+    supplier: text('supplier'),
+    category: text('category').notNull().default('other'),
+    /** The day it was incurred, in the organization's time zone. */
+    incurredOn: date('incurred_on', { mode: 'string' }).notNull(),
+
+    currency: text('currency').notNull(),
+    /** Net of tax: what the expense actually costs the agency. */
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    taxRateId: uuid('tax_rate_id'),
+    taxName: text('tax_name'),
+    taxRatePctSnapshot: numeric('tax_rate_pct_snapshot', { precision: 7, scale: 4 }),
+    /** Tax on top of `amount_minor`, computed when the expense is written. */
+    taxMinor: bigint('tax_minor', { mode: 'number' }).notNull().default(0),
+
+    baseCurrency: text('base_currency').notNull(),
+    exchangeRateToBase: numeric('exchange_rate_to_base', { precision: 18, scale: 8 }).notNull(),
+    amountBaseMinor: bigint('amount_base_minor', { mode: 'number' }).notNull(),
+
+    /** Rebillable to the client. */
+    billable: boolean('billable').notNull().default(false),
+    /** What to add when rebilling: 15 means cost plus 15%. */
+    markupPercent: numeric('markup_percent', { precision: 7, scale: 4 }),
+    /** The invoice line that rebilled it. Set, the expense can no longer change. */
+    invoiceLineId: uuid('invoice_line_id'),
+
+    notes: text('notes'),
+    createdBy: createdBy(),
+    ...timestamps,
+  },
+  (t) => [
+    unique('expenses_organization_id_id_key').on(t.organizationId, t.id),
+    index('expenses_organization_incurred_on_idx').on(t.organizationId, t.incurredOn),
+    index('expenses_organization_project_idx').on(t.organizationId, t.projectId),
+    index('expenses_organization_company_idx').on(t.organizationId, t.companyId),
+    index('expenses_organization_invoice_line_idx').on(t.organizationId, t.invoiceLineId),
+    foreignKey({ name: 'expenses_project_fk', columns: [t.organizationId, t.projectId], foreignColumns: [projects.organizationId, projects.id] }),
+    foreignKey({ name: 'expenses_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
+    foreignKey({ name: 'expenses_tax_rate_fk', columns: [t.organizationId, t.taxRateId], foreignColumns: [taxRates.organizationId, taxRates.id] }),
+    foreignKey({ name: 'expenses_invoice_line_fk', columns: [t.organizationId, t.invoiceLineId], foreignColumns: [invoiceLines.organizationId, invoiceLines.id] }),
+    check('expenses_category_check', sql`${t.category} in ${oneOf(EXPENSE_CATEGORIES)}`),
+    check('expenses_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and ${t.baseCurrency} ~ '^[A-Z]{3}$'`),
+    check('expenses_amount_check', sql`${t.amountMinor} >= 0 and ${t.taxMinor} >= 0`),
+    check('expenses_exchange_rate_check', sql`${t.exchangeRateToBase} > 0`),
+    check('expenses_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
+    check('expenses_markup_check', sql`${t.markupPercent} between 0 and 1000`),
+    /** Only a billable expense can have been rebilled. */
+    check('expenses_billable_check', sql`${t.invoiceLineId} is null or ${t.billable}`),
   ],
 )

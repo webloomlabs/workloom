@@ -184,10 +184,10 @@ describe('an issued invoice', () => {
 
   it('refuses cancelling once money has been received', async () => {
     const invoice = await draft()
-    await run('invoice.send', owner(), { id: invoice.id })
-    // S7c records payments; here the column stands in for one.
-    await mod.withTenant(ORG_A, (tx) => tx.execute(sql`update invoices set amount_paid_minor = 100 where id = ${invoice.id}::uuid`))
+    const sent = await run('invoice.send', owner(), { id: invoice.id })
+    await run('payment.record', owner(), { companyId: sent.companyId, amountMinor: 100, allocations: [{ invoiceId: invoice.id, amountMinor: 100 }] })
     await expect(run('invoice.cancel', owner(), { id: invoice.id })).rejects.toMatchObject({ code: 'invoice_has_payments' })
+    // Refunding it is what frees it; that path is in payments.test.ts.
   })
 
   it('a draft is deleted rather than cancelled', async () => {

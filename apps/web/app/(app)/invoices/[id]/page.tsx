@@ -1,9 +1,10 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
-import { contactList, invoiceGet, projectList, serviceList, taxRateList, type Invoice } from '@workloom/core/modules'
+import { contactList, invoiceGet, paymentList, projectList, serviceList, taxRateList, type Invoice, type Payment } from '@workloom/core/modules'
 import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { InvoiceStatusBadge } from '@/components/finance/badges'
+import { BillExpensesForm } from '@/components/finance/expense-forms'
 import { AddLineForm, LineControls, QuoteDetailsForm } from '@/components/finance/finance-forms'
 import {
   BillTimeForm,
@@ -13,8 +14,10 @@ import {
   EmailInvoiceForm,
   SendInvoiceForm,
 } from '@/components/finance/invoice-forms'
+import { RecordPaymentForm, UnallocateButton } from '@/components/finance/payment-forms'
 import { addInvoiceLineAction, removeInvoiceLineAction, updateInvoiceAction, updateInvoiceLineAction } from '@/lib/actions/invoices'
 import { formatDate, formatDateTime, todayIn } from '@/lib/format'
+import { PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
 import { TAX_MODE_LABELS } from '@/lib/finance-labels'
 import { money, organizationSettings } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
@@ -41,6 +44,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
   const taxChoices = taxRates.data.map((t) => ({ id: t.id, name: t.name, rate: t.rate }))
   const decimal = (minor: number) => minorToDecimalString(minor, invoice.currency)
   const contactEmail = contacts.data.find((c) => c.id === invoice.contactId)?.email ?? null
+  const settled = !draft && can('payment:read') ? await call(paymentList, { invoiceId: invoice.id, limit: 100 }) : { data: [] }
   const overdue = Boolean(invoice.dueDate && invoice.dueDate < todayIn(settings.timezone) && invoice.amountDueMinor > 0 && !['draft', 'cancelled', 'paid'].includes(invoice.status))
 
   return (
@@ -144,6 +148,17 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
             </Card>
           )}
 
+          {editable && can('expense:read') && (
+            <Card>
+              <CardHeader title="Expenses" description="Billable expenses nobody has rebilled yet, at cost plus each one's markup." />
+              <div className="p-5">
+                <BillExpensesForm invoiceId={invoice.id} projects={projects.data.map((p) => ({ id: p.id, name: p.name }))} taxRates={taxChoices} />
+              </div>
+            </Card>
+          )}
+
+          {!draft && can('payment:read') && <Payments invoice={invoice} payments={settled.data} canChange={can('payment:update')} />}
+
           {editable ? (
             <Card>
               <CardHeader title="Details" />
@@ -200,6 +215,21 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
               </div>
             </Card>
           )}
+          {!draft && invoice.status !== 'cancelled' && invoice.amountDueMinor > 0 && can('payment:create') && (
+            <Card>
+              <CardHeader title="Record a payment" description="Money received against this invoice. What it then reads as follows from what it has been paid." />
+              <div className="p-5">
+                <RecordPaymentForm
+                  companyId={invoice.companyId}
+                  currency={invoice.currency}
+                  baseCurrency={settings.baseCurrency}
+                  today={todayIn(settings.timezone)}
+                  invoice={{ id: invoice.id, number: invoice.number, amountDueMinor: decimal(invoice.amountDueMinor) }}
+                  returnTo={`/invoices/${invoice.id}`}
+                />
+              </div>
+            </Card>
+          )}
           {!draft && invoice.status !== 'cancelled' && can('invoice:cancel') && (
             <Card>
               <CardHeader title="Cancel" description="The invoice stays on the record, marked cancelled." />
@@ -209,6 +239,46 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
         </div>
       </div>
     </div>
+  )
+}
+
+/** What has been paid against this invoice, and by which payment. */
+function Payments({ invoice, payments, canChange }: { invoice: Invoice; payments: Payment[]; canChange: boolean }) {
+  return (
+    <Card>
+      <CardHeader title="Payments" description="Each one is money received from the client, put against this invoice." />
+      {payments.length === 0 ? (
+        <EmptyState>Nothing received yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead>
+            <tr><Th>Date</Th><Th>How</Th><Th>Reference</Th><Th className="text-right">Amount</Th>{canChange && <Th />}</tr>
+          </thead>
+          <tbody>
+            {payments.map((payment) => {
+              const allocation = payment.allocations.find((a) => a.invoiceId === invoice.id)
+              const refund = payment.kind === 'refund'
+              return (
+                <tr key={payment.id}>
+                  <Td className="whitespace-nowrap">
+                    <Link href={`/payments/${payment.id}`} className="font-medium hover:underline">{formatDate(payment.receivedOn)}</Link>
+                    {refund && <div className="text-xs text-amber-600">Refund</div>}
+                  </Td>
+                  <Td className="text-neutral-600">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
+                  <Td className="text-neutral-600">{payment.reference ?? '—'}</Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">
+                    {money(refund ? -(allocation?.amountMinor ?? 0) : (allocation?.amountMinor ?? 0), invoice.currency)}
+                  </Td>
+                  {canChange && (
+                    <Td>{allocation && <UnallocateButton allocationId={allocation.id} invoiceId={invoice.id} label={invoice.number ?? invoice.title} />}</Td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </Table>
+      )}
+    </Card>
   )
 }
 

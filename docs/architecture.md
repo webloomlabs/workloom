@@ -443,7 +443,7 @@ percentage cannot change once a document uses it.
 
 An invoice is a quote with dates and states that matter to money: an issue date,
 a due date derived from the payment terms, when the client opened it, and what
-has been paid (S7c). It is priced by the same calculator through
+has been paid. It is priced by the same calculator through
 `modules/finance/documents.ts`, so a quote and the invoice raised from it cannot
 disagree. Raising an invoice from a quote copies its lines and their tax
 snapshots and never prices them again.
@@ -475,6 +475,52 @@ sent from `ctx.afterCommit`: a message cannot be unsent, so it must never go out
 for a change that then rolls back. A failure is logged, and the invoice stays
 issued -- send it again rather than lose the number.
 
+### Payments, and what an invoice is settled by
+
+A payment is recorded against a client and **allocated** across the invoices it
+settles -- a header and its allocations from the start, because a client who
+pays three invoices with one transfer is ordinary, and splitting them apart
+afterwards is a painful migration. Money not yet allocated sits on the client's
+account until there is an invoice for it. A **refund** is the same record with
+`kind = 'refund'`; its allocations subtract, which is what lets a wrongly paid
+invoice be cancelled.
+
+**`invoices.amount_paid_minor` is derived, and the service never writes it.** A
+trigger (`workloom_settle_invoice`, migration 0016) recomputes it from the
+allocations on every change, and a second trigger refuses anyone setting it by
+hand. So `amount_due = total - sum(allocations)` holds against hand-written SQL
+and a superuser, not only against the application. The same trigger refuses an
+invoice allocated beyond its total or refunded below nothing, and locks the
+invoice row before it sums, so two payments arriving at once queue rather than
+each read a total the other is about to change.
+
+**A payment cannot straddle two currencies**, because `payment_allocations`
+carries the currency as part of its foreign key to both the payment and the
+invoice. There is no such row to write, so foreign-exchange gain and loss cannot
+arise in the MVP -- a structural answer where the plan had a rule.
+
+**Which status an issued invoice reads as is one pure function.**
+`settlementStatus` in `modules/finance/settlement.ts` decides between `sent`,
+`viewed`, `partially_paid`, `paid`, `overdue`, and `refunded` from what is
+stored: the total, what has been paid, what has been refunded, the due date, and
+whether the client has opened it. Recording a payment and the nightly sweep both
+call it, so they cannot disagree, and it is unit-tested with no database. Nothing
+owed wins over everything but a cancellation; overdue outranks partly paid,
+because "who is late" is the list finance works from.
+
+**The overdue sweep** runs in the worker's maintenance beside quote expiry: per
+organization, in that organization's time zone, as a job actor, taking the same
+`FOR UPDATE SKIP LOCKED` scan. It is the only place `overdue` is set, and it is
+safe to run repeatedly -- an unchanged status announces nothing. An installation
+whose worker is not running still shows lateness on the list and the invoice
+page, computed from the due date.
+
+**Expenses** are priced like an invoice line: a net amount plus a snapshot of
+the tax that applied. Profitability costs the net amount, because the tax is
+reclaimed. A billable expense rebills onto a draft invoice at cost plus its
+markup, and freezes while it is billed -- the same rule as tracked time, enforced
+by the service and by `workloom_expense_guard`.
+
 ### Issued documents
 
 - **Numbers are gapless.** `document_sequences` holds the next number per organization
@@ -485,7 +531,8 @@ issued -- send it again rather than lose the number.
   `workloom_invoice_guard`, migration 0014). Afterwards only what happens *to* the
   document may change -- the client's answer on a quote; being opened, cancelled, or
   paid on an invoice -- and the comparison covers the whole row, so a new column is
-  frozen without being listed. Deleting an issued document is refused (409). The one
+  frozen without being listed. What it has been paid is narrower still: it follows
+  the allocations and cannot be written directly at all. Deleting an issued document is refused (409). The one
   exemption is a cascade from deleting the organization.
 - **The exchange rate is captured when a document is issued**, with the base currency
   at that moment and the total converted. There is no rate feed: the rate is 1 in the

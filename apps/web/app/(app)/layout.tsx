@@ -27,6 +27,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/contacts', label: 'Contacts', permission: 'contact:read' },
     { href: '/quotes', label: 'Quotes', permission: 'quote:read' },
     { href: '/invoices', label: 'Invoices', permission: 'invoice:read' },
+    { href: '/payments', label: 'Payments', permission: 'payment:read' },
+    { href: '/expenses', label: 'Expenses', permission: 'expense:read' },
     { href: '/projects', label: 'Projects', permission: 'project:read' },
     { href: '/tasks', label: 'My tasks', permission: 'task:read' },
     { href: '/time', label: 'Time', permission: 'timeEntry:read' },

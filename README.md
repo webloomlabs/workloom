@@ -12,9 +12,10 @@ so that a project is never separated from the commercial context around it.
 > history, and lead-to-client conversion (S3); a unified client view (S4); and
 > projects with milestones, tasks, dependencies, comments, and files (S5); and time
 > tracking with timers, timesheets, and rates copied onto each entry (S6); quotes,
-> tax rates, and a service catalogue on an exact money and tax engine (S7a); and invoices
-> with PDFs, email delivery, and a client link that records when it is opened (S7b).
-> Payments and expenses arrive in S7c. See [Roadmap.md](Roadmap.md).
+> tax rates, and a service catalogue on an exact money and tax engine (S7a); invoices
+> with PDFs, email delivery, and a client link that records when it is opened (S7b);
+> and payments, refunds, expenses, and the overdue sweep (S7c).
+> Profitability and reporting arrive in S8. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

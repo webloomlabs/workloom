@@ -4,12 +4,14 @@ import {
   companySummary,
   contactList,
   dealList,
+  expenseList,
   invoiceList,
+  paymentList,
   projectList,
   quoteList,
   type ClientSectionKey,
 } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -20,6 +22,7 @@ import { ArchiveControl, CreateContactForm, EditCompanyForm } from '@/components
 import { SectionTabs, type SectionTab } from '@/components/crm/section-tabs'
 import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
 import { ProgressBar, ProjectStatusBadge } from '@/components/projects/badges'
+import { PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
 import { formatDate } from '@/lib/format'
 import { memberChoices, money, organizationSettings, timeline } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
@@ -57,8 +60,8 @@ const SECTION_CONTENT: Record<ClientSectionKey, ((ctx: Context) => Promise<React
   projects: Projects,
   quotes: Quotes,
   invoices: Invoices,
-  payments: null,
-  expenses: null,
+  payments: Payments,
+  expenses: Expenses,
   support: null,
   maintenance: null,
   infrastructure: null,
@@ -448,6 +451,91 @@ async function Invoices({ id, summary, can, cursor }: Context) {
         </Table>
       )}
       <Pager base={`/companies/${id}`} params={{ tab: 'invoices' }} cursor={cursor} nextCursor={invoices.nextCursor} />
+    </Card>
+  )
+}
+
+async function Payments({ id, summary, can, cursor }: Context) {
+  const payments = await call(paymentList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Payments"
+        description="Money received from this client, and money refunded to them."
+        action={live && can('payment:create') ? <Link href={`/payments/new?companyId=${id}`} className="text-sm font-medium hover:underline">Record a payment</Link> : null}
+      />
+      {payments.data.length === 0 ? (
+        <EmptyState>Nothing received yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Date</Th><Th>How</Th><Th>Reference</Th><Th>Against</Th><Th className="text-right">Amount</Th></tr></thead>
+          <tbody>
+            {payments.data.map((payment) => (
+              <tr key={payment.id}>
+                <Td className="whitespace-nowrap">
+                  <Link href={`/payments/${payment.id}`} className="font-medium hover:underline">{formatDate(payment.receivedOn)}</Link>
+                  {payment.kind === 'refund' && <div className="text-xs text-amber-600">Refund</div>}
+                </Td>
+                <Td className="text-neutral-600">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
+                <Td className="text-neutral-600">{payment.reference ?? '—'}</Td>
+                <Td className="text-neutral-600">
+                  {payment.allocations.length === 0
+                    ? <span className="text-neutral-400">On account</span>
+                    : payment.allocations.map((a) => (
+                        <Link key={a.id} href={`/invoices/${a.invoiceId}`} className="mr-2 hover:underline">{a.invoiceNumber ?? a.invoiceTitle}</Link>
+                      ))}
+                </Td>
+                <Td className="whitespace-nowrap text-right tabular-nums">{money(payment.amountMinor, payment.currency)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'payments' }} cursor={cursor} nextCursor={payments.nextCursor} />
+    </Card>
+  )
+}
+
+async function Expenses({ id, summary, can, cursor }: Context) {
+  const expenses = await call(expenseList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Expenses"
+        description="What this client's work cost, net of tax. Billable ones are rebilled onto an invoice."
+        action={live && can('expense:create') ? <Link href={`/expenses/new?companyId=${id}`} className="text-sm font-medium hover:underline">Record an expense</Link> : null}
+      />
+      {expenses.data.length === 0 ? (
+        <EmptyState>No expenses yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Date</Th><Th>What</Th><Th>Project</Th><Th className="text-right">Cost</Th><Th>Rebilling</Th></tr></thead>
+          <tbody>
+            {expenses.data.map((expense) => (
+              <tr key={expense.id}>
+                <Td className="whitespace-nowrap text-neutral-500">{formatDate(expense.incurredOn)}</Td>
+                <Td><Link href={`/expenses/${expense.id}`} className="font-medium hover:underline">{expense.description}</Link></Td>
+                <Td className="text-neutral-600">
+                  {expense.projectId ? <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link> : '—'}
+                </Td>
+                <Td className="whitespace-nowrap text-right tabular-nums">{money(expense.amountMinor, expense.currency)}</Td>
+                <Td className="whitespace-nowrap">
+                  {expense.invoiceId ? (
+                    <Link href={`/invoices/${expense.invoiceId}`}><Badge tone="green">{expense.invoiceNumber ?? 'Rebilled'}</Badge></Link>
+                  ) : expense.billable ? (
+                    <Badge tone="amber">To rebill</Badge>
+                  ) : (
+                    <span className="text-sm text-neutral-400">Absorbed</span>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'expenses' }} cursor={cursor} nextCursor={expenses.nextCursor} />
     </Card>
   )
 }

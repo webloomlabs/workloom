@@ -1,5 +1,5 @@
 import { pruneRateLimits } from '@workloom/core'
-import { expireDueQuotes } from '@workloom/core/modules'
+import { expireDueQuotes, markOverdueInvoices } from '@workloom/core/modules'
 import { buildContext } from '@workloom/core/registry'
 import { db, lt, schema, withTenant } from '@workloom/db'
 
@@ -7,7 +7,9 @@ import { db, lt, schema, withTenant } from '@workloom/db'
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /**
- * Periodic cleanup, and the state changes that happen with the passing of time.
+ * Periodic cleanup, and the state changes that happen with the passing of time:
+ * quotes that have run out of validity, and invoices that have gone past their
+ * due date without being paid.
  *
  * Idempotency keys are tenant data, so they are pruned the documented way for
  * cross-organization work: enumerate organizations, then one tenant-scoped
@@ -22,18 +24,30 @@ export async function runMaintenance(now = new Date()): Promise<void> {
     await withTenant(id, (tx) =>
       tx.delete(schema.idempotencyKeys).where(lt(schema.idempotencyKeys.createdAt, cutoff)),
     )
-    // Each organization separately, so one failure cannot stop quotes expiring elsewhere.
-    try {
-      const expired = await withTenant(id, (tx) =>
-        expireDueQuotes(
-          buildContext({ organizationId: id, actor: { type: 'job', label: 'quote expiry' }, role: null, permissions: new Set(), now }, tx),
-        ),
-      )
-      if (expired > 0) console.log(`worker: expired ${expired} quote(s) in ${id}`)
-    } catch (error) {
-      console.error(`worker: expiring quotes failed in ${id}`, error)
-    }
+    // Each organization separately, so one failure cannot stop quotes expiring
+    // or invoices going overdue elsewhere. Both are decided in the
+    // organization's own time zone, which is what "today" means to it.
+    await sweep(id, 'quote expiry', expireDueQuotes, 'expired %n quote(s)', now)
+    await sweep(id, 'overdue invoices', markOverdueInvoices, 'swept %n invoice(s) past their due date', now)
   }
 
   await pruneRateLimits()
+}
+
+/** One organization's periodic state change, as a job actor, failing alone. */
+async function sweep(
+  organizationId: string,
+  label: string,
+  run: (ctx: ReturnType<typeof buildContext>) => Promise<number>,
+  message: string,
+  now: Date,
+): Promise<void> {
+  try {
+    const changed = await withTenant(organizationId, (tx) =>
+      run(buildContext({ organizationId, actor: { type: 'job', label }, role: null, permissions: new Set(), now }, tx)),
+    )
+    if (changed > 0) console.log(`worker: ${message.replace('%n', String(changed))} in ${organizationId}`)
+  } catch (error) {
+    console.error(`worker: ${label} failed in ${organizationId}`, error)
+  }
 }

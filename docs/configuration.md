@@ -46,3 +46,21 @@ characters render as blank boxes.
 What appears at the top of a document, and how a client is told to pay, comes
 from **Settings → Organization**: legal name, address, tax number, payment
 instructions, and the default payment terms in days.
+
+## What the worker does on a schedule
+
+Some things change with the passing of time rather than because someone did
+something, and they happen in the worker:
+
+- **Quotes expire** the day after their validity date.
+- **Invoices go overdue** the day after their due date, unless they have been
+  paid or cancelled.
+
+Both are decided per organization, in **that organization's time zone** — set in
+Settings → Organization — because a due date is a date, not an instant, and
+getting it wrong makes invoice ageing off by a day.
+
+An installation whose worker is not running will leave invoices reading as sent
+past their due date. The invoices list and the invoice page still mark them late
+from the due date alone, so nothing is hidden; only the stored status, the
+`invoice.overdue` event, and anything subscribed to it wait for the worker.

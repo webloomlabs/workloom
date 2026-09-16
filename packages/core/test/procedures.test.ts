@@ -196,6 +196,58 @@ async function sentInvoice(): Promise<string> {
   return id
 }
 
+type IssuedInvoice = { id: string; companyId: string; totalMinor: number }
+
+/**
+ * An issued invoice. `overdue: true` dates it into the past, which is the only
+ * way to exercise an invoice going late without waiting a fortnight.
+ */
+async function issuedInvoice(options: { overdue?: boolean } = {}): Promise<IssuedInvoice> {
+  const invoice = (await run('invoice.create', ownerOfA(), {
+    companyId: await createCompany(),
+    title: `Invoice ${unique()}`,
+    paymentTermsDays: options.overdue ? 0 : 30,
+    lines: [{ description: 'Discovery workshop', unitAmountMinor: 2_000_00 }],
+  })) as IssuedInvoice
+  const sent = (await run('invoice.send', ownerOfA(), {
+    id: invoice.id,
+    ...(options.overdue ? { issueDate: '2020-01-01' } : {}),
+  })) as IssuedInvoice
+  return { id: invoice.id, companyId: sent.companyId, totalMinor: sent.totalMinor }
+}
+
+/** Money received from that invoice's client, allocated or waiting on account. */
+async function pay(
+  invoice: IssuedInvoice,
+  options: { amountMinor?: number; allocate?: number | false; kind?: 'payment' | 'refund' } = {},
+): Promise<{ id: string; allocations: Array<{ id: string }> }> {
+  const amountMinor = options.amountMinor ?? invoice.totalMinor
+  return (await run('payment.record', ownerOfA(), {
+    companyId: invoice.companyId,
+    kind: options.kind ?? 'payment',
+    amountMinor,
+    allocations: options.allocate === false ? [] : [{ invoiceId: invoice.id, amountMinor: options.allocate ?? amountMinor }],
+  })) as { id: string; allocations: Array<{ id: string }> }
+}
+
+async function createPayment(input: Record<string, unknown> = {}): Promise<string> {
+  const payment = (await run('payment.record', ownerOfA(), {
+    companyId: await createCompany(),
+    amountMinor: 500_00,
+    ...input,
+  })) as { id: string }
+  return payment.id
+}
+
+async function createExpense(input: Record<string, unknown> = {}): Promise<string> {
+  const expense = (await run('expense.create', ownerOfA(), {
+    description: `Hosting ${unique()}`,
+    amountMinor: 120_00,
+    ...input,
+  })) as { id: string }
+  return expense.id
+}
+
 const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
 
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
@@ -463,6 +515,103 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'invoice.send': async () => ({ id: await createInvoice() }),
   'invoice.email': async () => ({ id: await sentInvoice(), to: 'client@example.com' }),
   'invoice.cancel': async () => ({ id: await sentInvoice(), reason: 'Raised in error' }),
+  'invoice.billExpenses': async () => {
+    const companyId = await createCompany()
+    await createExpense({ companyId, billable: true, markupPercent: '10' })
+    const invoice = (await run('invoice.create', ownerOfA(), { companyId, title: `Expenses ${unique()}` })) as { id: string }
+    return { id: invoice.id }
+  },
+
+  // One fixture per settled state each of these can leave an invoice in, so
+  // that the events they declare are proved to fire rather than asserted to.
+  'payment.record': [
+    async () => {
+      const invoice = await issuedInvoice()
+      return { companyId: invoice.companyId, amountMinor: 500_00, reference: `TRF-${unique()}`, allocations: [{ invoiceId: invoice.id }] }
+    },
+    async () => {
+      const invoice = await issuedInvoice()
+      return { companyId: invoice.companyId, amountMinor: invoice.totalMinor, allocations: [{ invoiceId: invoice.id }] }
+    },
+    async () => {
+      const invoice = await issuedInvoice({ overdue: true })
+      return { companyId: invoice.companyId, amountMinor: 500_00, allocations: [{ invoiceId: invoice.id }] }
+    },
+    async () => {
+      const invoice = await issuedInvoice()
+      await pay(invoice)
+      return { companyId: invoice.companyId, kind: 'refund', amountMinor: invoice.totalMinor, allocations: [{ invoiceId: invoice.id }] }
+    },
+  ],
+  'payment.update': async () => ({ id: await createPayment(), reference: `Corrected ${unique()}`, method: 'card' }),
+  'payment.delete': [
+    async () => {
+      // Half of it was settled by another payment, so the invoice owes again.
+      const invoice = await issuedInvoice()
+      const first = await pay(invoice, { amountMinor: invoice.totalMinor / 2 })
+      await pay(invoice, { amountMinor: invoice.totalMinor / 2 })
+      return { id: first.id }
+    },
+    async () => {
+      // Deleting the refund puts the invoice back to paid.
+      const invoice = await issuedInvoice()
+      await pay(invoice)
+      const refund = await pay(invoice, { kind: 'refund', amountMinor: 500_00 })
+      return { id: refund.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice({ overdue: true })
+      const payment = await pay(invoice)
+      return { id: payment.id }
+    },
+  ],
+  'payment.allocate': [
+    async () => {
+      const invoice = await issuedInvoice()
+      const payment = await pay(invoice, { amountMinor: 500_00, allocate: false })
+      return { id: payment.id, invoiceId: invoice.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice()
+      const payment = await pay(invoice, { allocate: false })
+      return { id: payment.id, invoiceId: invoice.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice({ overdue: true })
+      const payment = await pay(invoice, { amountMinor: 500_00, allocate: false })
+      return { id: payment.id, invoiceId: invoice.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice()
+      await pay(invoice)
+      const refund = await pay(invoice, { kind: 'refund', allocate: false })
+      return { id: refund.id, invoiceId: invoice.id }
+    },
+  ],
+  'payment.unallocate': [
+    async () => {
+      const invoice = await issuedInvoice()
+      const first = await pay(invoice, { amountMinor: invoice.totalMinor / 2 })
+      await pay(invoice, { amountMinor: invoice.totalMinor / 2 })
+      return { id: first.allocations[0]!.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice()
+      await pay(invoice)
+      const refund = await pay(invoice, { kind: 'refund', amountMinor: 500_00 })
+      return { id: refund.allocations[0]!.id }
+    },
+    async () => {
+      const invoice = await issuedInvoice({ overdue: true })
+      const payment = await pay(invoice)
+      return { id: payment.allocations[0]!.id }
+    },
+  ],
+
+  'expense.create': async () => ({ description: `Stock photography ${unique()}`, amountMinor: 49_00, category: 'software', billable: true, markupPercent: '15' }),
+  'expense.update': async () => ({ id: await createExpense(), supplier: `Supplier ${unique()}`, billable: true }),
+  'expense.delete': async () => ({ id: await createExpense() }),
+
 
   'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
   'attachment.delete': async () => {
@@ -498,6 +647,10 @@ const READS: Record<string, Fixture> = {
   'invoice.get': async () => ({ id: await createInvoice() }),
   'invoice.download': async () => ({ id: await createInvoice() }),
   'invoice.list': async () => ({ companyId: await createCompany() }),
+  'payment.get': async () => ({ id: await createPayment() }),
+  'payment.list': async () => ({ companyId: await createCompany() }),
+  'expense.get': async () => ({ id: await createExpense() }),
+  'expense.list': async () => ({ companyId: await createCompany() }),
   'quote.list': async () => ({ companyId: await createCompany() }),
   'attachment.download': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }

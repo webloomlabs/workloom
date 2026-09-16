@@ -39,7 +39,9 @@ import {
   taxSnapshot,
   taxesFromLines,
   today,
+  UNPRICED,
 } from './documents.ts'
+import { rebillAmount, releaseExpenses, unbilledExpenses } from './expenses.ts'
 import { issueNumber } from './numbering.ts'
 import { loadQuote } from './quotes.ts'
 import { fromNumeric, percentInput } from './shared.ts'
@@ -51,7 +53,8 @@ import { fromNumeric, percentInput } from './shared.ts'
  * `documents.ts`. Issuing one gives it its number, its issue and due dates, and
  * its exchange rate, and freezes it -- here and, independently, in a database
  * trigger. What follows is only what happens *to* an issued invoice: the client
- * opening it, a cancellation, and from S7c the payments against it.
+ * opening it, a cancellation, and the payments against it -- which live in
+ * `payments.ts`, since it is the allocations that decide what it is settled by.
  */
 
 type InvoiceRow = typeof schema.invoices.$inferSelect
@@ -125,7 +128,7 @@ export const invoiceSummaryOutput = z.object({
   discountMinor: z.number().int(),
   taxMinor: z.number().int(),
   totalMinor: z.number().int(),
-  /** Settled by payments (S7c). */
+  /** Payments less refunds allocated to it, maintained by the database from those allocations. */
   amountPaidMinor: z.number().int(),
   /** Total less what has been paid. */
   amountDueMinor: z.number().int(),
@@ -456,13 +459,17 @@ export const invoiceUpdate = defineProcedure({
   },
 })
 
-/** Time billed by a line is released when the line goes, so it can be billed again. */
-async function releaseTime(ctx: ActorContext, lineIds: string[]): Promise<void> {
+/**
+ * What a line billed is released when the line goes, so it can be billed again:
+ * the tracked time it charged for, and any expense it rebilled.
+ */
+async function releaseBilled(ctx: ActorContext, lineIds: string[]): Promise<void> {
   if (lineIds.length === 0) return
   await ctx.tx
     .update(schema.timeEntries)
     .set({ invoiceLineId: null, updatedAt: ctx.now })
     .where(inArray(schema.timeEntries.invoiceLineId, lineIds))
+  await releaseExpenses(ctx, lineIds)
 }
 
 export const invoiceDelete = defineProcedure({
@@ -479,7 +486,7 @@ export const invoiceDelete = defineProcedure({
       throw new ConflictError(`Invoice ${before.number} has been issued and is kept as a record. Cancel it instead.`)
     }
     const invoice = await getInvoice(ctx, before.id)
-    await releaseTime(ctx, (await loadLines(ctx, before.id)).map((l) => l.id))
+    await releaseBilled(ctx, (await loadLines(ctx, before.id)).map((l) => l.id))
     await ctx.tx.delete(schema.invoices).where(eq(schema.invoices.id, before.id))
     await ctx.audit({ action: 'invoice.deleted', entityType: 'invoice', entityId: before.id, entityLabel: before.title })
     await ctx.emit('invoice.deleted', invoice)
@@ -554,7 +561,7 @@ export const invoiceLineUpdate = defineProcedure({
 
 export const invoiceLineRemove = defineProcedure({
   name: 'invoiceLine.remove',
-  summary: 'Remove a line from a draft invoice. Time it billed becomes billable again.',
+  summary: 'Remove a line from a draft invoice. What it billed becomes billable again.',
   permission: 'invoice:update',
   input: z.object({ id: z.uuid() }),
   output: invoiceOutput,
@@ -562,7 +569,7 @@ export const invoiceLineRemove = defineProcedure({
   emits: ['invoice.updated'],
   async handler(ctx, input) {
     const { line, invoice } = await loadLineForChange(ctx, input.id)
-    await releaseTime(ctx, [line.id])
+    await releaseBilled(ctx, [line.id])
     await ctx.tx.delete(schema.invoiceLines).where(eq(schema.invoiceLines.id, line.id))
     await recalculate(ctx, invoice.id)
     const updated = await getInvoice(ctx, invoice.id)
@@ -672,12 +679,7 @@ export const invoiceBillTime = defineProcedure({
         unitAmountMinor: group.rate,
         discountPercent: null,
         ...tax,
-        amountMinor: 0,
-        lineDiscountMinor: 0,
-        netMinor: 0,
-        documentDiscountMinor: 0,
-        taxMinor: 0,
-        totalMinor: 0,
+        ...UNPRICED,
       })
       await ctx.tx.update(schema.timeEntries).set({ invoiceLineId: lineId, updatedAt: ctx.now }).where(inArray(schema.timeEntries.id, group.entryIds))
     }
@@ -699,6 +701,87 @@ export const invoiceBillTime = defineProcedure({
     })
     await ctx.emit('invoice.updated', updated)
     return { ...updated, billed }
+  },
+})
+
+// Rebilling expenses
+
+const rebilledOutput = invoiceOutput.extend({
+  rebilled: z.object({
+    linesAdded: z.number().int(),
+    /** What the expenses cost, before any markup. */
+    costMinor: z.number().int(),
+    /** What the client is charged for them. */
+    chargedMinor: z.number().int(),
+  }),
+})
+
+export const invoiceBillExpenses = defineProcedure({
+  name: 'invoice.billExpenses',
+  summary: "Rebill the client's unbilled billable expenses onto a draft invoice, at cost plus each one's markup",
+  permission: 'invoice:update',
+  input: z.object({
+    id: z.uuid(),
+    /** One project, or every project of this client. */
+    projectId: z.uuid().optional(),
+    /** Inclusive calendar dates, against the day the expense was incurred. */
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+    /** The tax to charge. Omitted, each line keeps the tax the expense carried. */
+    taxRateId: z.uuid().nullish(),
+  }),
+  output: rebilledOutput,
+  http: { method: 'POST', path: '/invoices/{id}/expenses', successStatus: 201 },
+  emits: ['invoice.updated'],
+  async handler(ctx, input) {
+    ctx.require('expense:read')
+    const invoice = await loadInvoice(ctx, input.id, { lock: true })
+    requireDraft(invoice)
+    if (input.projectId) {
+      const project = await loadProject(ctx, input.projectId)
+      if (project.companyId !== invoice.companyId) throw new DomainError('That project is for a different client.', 'project_company_mismatch', 'projectId')
+    }
+
+    const expenses = await unbilledExpenses(ctx, invoice.companyId, invoice.currency, input)
+    // An override applies to every line; otherwise each keeps the tax it was
+    // incurred under, which is what the agency reclaimed and now charges on.
+    const override = input.taxRateId === undefined ? null : await taxSnapshot(ctx, input.taxRateId ?? null)
+
+    let position = await nextPosition(ctx, invoice.id)
+    let costMinor = 0
+    let chargedMinor = 0
+    for (const { expense } of expenses) {
+      const lineId = newId()
+      const unitAmountMinor = rebillAmount(expense.amountMinor, fromNumeric(expense.markupPercent))
+      await ctx.tx.insert(schema.invoiceLines).values({
+        id: lineId,
+        organizationId: ctx.organizationId,
+        invoiceId: invoice.id,
+        position: position++,
+        serviceId: null,
+        description: expense.description,
+        quantity: '1',
+        unitAmountMinor,
+        discountPercent: null,
+        ...(override ?? { taxRateId: expense.taxRateId, taxName: expense.taxName, taxRatePctSnapshot: expense.taxRatePctSnapshot }),
+        ...UNPRICED,
+      })
+      await ctx.tx.update(schema.expenses).set({ invoiceLineId: lineId, updatedAt: ctx.now }).where(eq(schema.expenses.id, expense.id))
+      costMinor += expense.amountMinor
+      chargedMinor += unitAmountMinor
+    }
+    await recalculate(ctx, invoice.id)
+
+    const updated = await getInvoice(ctx, invoice.id)
+    await ctx.audit({
+      action: 'invoice.updated',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      entityLabel: updated.title,
+      changes: { rebilledExpenses: { from: null, to: `${expenses.length} expenses` } },
+    })
+    await ctx.emit('invoice.updated', updated)
+    return { ...updated, rebilled: { linesAdded: expenses.length, costMinor, chargedMinor } }
   },
 })
 

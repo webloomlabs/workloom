@@ -84,6 +84,9 @@ const invoicePath = (invoiceId: string) => `/invoices/${invoiceId}`
 function refresh(invoiceId: string) {
   revalidatePath(invoicePath(invoiceId))
   revalidatePath('/invoices')
+  // Adding or removing a line bills or frees tracked time and expenses.
+  revalidatePath('/time')
+  revalidatePath('/expenses')
 }
 
 export async function createInvoiceAction(_: ActionState, form: FormData): Promise<ActionState> {

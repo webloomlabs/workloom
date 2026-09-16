@@ -92,7 +92,7 @@ test('tracked time becomes an invoice, issued, emailed, opened by the client, th
   await issue.getByLabel('To', { exact: true }).fill(clientEmail)
   page.once('dialog', (dialog) => dialog.accept())
   await issue.getByRole('button', { name: 'Issue invoice' }).click()
-  await expect(page.getByText('INV-0001')).toBeVisible()
+  await expect(page.getByText('INV-0001', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add line' })).toHaveCount(0)
 
   const email = await waitForEmail(clientEmail, /INV-0001/)

@@ -4,7 +4,8 @@ import { startTestDatabase, loadDbWithEnv, type TestDatabase } from './harness.t
 
 /**
  * The guard triggers on issued documents, at the database level: quotes from
- * migration 0012, invoices from 0014.
+ * migration 0012, invoices from 0014. What an invoice has been paid is guarded
+ * separately, in allocation-guard.test.ts.
  *
  * The application's own refusals are tested in packages/core/test/finance.test.ts
  * and invoices.test.ts. These check the edges only SQL reaches: the guards bind
@@ -99,11 +100,13 @@ describe('the quote guard', () => {
       ),
     ).toMatch(/only while the invoice is a draft/)
 
-    // What happens to an issued invoice is still recorded: opened, paid, cancelled.
+    // What happens to an issued invoice is still recorded: opened, cancelled.
     await admin.query(`update invoices set status = 'viewed', viewed_at = now() where id = $1`, [invoice])
-    await admin.query(`update invoices set amount_paid_minor = 100, status = 'paid', paid_at = now() where id = $1`, [invoice])
+    await admin.query(`update invoices set status = 'cancelled', cancelled_at = now() where id = $1`, [invoice])
     const { rows } = await admin.query(`select status from invoices where id = $1`, [invoice])
-    expect(rows[0].status).toBe('paid')
+    expect(rows[0].status).toBe('cancelled')
+    // What it has been paid is not among them: that follows the allocations,
+    // and is tested in allocation-guard.test.ts.
   })
 
   it('lets a whole organization go, sent quotes and all', async () => {

@@ -112,8 +112,13 @@ const definitions = {
   'invoice.paid': { description: 'An invoice was paid in full', since: 'S7c' },
   'invoice.overdue': { description: 'An invoice passed its due date unpaid', since: 'S7c' },
   'invoice.cancelled': { description: 'An invoice was cancelled', since: 'S7b' },
-  'payment.recorded': { description: 'A payment was recorded', since: 'S7c' },
+  'invoice.refunded': { description: 'An invoice was refunded in full', since: 'S7c' },
+  'payment.recorded': { description: 'A payment or a refund was recorded', since: 'S7c' },
+  'payment.updated': { description: 'A recorded payment was corrected, or its allocations changed', since: 'S7c' },
+  'payment.deleted': { description: 'A recorded payment was deleted', since: 'S7c' },
   'expense.created': { description: 'An expense was recorded', since: 'S7c' },
+  'expense.updated': { description: 'An expense was edited', since: 'S7c' },
+  'expense.deleted': { description: 'An expense was deleted', since: 'S7c' },
 } as const satisfies Record<string, Definition>
 
 export type EventType = keyof typeof definitions
