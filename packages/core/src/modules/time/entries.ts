@@ -40,6 +40,8 @@ export const timeEntryOutput = z.object({
   durationSeconds: z.number().int().nullable(),
   running: z.boolean(),
   billable: z.boolean(),
+  /** True once an invoice line has billed this time. Billed time cannot be edited or deleted. */
+  invoiced: z.boolean(),
   /** The currency of the rates: the project's, when the entry was logged. */
   currency: z.string().length(3),
   /**
@@ -89,6 +91,7 @@ function present(
     durationSeconds: entry.durationSeconds,
     running: entry.durationSeconds === null,
     billable: entry.billable,
+    invoiced: entry.invoiceLineId !== null,
     currency: entry.currency,
     billableRateMinor: financial ? entry.billableRateMinor : null,
     billableRateSource: financial ? (entry.billableRateSource as TimeEntry['billableRateSource']) : null,
@@ -126,6 +129,11 @@ async function loadVisibleEntry(ctx: ActorContext, id: string, options: { lock?:
 async function loadChangeableEntry(ctx: ActorContext, id: string): Promise<EntryRow> {
   const entry = await loadVisibleEntry(ctx, id, { lock: true })
   if (!isOwn(ctx, entry)) ctx.require('timeEntryAll:manage')
+  // Billed time is part of an invoice. Removing the line from a draft invoice
+  // releases it; an issued invoice cannot be changed at all.
+  if (entry.invoiceLineId) {
+    throw new DomainError('This time has been billed on an invoice, so it can no longer be changed.', 'time_entry_invoiced')
+  }
   return entry
 }
 
@@ -198,6 +206,8 @@ export const timeEntryList = defineProcedure({
     to: z.iso.date().optional(),
     billable: optionalFlag,
     running: optionalFlag,
+    /** Only time that an invoice has billed, or only time that none has. */
+    invoiced: optionalFlag,
     limit: z.coerce.number().int().min(1).max(500).default(100),
     cursor: z.uuid().optional(),
   }),
@@ -222,6 +232,7 @@ export const timeEntryList = defineProcedure({
       input.to ? lte(t.spentOn, input.to) : undefined,
       input.billable === undefined ? undefined : eq(t.billable, input.billable),
       input.running === undefined ? undefined : input.running ? isNull(t.durationSeconds) : isNotNull(t.durationSeconds),
+      input.invoiced === undefined ? undefined : input.invoiced ? isNotNull(t.invoiceLineId) : isNull(t.invoiceLineId),
       input.cursor ? lt(t.id, input.cursor) : undefined,
     ]
     const rows = await selectEntries(ctx)

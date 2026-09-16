@@ -25,6 +25,8 @@ export * from './permissions/index.ts'
 export * from './events/index.ts'
 export * from './webhooks/index.ts'
 export {
+  signLinkToken,
+  readLinkToken,
   decryptSecret,
   DecryptionError,
   encryptSecret,

@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { env } from '@workloom/config'
 
 /**
@@ -85,4 +85,35 @@ export function decryptSecret(value: string, keyring: Keyring = keyringFromEnv()
 /** True when a value should be re-encrypted under the current key. */
 export function needsReencryption(value: string, keyring: Keyring = keyringFromEnv()): boolean {
   return value.split(':')[2] !== fingerprint(keyring.current)
+}
+
+/**
+ * Signed values that travel outside the application -- the link a client opens
+ * to see an invoice, with no account and no session.
+ *
+ * The value carries what it names (organization and document) and a signature
+ * over it, so nothing has to be stored or looked up before the tenant is known.
+ * Each purpose signs with its own derived key, so a token minted for one use
+ * can never be replayed as another.
+ */
+function signingKey(purpose: string, keyring: Keyring = keyringFromEnv()): Buffer {
+  return createHmac('sha256', keyring.current).update(`workloom:${purpose}:v1`).digest()
+}
+
+const b64url = (value: Buffer | string) => Buffer.from(value).toString('base64url')
+
+export function signLinkToken(purpose: string, payload: string): string {
+  const signature = createHmac('sha256', signingKey(purpose)).update(payload).digest('base64url')
+  return `${b64url(payload)}.${signature}`
+}
+
+/** The payload if the signature is this purpose's and intact, else null. */
+export function readLinkToken(purpose: string, token: string): string | null {
+  const [encoded, signature] = token.split('.')
+  if (!encoded || !signature) return null
+  const payload = Buffer.from(encoded, 'base64url').toString()
+  const expected = createHmac('sha256', signingKey(purpose)).update(payload).digest('base64url')
+  const [a, b] = [Buffer.from(signature), Buffer.from(expected)]
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+  return payload
 }

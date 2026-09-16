@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { bigint, boolean, check, date, foreignKey, index, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { user } from './auth.ts'
 import { tenantColumn, timestamps } from './columns.ts'
+import { invoiceLines } from './finance.ts'
 import { projects, tasks } from './projects.ts'
 
 /**
@@ -85,11 +86,24 @@ export const timeEntries = pgTable(
     costRateMinor: bigint('cost_rate_minor', { mode: 'number' }),
     costRateSource: text('cost_rate_source'),
 
+    /**
+     * The invoice line that billed this time, from S7b. Set together for every
+     * entry a line covers; cleared by the service when the line goes, which the
+     * foreign key requires before the line can be deleted.
+     */
+    invoiceLineId: uuid('invoice_line_id'),
+
     createdBy: uuid('created_by').references(() => user.id, { onDelete: 'set null' }),
     ...timestamps,
   },
   (t) => [
     unique('time_entries_organization_id_id_key').on(t.organizationId, t.id),
+    index('time_entries_organization_invoice_line_idx').on(t.organizationId, t.invoiceLineId),
+    foreignKey({
+      name: 'time_entries_invoice_line_fk',
+      columns: [t.organizationId, t.invoiceLineId],
+      foreignColumns: [invoiceLines.organizationId, invoiceLines.id],
+    }),
     // The rule the whole timer design rests on: one running timer per person,
     // per organization, however many requests arrive at once.
     uniqueIndex('time_entries_one_running_timer_key')

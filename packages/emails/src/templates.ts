@@ -1,4 +1,5 @@
 import { button, escapeHtml, layout } from './layout.ts'
+import { formatAmount } from './money.ts'
 import type { Email } from './transport.ts'
 
 export function invitationEmail(options: {
@@ -84,6 +85,49 @@ export function verifyEmailEmail(options: { to: string; name: string; verifyUrl:
       options.verifyUrl,
       '',
       "The link expires in 24 hours. If you didn't create a Workloom account, ignore this email.",
+    ].join('\n'),
+  }
+}
+
+/**
+ * The invoice as it reaches the client: what it is for, what is owed, when it
+ * is due, and a link that needs no account. The PDF travels with it, because a
+ * client's accounts payable system usually wants the file, not a link.
+ */
+export function invoiceEmail(options: {
+  to: string
+  organization: string
+  number: string
+  title: string
+  total: number
+  currency: string
+  dueDate: string
+  url: string
+}): Email {
+  const amount = formatAmount(options.total, options.currency)
+  const org = escapeHtml(options.organization)
+  return {
+    to: options.to,
+    subject: `Invoice ${options.number} from ${options.organization} — ${amount}`,
+    html: layout({
+      heading: `Invoice ${escapeHtml(options.number)}`,
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
+          ${org} has sent you an invoice for <strong>${escapeHtml(amount)}</strong>
+          (${escapeHtml(options.title)}), due ${escapeHtml(options.dueDate)}.
+        </p>
+        <p style="margin:0 0 24px;">${button(options.url, 'View the invoice')}</p>
+        <p style="margin:0;font-size:13px;color:#78716c;line-height:1.6;">
+          The invoice is attached as a PDF. Reply to this email with any questions.
+        </p>`,
+    }),
+    text: [
+      `${options.organization} has sent you invoice ${options.number} for ${amount} (${options.title}).`,
+      `Due ${options.dueDate}.`,
+      '',
+      `View it: ${options.url}`,
+      '',
+      'The invoice is attached as a PDF.',
     ].join('\n'),
   }
 }

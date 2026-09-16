@@ -4,6 +4,7 @@ import {
   companySummary,
   contactList,
   dealList,
+  invoiceList,
   projectList,
   quoteList,
   type ClientSectionKey,
@@ -17,7 +18,7 @@ import { ArchivedBadge, DealStageBadge, LifecycleBadge } from '@/components/crm/
 import { Pager, param } from '@/components/crm/list-controls'
 import { ArchiveControl, CreateContactForm, EditCompanyForm } from '@/components/crm/record-forms'
 import { SectionTabs, type SectionTab } from '@/components/crm/section-tabs'
-import { QuoteStatusBadge } from '@/components/finance/badges'
+import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
 import { ProgressBar, ProjectStatusBadge } from '@/components/projects/badges'
 import { formatDate } from '@/lib/format'
 import { memberChoices, money, organizationSettings, timeline } from '@/lib/server/crm'
@@ -55,7 +56,7 @@ const SECTION_CONTENT: Record<ClientSectionKey, ((ctx: Context) => Promise<React
   activity: Activity,
   projects: Projects,
   quotes: Quotes,
-  invoices: null,
+  invoices: Invoices,
   payments: null,
   expenses: null,
   support: null,
@@ -412,6 +413,41 @@ async function Quotes({ id, summary, can, cursor }: Context) {
         </Table>
       )}
       <Pager base={`/companies/${id}`} params={{ tab: 'quotes' }} cursor={cursor} nextCursor={quotes.nextCursor} />
+    </Card>
+  )
+}
+
+async function Invoices({ id, summary, can, cursor }: Context) {
+  const invoices = await call(invoiceList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Invoices"
+        action={live && can('invoice:create') ? <Link href={`/invoices/new?companyId=${id}`} className="text-sm font-medium hover:underline">New invoice</Link> : null}
+      />
+      {invoices.data.length === 0 ? (
+        <EmptyState>No invoices yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Invoice</Th><Th>Status</Th><Th className="text-right">Total</Th><Th className="text-right">Due</Th><Th>Due date</Th></tr></thead>
+          <tbody>
+            {invoices.data.map((invoice) => (
+              <tr key={invoice.id}>
+                <Td>
+                  <Link href={`/invoices/${invoice.id}`} className="font-medium hover:underline">{invoice.title}</Link>
+                  <div className="text-xs text-neutral-500">{invoice.number ?? 'Draft'}</div>
+                </Td>
+                <Td><InvoiceStatusBadge status={invoice.status} /></Td>
+                <Td className="whitespace-nowrap text-right tabular-nums">{money(invoice.totalMinor, invoice.currency)}</Td>
+                <Td className="whitespace-nowrap text-right tabular-nums">{invoice.amountDueMinor === 0 ? '—' : money(invoice.amountDueMinor, invoice.currency)}</Td>
+                <Td className="whitespace-nowrap text-neutral-500">{formatDate(invoice.dueDate)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'invoices' }} cursor={cursor} nextCursor={invoices.nextCursor} />
     </Card>
   )
 }

@@ -44,7 +44,7 @@ test('an owner signs up and creates their organization', async ({ page }) => {
   await page.getByRole('button', { name: 'Create organization' }).click()
 
   await expect(page).toHaveURL(/\/settings\/organization/)
-  await expect(page.getByLabel('Name')).toHaveValue(orgName)
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(orgName)
 })
 
 test('the owner changes a setting, and it is audited', async ({ page }) => {

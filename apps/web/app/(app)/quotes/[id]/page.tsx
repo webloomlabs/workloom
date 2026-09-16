@@ -1,9 +1,9 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
-import { contactList, quoteGet, serviceList, taxRateList, type Quote } from '@workloom/core/modules'
+import { contactList, invoiceList, quoteGet, serviceList, taxRateList, type Quote } from '@workloom/core/modules'
 import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { QuoteStatusBadge } from '@/components/finance/badges'
+import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
 import {
   AddLineForm,
   AnswerControls,
@@ -13,6 +13,7 @@ import {
   QuoteDetailsForm,
   SendQuoteForm,
 } from '@/components/finance/finance-forms'
+import { InvoiceFromQuoteButton } from '@/components/finance/invoice-forms'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { TAX_MODE_LABELS } from '@/lib/finance-labels'
 import { money, organizationSettings } from '@/lib/server/crm'
@@ -25,7 +26,11 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
   const { id } = await params
   const viewer = await requireViewer()
   const can = (p: Permission) => viewer.permissions.has(p)
-  const [quote, settings] = await Promise.all([call(quoteGet, { id }), organizationSettings()])
+  const [quote, settings, invoices] = await Promise.all([
+    call(quoteGet, { id }),
+    organizationSettings(),
+    can('invoice:read') ? call(invoiceList, { quoteId: id, limit: 20 }) : { data: [] },
+  ])
   const draft = quote.status === 'draft'
   const editable = draft && can('quote:update')
 
@@ -93,7 +98,7 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                       {editable && (
                         <Td>
                           <LineControls
-                            quoteId={quote.id}
+                            documentId={quote.id}
                             currency={quote.currency}
                             taxRates={taxChoices}
                             line={{ id: line.id, description: line.description, quantity: line.quantity, unitAmount: decimal(line.unitAmountMinor), discountPercent: line.discountPercent, taxRateId: line.taxRateId }}
@@ -108,7 +113,7 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
             {editable && (
               <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
                 <AddLineForm
-                  quoteId={quote.id}
+                  documentId={quote.id}
                   currency={quote.currency}
                   taxRates={taxChoices}
                   services={services.data.map((s) => ({
@@ -162,6 +167,27 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
             <Card>
               <CardHeader title="Send" description="Mark the quote as sent once it has gone to the client. It takes its number and can no longer change." />
               <div className="p-5"><SendQuoteForm quoteId={quote.id} currency={quote.currency} baseCurrency={settings.baseCurrency} /></div>
+            </Card>
+          )}
+          {quote.status !== 'draft' && (can('invoice:create') || invoices.data.length > 0) && (
+            <Card>
+              <CardHeader title="Invoicing" description="A quote can be billed in as many invoices as the work needs." />
+              <div className="space-y-4 p-5">
+                {invoices.data.length > 0 && (
+                  <ul className="space-y-1 text-sm">
+                    {invoices.data.map((invoice) => (
+                      <li key={invoice.id} className="flex flex-wrap items-center justify-between gap-2">
+                        <Link href={`/invoices/${invoice.id}`} className="hover:underline">{invoice.number ?? 'Draft'} · {invoice.title}</Link>
+                        <span className="flex items-center gap-2">
+                          <InvoiceStatusBadge status={invoice.status} />
+                          <span className="tabular-nums">{money(invoice.totalMinor, invoice.currency)}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {can('invoice:create') && quote.status !== 'declined' && <InvoiceFromQuoteButton quoteId={quote.id} />}
+              </div>
             </Card>
           )}
           {quote.status === 'sent' && can('quote:update') && (

@@ -105,7 +105,7 @@ test('a webhook receives a signed test event and a real change', async ({ page }
 
   // A real change, not a test: renaming the organization emits organization.updated.
   await page.goto('/settings/organization')
-  await page.getByLabel('Name').fill(`Hooks ${run} renamed`)
+  await page.getByLabel('Name', { exact: true }).fill(`Hooks ${run} renamed`)
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Settings saved.')).toBeVisible()
 

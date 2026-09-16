@@ -11,9 +11,10 @@ so that a project is never separated from the commercial context around it.
 > writes (S2); and the CRM — leads, companies, contacts, deals, a pipeline, activity
 > history, and lead-to-client conversion (S3); a unified client view (S4); and
 > projects with milestones, tasks, dependencies, comments, and files (S5); and time
-> tracking with timers, timesheets, and rates copied onto each entry (S6); and quotes,
-> tax rates, and a service catalogue on an exact money and tax engine (S7a). Invoices
-> arrive in S7b. See [Roadmap.md](Roadmap.md).
+> tracking with timers, timesheets, and rates copied onto each entry (S6); quotes,
+> tax rates, and a service catalogue on an exact money and tax engine (S7a); and invoices
+> with PDFs, email delivery, and a client link that records when it is opened (S7b).
+> Payments and expenses arrive in S7c. See [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

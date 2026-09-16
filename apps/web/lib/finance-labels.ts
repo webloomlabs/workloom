@@ -8,6 +8,17 @@ export const QUOTE_STATUS_LABELS: Record<string, string> = {
   expired: 'Expired',
 }
 
+export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  viewed: 'Viewed',
+  partially_paid: 'Part paid',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
+  refunded: 'Refunded',
+}
+
 export const TAX_MODE_LABELS: Record<string, string> = {
   exclusive: 'Prices exclude tax',
   inclusive: 'Prices include tax',

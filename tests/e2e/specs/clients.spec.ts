@@ -59,11 +59,12 @@ test('a converted lead becomes a client with a unified page', async ({ page, bas
 
   // Sections still to come are shown, but cannot be opened.
   const notYet = page.getByRole('list', { name: 'Not yet available' })
-  for (const label of ['Invoices', 'Payments', 'Support', 'Documents']) {
+  for (const label of ['Payments', 'Expenses', 'Support', 'Documents']) {
     await expect(notYet.getByText(label)).toBeVisible()
     await expect(page.getByRole('link', { name: new RegExp(`^${label}`) })).toHaveCount(0)
   }
-  await page.goto(`${new URL(page.url()).pathname}?tab=invoices`)
+  // A section that has not shipped yet falls back to the overview.
+  await page.goto(`${new URL(page.url()).pathname}?tab=payments`)
   await expect(page.getByRole('link', { name: /Overview/ })).toHaveAttribute('aria-current', 'page')
 
   await sections.getByRole('link', { name: 'Details' }).click()
@@ -84,6 +85,6 @@ test('the API describes the same client view', async ({ page, baseURL }) => {
 
   const summary = await (await page.request.get(`/api/v1/companies/${clients.data[0].id}/summary`)).json()
   const status = Object.fromEntries(summary.sections.map((s: { key: string; status: string }) => [s.key, s.status]))
-  expect(status).toMatchObject({ overview: 'available', contacts: 'available', projects: 'available', quotes: 'available', invoices: 'upcoming', support: 'planned' })
+  expect(status).toMatchObject({ overview: 'available', contacts: 'available', projects: 'available', quotes: 'available', invoices: 'available', payments: 'upcoming', support: 'planned' })
   expect(summary.deals.openValue).toEqual([{ currency: 'AUD', valueMinor: 1_800_000 }])
 })

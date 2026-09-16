@@ -439,17 +439,54 @@ Totals and each line's computed amounts are **stored**, recalculated on every ch
 to a draft. Each line keeps a snapshot of its tax's name and rate, and a tax rate's
 percentage cannot change once a document uses it.
 
+### Invoices, and what a client can reach
+
+An invoice is a quote with dates and states that matter to money: an issue date,
+a due date derived from the payment terms, when the client opened it, and what
+has been paid (S7c). It is priced by the same calculator through
+`modules/finance/documents.ts`, so a quote and the invoice raised from it cannot
+disagree. Raising an invoice from a quote copies its lines and their tax
+snapshots and never prices them again.
+
+**Tracked time becomes lines** at the rate each entry was logged at, never a
+rate resolved now. Entries carry the line that billed them, so billed time is
+frozen: editing or deleting it is refused until the line goes, and a foreign key
+means a line cannot be deleted while entries still point at it.
+
+**The client's link** (`/i/<token>`) is the only part of Workloom reachable
+without an account. The token is an HMAC over `invoice:<organization>:<invoice>`,
+signed with a key derived for that purpose alone: nothing is stored, nothing is
+looked up before the tenant is known, and a token minted for one purpose cannot
+be replayed as another. The link names its own organization, so the read still
+happens inside that tenant's transaction, as a system actor with no permissions.
+Opening it records the view once and emits `invoice.viewed`. A draft is never
+reachable. **The link is a bearer credential**: anyone holding it sees that one
+invoice, which is what an emailed invoice needs to be.
+
+**PDFs** are rendered in-process by `packages/pdf` (`@react-pdf/renderer`, no
+headless browser) from data already formatted by the domain, so the page and the
+print cannot drift. Staff download through a short-lived signed link, the same
+pattern as a stored file; a client downloads through their own link, which does
+not expire, because a client must be able to fetch their invoice whenever they
+need it. Both are served as attachments with `nosniff` and no shared caching.
+
+**Emails go after the commit.** The message is built inside the transaction and
+sent from `ctx.afterCommit`: a message cannot be unsent, so it must never go out
+for a change that then rolls back. A failure is logged, and the invoice stays
+issued -- send it again rather than lose the number.
+
 ### Issued documents
 
 - **Numbers are gapless.** `document_sequences` holds the next number per organization
   and kind, locked `FOR UPDATE` in the transaction that issues the document. A rollback
   returns the number. Drafts have none.
-- **An issued document never changes.** The service refuses, and a trigger
-  (`workloom_quote_guard`, migration 0012) refuses too, even for a superuser. After
-  sending, only the status and the client's answer may change, and the comparison
-  covers the whole row, so a new column is frozen without being listed. Deleting a
-  sent quote is refused (409). The one exemption is a cascade from deleting the
-  organization.
+- **An issued document never changes.** The service refuses, and a trigger refuses
+  too, even for a superuser (`workloom_quote_guard`, migration 0012;
+  `workloom_invoice_guard`, migration 0014). Afterwards only what happens *to* the
+  document may change -- the client's answer on a quote; being opened, cancelled, or
+  paid on an invoice -- and the comparison covers the whole row, so a new column is
+  frozen without being listed. Deleting an issued document is refused (409). The one
+  exemption is a cascade from deleting the organization.
 - **The exchange rate is captured when a document is issued**, with the base currency
   at that moment and the total converted. There is no rate feed: the rate is 1 in the
   base currency, and must be given otherwise.

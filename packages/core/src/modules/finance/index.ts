@@ -1,3 +1,6 @@
 export * from './tax-rates.ts'
 export * from './services.ts'
+export * from './documents.ts'
+export * from './pdf.ts'
 export * from './quotes.ts'
+export * from './invoices.ts'

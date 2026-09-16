@@ -39,8 +39,8 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S5 — Projects, milestones, tasks](S5.md) | Done |
 | [S6 — Time tracking](S6.md) | Done |
 | [S7a — Money, tax, services, quotes](S7a.md) | Done |
-| S7b — Invoices | Next |
-| S7c — Payments and expenses | |
+| [S7b — Invoices, PDFs, delivery](S7b.md) | Done |
+| S7c — Payments and expenses | Next |
 | S8 — Profitability & reporting | |
 | S9 — Dashboard | |
 | S10 — Release hardening | |

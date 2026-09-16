@@ -15,11 +15,15 @@ function getTransporter(): Transporter {
   return transporter
 }
 
+export type Attachment = { filename: string; content: Buffer; contentType: string }
+
 export type Email = {
   to: string
   subject: string
   html: string
   text: string
+  /** Files sent with the message, such as an invoice PDF. */
+  attachments?: Attachment[]
 }
 
 /**
@@ -53,6 +57,9 @@ export async function sendEmail(email: Email): Promise<void> {
     subject: email.subject,
     text: email.text,
     html: email.html,
+    ...(email.attachments?.length
+      ? { attachments: email.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })) }
+      : {}),
   })
 }
 

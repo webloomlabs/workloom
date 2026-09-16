@@ -1,6 +1,7 @@
 const MAILPIT = process.env.E2E_MAILPIT_URL ?? 'http://localhost:8025'
 
 type Summary = { ID: string; Subject: string; To: Array<{ Address: string }> }
+type Message = { Text: string; Subject: string; Attachments: Array<{ FileName: string; ContentType: string; Size: number }> }
 
 /** Waits for the newest message to an address matching `subject`, and returns its first link. */
 export async function linkFromEmail(to: string, subject: RegExp, linkPattern: RegExp): Promise<string> {
@@ -14,6 +15,19 @@ export async function linkFromEmail(to: string, subject: RegExp, linkPattern: Re
       const link = detail.Text.match(linkPattern)?.[0]
       if (link) return link
     }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error(`No email to ${to} matching ${subject} arrived within 20s`)
+}
+
+/** Waits for the newest message to an address matching `subject`, and returns it whole. */
+export async function waitForEmail(to: string, subject: RegExp): Promise<Message> {
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    const response = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`)
+    const { messages } = (await response.json()) as { messages: Summary[] }
+    const match = messages.find((m) => subject.test(m.Subject))
+    if (match) return (await (await fetch(`${MAILPIT}/api/v1/message/${match.ID}`)).json()) as Message
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
   throw new Error(`No email to ${to} matching ${subject} arrived within 20s`)

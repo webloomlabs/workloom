@@ -91,6 +91,8 @@ describe('tenant tables', () => {
         'services',
         'quotes',
         'quote_lines',
+        'invoices',
+        'invoice_lines',
       ]),
     )
   })

@@ -1,6 +1,7 @@
 import { eq, schema } from '@workloom/db'
 import { z } from 'zod'
 import { diff } from '../audit.ts'
+import { optionalText, provided } from './crm/shared.ts'
 import { DomainError, NotFoundError } from '../context.ts'
 import { defineProcedure } from '../registry/index.ts'
 
@@ -11,6 +12,13 @@ const organizationOutput = z.object({
   baseCurrency: z.string().length(3),
   timezone: z.string(),
   dateFormat: z.string(),
+  /** What quotes and invoices are issued as, and how they are paid. */
+  legalName: z.string().nullable(),
+  billingAddress: z.string().nullable(),
+  taxNumber: z.string().nullable(),
+  paymentInstructions: z.string().nullable(),
+  /** Days from issue to due on a new invoice. */
+  paymentTermsDays: z.number().int(),
 })
 
 export const organizationGet = defineProcedure({
@@ -47,6 +55,13 @@ export const organizationUpdate = defineProcedure({
     /** IANA zone. Drives every "overdue" and "due today" calculation. */
     timezone: z.string().min(1).max(64).optional(),
     dateFormat: z.string().min(1).max(32).optional(),
+
+    /** The issuer as it appears on a document, and how the client pays. */
+    legalName: optionalText(200),
+    billingAddress: optionalText(2000),
+    taxNumber: optionalText(60),
+    paymentInstructions: optionalText(2000),
+    paymentTermsDays: z.number().int().min(0).max(365).optional(),
   }),
   output: organizationOutput,
   http: { method: 'PATCH', path: '/organization' },
@@ -63,12 +78,12 @@ export const organizationUpdate = defineProcedure({
       throw new DomainError(`Unknown time zone: ${input.timezone}`, 'unknown_timezone', 'timezone')
     }
 
-    const changes = diff(before as unknown as Record<string, unknown>, input)
+    const changes = diff(before as unknown as Record<string, unknown>, provided(input))
     if (!changes) return before
 
     const [after] = await ctx.tx
       .update(schema.organization)
-      .set(input)
+      .set(provided(input))
       .where(eq(schema.organization.id, ctx.organizationId))
       .returning()
 

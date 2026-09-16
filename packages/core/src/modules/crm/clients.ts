@@ -81,6 +81,7 @@ export const SECTION_COUNTERS: Partial<Record<ClientSectionKey, Counter>> = {
         .where(and(eq(schema.projects.companyId, id), isNull(schema.projects.archivedAt))),
     ),
   quotes: (ctx, id) => counted(ctx.tx.select({ n: count() }).from(schema.quotes).where(eq(schema.quotes.companyId, id))),
+  invoices: (ctx, id) => counted(ctx.tx.select({ n: count() }).from(schema.invoices).where(eq(schema.invoices.companyId, id))),
   activity: (ctx, id) =>
     counted(
       ctx.tx

@@ -200,7 +200,8 @@ export type QuoteDetails = {
   contactId: string | null
   currency: string
   taxMode: string
-  validUntil: string
+  /** A quote's validity date. Null on an invoice, which has payment terms instead. */
+  validUntil: string | null
   discountPercent: string | null
   /** Decimal string in the quote's currency. */
   discountAmount: string | null
@@ -209,8 +210,19 @@ export type QuoteDetails = {
   hasLines: boolean
 }
 
-export function QuoteDetailsForm({ quote, contacts }: { quote: QuoteDetails; contacts: Choice[] }) {
-  const [state, action] = useActionState(updateQuoteAction, idle)
+export function QuoteDetailsForm({
+  quote,
+  contacts,
+  save = updateQuoteAction,
+  terms,
+}: {
+  quote: QuoteDetails
+  contacts: Choice[]
+  save?: (state: ActionState, form: FormData) => Promise<ActionState>
+  /** An invoice's payment terms, in place of a quote's valid-until date. */
+  terms?: { label: string; value: string }
+}) {
+  const [state, action] = useActionState(save, idle)
   const [discountType, setDiscountType] = useState(quote.discountPercent !== null ? 'percent' : quote.discountAmount !== null ? 'amount' : 'none')
   const discountError = fieldError(state, 'discountValue')
   return (
@@ -222,7 +234,11 @@ export function QuoteDetailsForm({ quote, contacts }: { quote: QuoteDetails; con
         <TextField state={state} name="title" label="Title" defaultValue={quote.title} />
         <SelectField state={state} name="contactId" label="Contact" defaultValue={quote.contactId} empty="No contact" options={choices(contacts)} />
         <SelectField state={state} name="taxMode" label="Tax" defaultValue={quote.taxMode} options={options(TAX_MODE_LABELS)} />
-        <TextField state={state} name="validUntil" label="Valid until" type="date" defaultValue={quote.validUntil} />
+        {terms ? (
+          <TextField state={state} name="paymentTermsDays" label={terms.label} defaultValue={terms.value} hint="The due date is this many days after issuing." />
+        ) : (
+          <TextField state={state} name="validUntil" label="Valid until" type="date" defaultValue={quote.validUntil} />
+        )}
         {!quote.hasLines && <TextField state={state} name="newCurrency" label="Currency" defaultValue={quote.currency} hint="Fixed once the quote has lines." />}
         <div className="grid grid-cols-[9rem_1fr] gap-2">
           <Field id="discountType" label="Discount">
@@ -251,11 +267,24 @@ export function QuoteDetailsForm({ quote, contacts }: { quote: QuoteDetails; con
   )
 }
 
-export function AddLineForm({ quoteId, currency, services, taxRates }: { quoteId: string; currency: string; services: Array<Choice & { hint: string }>; taxRates: TaxChoice[] }) {
-  const [state, action] = useActionState(addQuoteLineAction, idle)
+export function AddLineForm({
+  documentId,
+  currency,
+  services,
+  taxRates,
+  add = addQuoteLineAction,
+}: {
+  documentId: string
+  currency: string
+  services: Array<Choice & { hint: string }>
+  taxRates: TaxChoice[]
+  /** Quotes and invoices differ only in which procedure the form calls. */
+  add?: (state: ActionState, form: FormData) => Promise<ActionState>
+}) {
+  const [state, action] = useActionState(add, idle)
   return (
     <form action={action} className="space-y-3" noValidate>
-      <input type="hidden" name="id" value={quoteId} />
+      <input type="hidden" name="id" value={documentId} />
       <input type="hidden" name="currency" value={currency} />
       <div className="grid gap-3 sm:grid-cols-[2fr_3fr]">
         <SelectField state={state} id="add-serviceId" name="serviceId" label="Service" empty="None" options={services.map((s) => ({ value: s.id, label: `${s.name}${s.hint}` }))} />
@@ -292,8 +321,22 @@ export type EditableLine = {
   taxRateId: string | null
 }
 
-export function LineControls({ quoteId, currency, line, taxRates }: { quoteId: string; currency: string; line: EditableLine; taxRates: TaxChoice[] }) {
-  const [state, action] = useActionState(updateQuoteLineAction, idle)
+export function LineControls({
+  documentId,
+  currency,
+  line,
+  taxRates,
+  save = updateQuoteLineAction,
+  remove = removeQuoteLineAction,
+}: {
+  documentId: string
+  currency: string
+  line: EditableLine
+  taxRates: TaxChoice[]
+  save?: (state: ActionState, form: FormData) => Promise<ActionState>
+  remove?: (form: FormData) => Promise<void>
+}) {
+  const [state, action] = useActionState(save, idle)
   const [open, setOpen] = useState(false)
   const prefix = `line-${line.id}`
   return (
@@ -301,15 +344,15 @@ export function LineControls({ quoteId, currency, line, taxRates }: { quoteId: s
       <Button type="button" size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Edit ${line.description}`}>
         {open ? 'Close' : 'Edit'}
       </Button>
-      <form action={removeQuoteLineAction}>
+      <form action={remove}>
         <input type="hidden" name="id" value={line.id} />
-        <input type="hidden" name="quoteId" value={quoteId} />
+        <input type="hidden" name="documentId" value={documentId} />
         <Button type="submit" size="sm" variant="ghost" aria-label={`Remove ${line.description}`}>Remove</Button>
       </form>
       {open && (
         <form action={action} className="mt-2 grid w-full gap-3 text-left sm:grid-cols-2 lg:grid-cols-[3fr_1fr_1.5fr_1fr_2fr]" noValidate>
           <input type="hidden" name="id" value={line.id} />
-          <input type="hidden" name="quoteId" value={quoteId} />
+          <input type="hidden" name="documentId" value={documentId} />
           <input type="hidden" name="currency" value={currency} />
           <TextField state={state} id={`${prefix}-description`} name="description" label="Description" defaultValue={line.description} />
           <TextField state={state} id={`${prefix}-quantity`} name="quantity" label="Qty" defaultValue={line.quantity} />

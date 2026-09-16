@@ -235,7 +235,7 @@ export async function addQuoteLineAction(_: ActionState, form: FormData): Promis
 }
 
 export async function updateQuoteLineAction(_: ActionState, form: FormData): Promise<ActionState> {
-  const quoteId = id(form, 'quoteId')
+  const quoteId = id(form, 'documentId')
   try {
     const currency = text(form, 'currency')
     const unitAmount = amount(form, 'unitAmount', currency, { allowNegative: true })
@@ -257,7 +257,7 @@ export async function updateQuoteLineAction(_: ActionState, form: FormData): Pro
 
 export async function removeQuoteLineAction(form: FormData): Promise<void> {
   await call(quoteLineRemove, { id: id(form) })
-  refreshQuote(id(form, 'quoteId'))
+  refreshQuote(id(form, 'documentId'))
 }
 
 export async function sendQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {

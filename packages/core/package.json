@@ -18,6 +18,8 @@
   "dependencies": {
     "@workloom/config": "workspace:*",
     "@workloom/db": "workspace:*",
+    "@workloom/emails": "workspace:*",
+    "@workloom/pdf": "workspace:*",
     "@workloom/storage": "workspace:*",
     "undici": "^7.29.1",
     "uuid": "^14.0.0",

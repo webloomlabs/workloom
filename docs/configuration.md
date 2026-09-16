@@ -15,11 +15,11 @@ See [.env.example](../.env.example) for the annotated list.
 
 | Variable | Notes |
 | --- | --- |
-| `APP_URL` | Public origin. Used for links in outbound email. |
+| `APP_URL` | Public origin. Used for links in outbound email, and for the link on an invoice that its client opens. It must be reachable by clients, not only by staff. |
 | `DATABASE_URL` | Must **not** be a superuser — see [Architecture](architecture.md). |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` |
 | `WORKLOOM_ENCRYPTION_KEY` | 32 bytes, base64. Encrypts webhook signing secrets and integration credentials at rest. **Back it up** — losing it makes those secrets unrecoverable. |
-| `SMTP_HOST`, `MAIL_FROM` | Invitations, email confirmation, password resets and invoice delivery depend on mail. `SMTP_HOST` is required while `MAIL_DRIVER` is `smtp`. |
+| `SMTP_HOST`, `MAIL_FROM` | Invitations, email confirmation, password resets and invoice delivery depend on mail. `SMTP_HOST` is required while `MAIL_DRIVER` is `smtp`. An invoice email carries its PDF as an attachment, so the server must accept messages of a few hundred kilobytes. |
 
 ## Optional
 
@@ -33,3 +33,16 @@ See [.env.example](../.env.example) for the annotated list.
 | `WORKLOOM_PREVIOUS_ENCRYPTION_KEYS` | unset | Comma-separated keys that used to be `WORKLOOM_ENCRYPTION_KEY`. Secrets encrypted under them stay readable after rotation. Remove an old key only once nothing references it. |
 | `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` | `false` | Webhook URLs resolving to loopback, private, or link-local addresses are rejected, and `https://` is required. Workloom usually runs inside a private network, where such a URL is an SSRF vector against internal services. Set to `true` only for local development, on both the app and the worker. |
 | `DANGEROUSLY_ALLOW_SUPERUSER_DB` | `false` | Lets the app boot despite failing isolation checks. Rejected outright in production. For tooling only. |
+
+## Documents
+
+Quotes and invoices are rendered to PDF in the application itself, with no
+headless browser and no external service. The font is embedded (Noto Sans, SIL
+Open Font License, in `packages/pdf/fonts`), so every reader sees the same page:
+Latin, Greek, Cyrillic, and Vietnamese. Other scripts -- CJK, Arabic,
+Devanagari -- would need their own font added there; without one, those
+characters render as blank boxes.
+
+What appears at the top of a document, and how a client is told to pay, comes
+from **Settings → Organization**: legal name, address, tax number, payment
+instructions, and the default payment terms in days.

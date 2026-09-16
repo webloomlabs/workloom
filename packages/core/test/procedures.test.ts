@@ -181,6 +181,21 @@ async function sentQuote(): Promise<string> {
   return id
 }
 
+async function createInvoice(): Promise<string> {
+  const invoice = (await run('invoice.create', ownerOfA(), {
+    companyId: await createCompany(),
+    title: `Invoice ${unique()}`,
+    lines: [{ description: 'Discovery workshop', unitAmountMinor: 2_000_00 }],
+  })) as { id: string }
+  return invoice.id
+}
+
+async function sentInvoice(): Promise<string> {
+  const id = await createInvoice()
+  await run('invoice.send', ownerOfA(), { id })
+  return id
+}
+
 const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
 
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
@@ -420,6 +435,35 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     return { id: quote.lines[0]!.id }
   },
 
+  'invoice.create': async () => ({
+    companyId: await createCompany(),
+    title: 'Website rebuild',
+    lines: [{ description: 'Discovery', unitAmountMinor: 1_500_00, taxRateId: await createTaxRate() }],
+  }),
+  'invoice.update': async () => ({ id: await createInvoice(), title: `Retitled ${unique()}`, discountPercent: '5' }),
+  'invoice.delete': async () => ({ id: await createInvoice() }),
+  'invoiceLine.add': async () => ({ id: await createInvoice(), serviceId: await createService(), quantity: 2 }),
+  'invoiceLine.update': async () => {
+    const invoice = (await run('invoice.get', ownerOfA(), { id: await createInvoice() })) as { lines: Array<{ id: string }> }
+    return { id: invoice.lines[0]!.id, quantity: `${2 + (Number.parseInt(unique(), 16) % 40)}` }
+  },
+  'invoiceLine.remove': async () => {
+    const invoice = (await run('invoice.get', ownerOfA(), { id: await createInvoice() })) as { lines: Array<{ id: string }> }
+    return { id: invoice.lines[0]!.id }
+  },
+  'invoice.billTime': async () => {
+    const companyId = await createCompany()
+    const projectId = await createProject({ companyId })
+    await run('rate.set', ownerOfA(), { billableRateMinor: 150_00, costRateMinor: 60_00 })
+    await run('timeEntry.create', ownerOfA(), { projectId, durationSeconds: 3600, billable: true })
+    const invoice = (await run('invoice.create', ownerOfA(), { companyId, title: `Time ${unique()}` })) as { id: string }
+    return { id: invoice.id, projectId }
+  },
+  'invoice.fromQuote': async () => ({ id: await sentQuote() }),
+  'invoice.send': async () => ({ id: await createInvoice() }),
+  'invoice.email': async () => ({ id: await sentInvoice(), to: 'client@example.com' }),
+  'invoice.cancel': async () => ({ id: await sentInvoice(), reason: 'Raised in error' }),
+
   'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
   'attachment.delete': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
@@ -451,6 +495,9 @@ const READS: Record<string, Fixture> = {
   'timeEntry.summary': async () => ({ id: await createProject() }),
   'service.get': async () => ({ id: await createService() }),
   'quote.get': async () => ({ id: await createQuote() }),
+  'invoice.get': async () => ({ id: await createInvoice() }),
+  'invoice.download': async () => ({ id: await createInvoice() }),
+  'invoice.list': async () => ({ companyId: await createCompany() }),
   'quote.list': async () => ({ companyId: await createCompany() }),
   'attachment.download': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }

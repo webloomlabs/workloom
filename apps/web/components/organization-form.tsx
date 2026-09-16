@@ -1,12 +1,22 @@
 'use client'
 
-import { Field, Input } from '@workloom/ui'
+import { Field, Input, Textarea } from '@workloom/ui'
 import { useActionState } from 'react'
 import { updateOrganizationAction } from '@/lib/actions/settings'
 import { idle } from '@/lib/actions/state'
 import { fieldError, FormMessage, SubmitButton } from './form-bits'
 
-type Organization = { name: string; baseCurrency: string; timezone: string; dateFormat: string }
+type Organization = {
+  name: string
+  baseCurrency: string
+  timezone: string
+  dateFormat: string
+  legalName: string | null
+  billingAddress: string | null
+  taxNumber: string | null
+  paymentInstructions: string | null
+  paymentTermsDays: number
+}
 
 export function OrganizationForm({
   organization,
@@ -43,6 +53,26 @@ export function OrganizationForm({
         <Field id="dateFormat" label="Date format" error={fieldError(state, 'dateFormat')}>
           <Input id="dateFormat" name="dateFormat" defaultValue={organization.dateFormat} />
         </Field>
+      </fieldset>
+      <fieldset disabled={!canEdit} className="space-y-5 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+        <legend className="text-sm font-semibold">On quotes and invoices</legend>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field id="legalName" label="Legal name" hint="The name documents are issued under, if it differs." error={fieldError(state, 'legalName')}>
+            <Input id="legalName" name="legalName" defaultValue={organization.legalName ?? ''} />
+          </Field>
+          <Field id="taxNumber" label="Tax number" hint="ABN, VAT number, or local equivalent." error={fieldError(state, 'taxNumber')}>
+            <Input id="taxNumber" name="taxNumber" defaultValue={organization.taxNumber ?? ''} />
+          </Field>
+          <Field id="billingAddress" label="Address" error={fieldError(state, 'billingAddress')}>
+            <Textarea id="billingAddress" name="billingAddress" rows={3} defaultValue={organization.billingAddress ?? ''} />
+          </Field>
+          <Field id="paymentInstructions" label="How to pay" hint="Bank details or instructions, printed on every invoice." error={fieldError(state, 'paymentInstructions')}>
+            <Textarea id="paymentInstructions" name="paymentInstructions" rows={3} defaultValue={organization.paymentInstructions ?? ''} />
+          </Field>
+          <Field id="paymentTermsDays" label="Payment terms (days)" hint="The due date on a new invoice, counted from its issue date." error={fieldError(state, 'paymentTermsDays')}>
+            <Input id="paymentTermsDays" name="paymentTermsDays" defaultValue={String(organization.paymentTermsDays)} inputMode="numeric" />
+          </Field>
+        </div>
       </fieldset>
       <datalist id="timezones">
         {timezones.map((zone) => (

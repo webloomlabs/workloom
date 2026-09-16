@@ -3,12 +3,10 @@ import { z } from 'zod'
 import { diff } from '../../audit.ts'
 import { ConflictError, DomainError, NotFoundError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
-import { convert, formatDecimal, MoneyError, parseDecimal, RATE_SCALE, toSafeNumber } from '../../money/money.ts'
+import { convert, formatDecimal, parseDecimal, RATE_SCALE, toSafeNumber } from '../../money/money.ts'
 import { defineProcedure } from '../../registry/index.ts'
-import { calculate } from '../../tax/calculate.ts'
-import { addDays, dateIn } from '../../time/index.ts'
+import { addDays } from '../../time/index.ts'
 import { loadCompany } from '../crm/companies.ts'
-import { loadContact } from '../crm/contacts.ts'
 import { loadDeal } from '../crm/deals.ts'
 import {
   actingUserId,
@@ -17,7 +15,6 @@ import {
   currencyCode,
   minorAmount,
   optionalText,
-  organizationTimezone,
   pageInput,
   pageOutput,
   paginate,
@@ -26,11 +23,24 @@ import {
   requiredText,
   searchInput,
 } from '../crm/shared.ts'
+import {
+  assertOneDiscount,
+  documentLineOutput,
+  documentTaxOutput,
+  exchangeRateInput,
+  lineInput,
+  newLineValues,
+  presentLine,
+  priceDocument,
+  pricedLineValues,
+  resolveLinks,
+  taxSnapshot,
+  taxesFromLines,
+  today,
+} from './documents.ts'
 import { loadProject } from '../projects/projects.ts'
 import { issueNumber } from './numbering.ts'
-import { loadService } from './services.ts'
-import { fromNumeric, percentInput, pricingRefusal, quantityInput, signedMinorAmount } from './shared.ts'
-import { loadTaxRate } from './tax-rates.ts'
+import { fromNumeric, percentInput, pricingRefusal } from './shared.ts'
 
 /**
  * Quotes.
@@ -47,29 +57,7 @@ type LineRow = typeof schema.quoteLines.$inferSelect
 /** How long a new quote stays open unless told otherwise. */
 const DEFAULT_VALID_DAYS = 30
 
-export const quoteLineOutput = z.object({
-  id: z.uuid(),
-  position: z.number().int(),
-  serviceId: z.uuid().nullable(),
-  description: z.string(),
-  /** Exact decimal string, up to four places. */
-  quantity: z.string(),
-  unitAmountMinor: z.number().int(),
-  discountPercent: z.string().nullable(),
-  taxRateId: z.uuid().nullable(),
-  /** The tax's name and rate when it was applied to this line. */
-  taxName: z.string().nullable(),
-  taxRate: z.string().nullable(),
-  amountMinor: z.number().int(),
-  lineDiscountMinor: z.number().int(),
-  netMinor: z.number().int(),
-  /** This line's share of the quote's discount. */
-  documentDiscountMinor: z.number().int(),
-  taxableMinor: z.number().int(),
-  taxMinor: z.number().int(),
-  totalMinor: z.number().int(),
-})
-
+export const quoteLineOutput = documentLineOutput
 export const quoteSummaryOutput = z.object({
   id: z.uuid(),
   /** Assigned when sent. Null for drafts. */
@@ -111,7 +99,7 @@ export const quoteOutput = quoteSummaryOutput.extend({
   terms: z.string().nullable(),
   lines: z.array(quoteLineOutput),
   /** One entry per tax, in order of first use. `amountMinor` is what it is charged on. */
-  taxes: z.array(z.object({ taxRateId: z.uuid(), name: z.string(), rate: z.string(), amountMinor: z.number().int(), taxMinor: z.number().int() })),
+  taxes: z.array(documentTaxOutput),
 })
 
 export type Quote = z.infer<typeof quoteOutput>
@@ -167,28 +155,6 @@ function presentSummary(row: { quote: QuoteRow; companyName: string; contactName
   }
 }
 
-function presentLine(line: LineRow): z.infer<typeof quoteLineOutput> {
-  return {
-    id: line.id,
-    position: line.position,
-    serviceId: line.serviceId,
-    description: line.description,
-    quantity: fromNumeric(line.quantity),
-    unitAmountMinor: line.unitAmountMinor,
-    discountPercent: fromNumeric(line.discountPercent),
-    taxRateId: line.taxRateId,
-    taxName: line.taxName,
-    taxRate: fromNumeric(line.taxRatePctSnapshot),
-    amountMinor: line.amountMinor,
-    lineDiscountMinor: line.lineDiscountMinor,
-    netMinor: line.netMinor,
-    documentDiscountMinor: line.documentDiscountMinor,
-    taxableMinor: line.netMinor - line.documentDiscountMinor,
-    taxMinor: line.taxMinor,
-    totalMinor: line.totalMinor,
-  }
-}
-
 async function loadLines(ctx: ActorContext, quoteId: string): Promise<LineRow[]> {
   const l = schema.quoteLines
   return ctx.tx.select().from(l).where(eq(l.quoteId, quoteId)).orderBy(asc(l.position), asc(l.id))
@@ -198,15 +164,7 @@ export async function getQuote(ctx: ActorContext, id: string): Promise<Quote> {
   const [row] = await selectQuotes(ctx).where(eq(schema.quotes.id, id)).limit(1)
   if (!row) throw new NotFoundError('Quote', id)
   const lines = (await loadLines(ctx, id)).map(presentLine)
-  const taxes = new Map<string, Quote['taxes'][number]>()
-  for (const line of lines) {
-    if (!line.taxRateId) continue
-    const tax = taxes.get(line.taxRateId) ?? { taxRateId: line.taxRateId, name: line.taxName!, rate: line.taxRate!, amountMinor: 0, taxMinor: 0 }
-    tax.amountMinor += line.taxableMinor
-    tax.taxMinor += line.taxMinor
-    taxes.set(line.taxRateId, tax)
-  }
-  return { ...presentSummary(row), notes: row.quote.notes, terms: row.quote.terms, lines, taxes: [...taxes.values()] }
+  return { ...presentSummary(row), notes: row.quote.notes, terms: row.quote.terms, lines, taxes: taxesFromLines(lines) }
 }
 
 export async function loadQuote(ctx: ActorContext, id: string, options: { lock?: boolean } = {}): Promise<QuoteRow> {
@@ -222,141 +180,21 @@ function requireDraft(quote: QuoteRow): void {
   }
 }
 
-async function today(ctx: ActorContext): Promise<string> {
-  return dateIn(ctx.now, await organizationTimezone(ctx))
-}
-
 /**
- * Prices the quote from its stored lines and stores the result. Every change
- * to a draft ends here, so stored totals are always the calculator's.
+ * Prices the quote from its stored lines and stores the result. Every change to
+ * a draft ends here, so stored totals are always the calculator's.
  */
 async function recalculate(ctx: ActorContext, quoteId: string): Promise<void> {
   const quote = await loadQuote(ctx, quoteId)
   const lines = await loadLines(ctx, quoteId)
-  let result: ReturnType<typeof calculate>
-  try {
-    result = calculate({
-      currency: quote.currency,
-      taxMode: quote.taxMode as 'exclusive' | 'inclusive',
-      discount:
-        quote.discountPercent !== null
-          ? { percent: quote.discountPercent }
-          : quote.discountAmountMinor !== null
-            ? { amountMinor: quote.discountAmountMinor }
-            : null,
-      lines: lines.map((l) => ({
-        quantity: l.quantity,
-        unitAmountMinor: l.unitAmountMinor,
-        discountPercent: l.discountPercent,
-        tax: l.taxRateId ? { key: l.taxRateId, rate: l.taxRatePctSnapshot! } : null,
-      })),
-    })
-  } catch (error) {
-    pricingRefusal(error)
-  }
-
+  const result = priceDocument(quote, lines)
   for (const [i, line] of lines.entries()) {
-    const priced = result.lines[i]!
-    await ctx.tx
-      .update(schema.quoteLines)
-      .set({
-        amountMinor: priced.amountMinor,
-        lineDiscountMinor: priced.lineDiscountMinor,
-        netMinor: priced.netMinor,
-        documentDiscountMinor: priced.documentDiscountMinor,
-        taxMinor: priced.taxMinor,
-        totalMinor: priced.totalMinor,
-      })
-      .where(eq(schema.quoteLines.id, line.id))
+    await ctx.tx.update(schema.quoteLines).set(pricedLineValues(result.lines[i]!)).where(eq(schema.quoteLines.id, line.id))
   }
   await ctx.tx
     .update(schema.quotes)
     .set({ subtotalMinor: result.subtotalMinor, discountMinor: result.discountMinor, taxMinor: result.taxMinor, totalMinor: result.totalMinor, updatedAt: ctx.now })
     .where(eq(schema.quotes.id, quoteId))
-}
-
-/** The client, and the contact, deal, and project a quote is linked to -- which must all be that client's. */
-async function resolveLinks(
-  ctx: ActorContext,
-  input: { companyId?: string | null | undefined; contactId?: string | null | undefined; dealId?: string | null | undefined; projectId?: string | null | undefined },
-) {
-  let companyId = input.companyId ?? null
-  let deal: Awaited<ReturnType<typeof loadDeal>> | null = null
-  if (input.dealId) {
-    deal = await loadDeal(ctx, input.dealId)
-    if (companyId && deal.companyId !== companyId) throw new DomainError('That deal belongs to a different company.', 'deal_company_mismatch', 'dealId')
-    companyId = deal.companyId
-  }
-  if (!companyId) throw new DomainError('Choose the client this quote is for.', 'company_required', 'companyId')
-  const company = await loadCompany(ctx, companyId)
-  if (input.contactId) {
-    const contact = await loadContact(ctx, input.contactId)
-    if (contact.companyId !== companyId) throw new DomainError('That contact works for a different company.', 'contact_company_mismatch', 'contactId')
-  }
-  if (input.projectId) {
-    const project = await loadProject(ctx, input.projectId)
-    if (project.companyId !== companyId) throw new DomainError('That project is for a different client.', 'project_company_mismatch', 'projectId')
-  }
-  return { company, deal }
-}
-
-function assertOneDiscount(percent: string | null | undefined, amount: number | null | undefined): void {
-  if (percent != null && amount != null) {
-    throw new DomainError('Give the discount as a percentage or an amount, not both.', 'one_discount', 'discountAmountMinor')
-  }
-}
-
-const lineInput = z.object({
-  /** A catalogue service. Its name, price (in the quote's currency), and default tax fill whatever the line leaves out. */
-  serviceId: z.uuid().nullish(),
-  description: optionalText(2000),
-  /** Defaults to 1. */
-  quantity: quantityInput.optional(),
-  /** Minor units of the quote's currency; negative for a credit. */
-  unitAmountMinor: signedMinorAmount.optional(),
-  discountPercent: percentInput.nullish(),
-  /** Omit to use the service's default tax; null for no tax. */
-  taxRateId: z.uuid().nullish(),
-})
-
-type LineInput = z.infer<typeof lineInput>
-
-/** The stored values for a new line, filled from its service where the input leaves gaps. */
-async function newLineValues(ctx: ActorContext, quote: QuoteRow, input: LineInput, position: number, field = '') {
-  const service = input.serviceId ? await loadService(ctx, input.serviceId, { active: true }) : null
-  const description = input.description ?? (service ? service.name : null)
-  if (!description) throw new DomainError('Describe the line, or choose a service.', 'description_required', `${field}description`)
-  const unitAmountMinor =
-    input.unitAmountMinor ?? (service && service.currency === quote.currency && service.defaultPriceMinor !== null ? service.defaultPriceMinor : undefined)
-  if (unitAmountMinor === undefined) {
-    throw new DomainError(
-      service ? `Enter a price: "${service.name}" has no standard price in ${quote.currency}.` : 'Enter a unit price.',
-      'unit_amount_required',
-      `${field}unitAmountMinor`,
-    )
-  }
-  const taxRateId = input.taxRateId !== undefined ? input.taxRateId : (service?.defaultTaxRateId ?? null)
-  const tax = taxRateId ? await loadTaxRate(ctx, taxRateId, { active: true, field: `${field}taxRateId` }) : null
-  return {
-    id: newId(),
-    organizationId: ctx.organizationId,
-    quoteId: quote.id,
-    position,
-    serviceId: service?.id ?? null,
-    description,
-    quantity: input.quantity ?? '1',
-    unitAmountMinor,
-    discountPercent: input.discountPercent ?? null,
-    taxRateId: tax?.id ?? null,
-    taxName: tax?.name ?? null,
-    taxRatePctSnapshot: tax?.rate ?? null,
-    amountMinor: 0,
-    lineDiscountMinor: 0,
-    netMinor: 0,
-    documentDiscountMinor: 0,
-    taxMinor: 0,
-    totalMinor: 0,
-  }
 }
 
 async function nextPosition(ctx: ActorContext, quoteId: string): Promise<number> {
@@ -469,7 +307,13 @@ export const quoteCreate = defineProcedure({
     })
     const quote = await loadQuote(ctx, id)
     for (const [i, line] of input.lines.entries()) {
-      await ctx.tx.insert(schema.quoteLines).values(await newLineValues(ctx, quote, line, i + 1, `lines.${i}.`))
+      await ctx.tx.insert(schema.quoteLines).values({
+        id: newId(),
+        organizationId: ctx.organizationId,
+        quoteId: quote.id,
+        position: i + 1,
+        ...(await newLineValues(ctx, quote, line, `lines.${i}.`)),
+      })
     }
     await recalculate(ctx, id)
 
@@ -567,7 +411,7 @@ export const quoteLineAdd = defineProcedure({
     const { id, ...line } = input
     const quote = await loadQuote(ctx, id, { lock: true })
     requireDraft(quote)
-    const values = await newLineValues(ctx, quote, line, await nextPosition(ctx, id))
+    const values = { id: newId(), organizationId: ctx.organizationId, quoteId: id, position: await nextPosition(ctx, id), ...(await newLineValues(ctx, quote, line)) }
     await ctx.tx.insert(schema.quoteLines).values(values)
     await recalculate(ctx, id)
     const updated = await getQuote(ctx, id)
@@ -597,10 +441,7 @@ export const quoteLineUpdate = defineProcedure({
     const { id, taxRateId, ...fields } = input
     const { line, quote } = await loadLineForChange(ctx, id)
     const patch: Partial<LineRow> = provided(fields) as Partial<LineRow>
-    if (taxRateId !== undefined && taxRateId !== line.taxRateId) {
-      const tax = taxRateId ? await loadTaxRate(ctx, taxRateId, { active: true }) : null
-      Object.assign(patch, { taxRateId: tax?.id ?? null, taxName: tax?.name ?? null, taxRatePctSnapshot: tax?.rate ?? null })
-    }
+    if (taxRateId !== undefined && taxRateId !== line.taxRateId) Object.assign(patch, await taxSnapshot(ctx, taxRateId))
     const comparable = { ...line, quantity: fromNumeric(line.quantity), discountPercent: fromNumeric(line.discountPercent) }
     const changes = diff(comparable as Record<string, unknown>, patch)
     if (!changes) return getQuote(ctx, quote.id)
@@ -634,18 +475,6 @@ export const quoteLineRemove = defineProcedure({
 })
 
 // Sending, and the client's answer
-
-const exchangeRateInput = z.union([z.string(), z.number()]).transform((value, ctx) => {
-  try {
-    const scaled = parseDecimal(String(value), RATE_SCALE, { integerDigits: 10, label: 'Exchange rate' })
-    if (scaled <= 0n) throw new MoneyError('Exchange rate must be greater than zero.', 'invalid_exchange_rate')
-    return formatDecimal(scaled, RATE_SCALE)
-  } catch (error) {
-    if (!(error instanceof MoneyError)) throw error
-    ctx.addIssue({ code: 'custom', message: error.message })
-    return z.NEVER
-  }
-})
 
 export const quoteSend = defineProcedure({
   name: 'quote.send',

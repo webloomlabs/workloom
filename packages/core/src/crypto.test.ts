@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { decryptSecret, DecryptionError, encryptSecret, needsReencryption, type Keyring } from './crypto.ts'
+import { decryptSecret, DecryptionError, encryptSecret, needsReencryption, readLinkToken, signLinkToken, type Keyring } from './crypto.ts'
 
 const key = () => randomBytes(32)
 
@@ -39,5 +39,19 @@ describe('secret encryption', () => {
     flipped[0]! ^= 1
     parts[5] = flipped.toString('base64url')
     expect(() => decryptSecret(parts.join(':'), keyring)).toThrow(DecryptionError)
+  })
+})
+
+describe('signed links', () => {
+  it('round-trips a payload and refuses anything altered', () => {
+    const token = signLinkToken('document-link', 'invoice:org-1:doc-1')
+    expect(readLinkToken('document-link', token)).toBe('invoice:org-1:doc-1')
+
+    // A different purpose, a changed payload, and a changed signature are all refused.
+    expect(readLinkToken('other-purpose', token)).toBeNull()
+    const [payload, signature] = token.split('.')
+    expect(readLinkToken('document-link', `${Buffer.from('invoice:org-2:doc-1').toString('base64url')}.${signature}`)).toBeNull()
+    expect(readLinkToken('document-link', `${payload}.${'A'.repeat(43)}`)).toBeNull()
+    for (const malformed of ['', 'no-dot', '.', 'a.b.c']) expect(readLinkToken('document-link', malformed)).toBeNull()
   })
 })

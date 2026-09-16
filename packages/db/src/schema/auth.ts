@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * Authentication and organization membership.
@@ -113,6 +113,15 @@ export const organization = pgTable(
      */
     timezone: text('timezone').notNull().default('UTC'),
     dateFormat: text('date_format').notNull().default('DD/MM/YYYY'),
+
+    /** What goes at the top of a quote or an invoice, and how it is paid. */
+    legalName: text('legal_name'),
+    billingAddress: text('billing_address'),
+    /** ABN, VAT number, or whatever the jurisdiction calls it. */
+    taxNumber: text('tax_number'),
+    paymentInstructions: text('payment_instructions'),
+    /** Days from issue to due, unless an invoice says otherwise. */
+    paymentTermsDays: integer('payment_terms_days').notNull().default(14),
   },
   (t) => [uniqueIndex('organization_slug_key').on(t.slug)],
 )

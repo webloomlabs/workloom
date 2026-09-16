@@ -34,6 +34,11 @@ import { projects } from './projects.ts'
  */
 
 export const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
+/**
+ * The whole invoice lifecycle. S7b issues, views, and cancels; the states that
+ * follow a payment -- partially paid, paid, overdue, refunded -- arrive with S7c.
+ */
+export const INVOICE_STATUSES = ['draft', 'sent', 'viewed', 'partially_paid', 'paid', 'overdue', 'cancelled', 'refunded'] as const
 export const TAX_MODES = ['exclusive', 'inclusive'] as const
 export const SERVICE_PRICING_MODELS = ['fixed', 'hourly', 'per_unit'] as const
 export const SERVICE_BILLING_TYPES = ['one_off', 'recurring'] as const
@@ -244,5 +249,135 @@ export const quoteLines = pgTable(
     check('quote_lines_discount_check', sql`${t.discountPercent} between 0 and 100`),
     check('quote_lines_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
     check('quote_lines_totals_check', sql`${t.netMinor} = ${t.amountMinor} - ${t.lineDiscountMinor}`),
+  ],
+)
+
+/**
+ * Invoices.
+ *
+ * The same shape as a quote, priced by the same calculator, with the dates and
+ * states a demand for payment needs: an issue date, a due date from the payment
+ * terms, when the client opened it, and what has been paid so far (S7c).
+ *
+ * Numbers are assigned when the invoice is issued, and nothing about an issued
+ * invoice may change afterwards -- enforced by the guard trigger in migration
+ * 0014 as well as by the service.
+ */
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    /** Assigned when issued. Drafts have none, so abandoned drafts leave no gaps. */
+    number: text('number'),
+    companyId: uuid('company_id').notNull(),
+    contactId: uuid('contact_id'),
+    dealId: uuid('deal_id'),
+    projectId: uuid('project_id'),
+    /** The quote this was raised from, if any. One quote may bill in several invoices. */
+    quoteId: uuid('quote_id'),
+    title: text('title').notNull(),
+    status: text('status').notNull().default('draft'),
+    currency: text('currency').notNull(),
+    taxMode: text('tax_mode').notNull().default('exclusive'),
+    issueDate: date('issue_date', { mode: 'string' }),
+    /** Issue date plus the payment terms, fixed when the invoice is issued. */
+    dueDate: date('due_date', { mode: 'string' }),
+    paymentTermsDays: integer('payment_terms_days').notNull().default(14),
+
+    discountPercent: numeric('discount_percent', { precision: 7, scale: 4 }),
+    discountAmountMinor: bigint('discount_amount_minor', { mode: 'number' }),
+
+    subtotalMinor: bigint('subtotal_minor', { mode: 'number' }).notNull().default(0),
+    discountMinor: bigint('discount_minor', { mode: 'number' }).notNull().default(0),
+    taxMinor: bigint('tax_minor', { mode: 'number' }).notNull().default(0),
+    totalMinor: bigint('total_minor', { mode: 'number' }).notNull().default(0),
+    /** Maintained by payment allocations from S7c. Amount due is total minus this. */
+    amountPaidMinor: bigint('amount_paid_minor', { mode: 'number' }).notNull().default(0),
+
+    baseCurrency: text('base_currency'),
+    exchangeRateToBase: numeric('exchange_rate_to_base', { precision: 18, scale: 8 }),
+    totalBaseMinor: bigint('total_base_minor', { mode: 'number' }),
+
+    notes: text('notes'),
+    terms: text('terms'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    /** Where the invoice was emailed, and when it last went out. */
+    emailTo: text('email_to'),
+    emailSentAt: timestamp('email_sent_at', { withTimezone: true }),
+    /** When the client first opened its link. */
+    viewedAt: timestamp('viewed_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelReason: text('cancel_reason'),
+    createdBy: createdBy(),
+    ...timestamps,
+  },
+  (t) => [
+    unique('invoices_organization_id_id_key').on(t.organizationId, t.id),
+    uniqueIndex('invoices_organization_number_key').on(t.organizationId, t.number),
+    index('invoices_organization_status_idx').on(t.organizationId, t.status),
+    index('invoices_organization_company_idx').on(t.organizationId, t.companyId),
+    index('invoices_organization_due_date_idx').on(t.organizationId, t.dueDate),
+    index('invoices_organization_quote_idx').on(t.organizationId, t.quoteId),
+    foreignKey({ name: 'invoices_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
+    foreignKey({ name: 'invoices_contact_fk', columns: [t.organizationId, t.contactId], foreignColumns: [contacts.organizationId, contacts.id] }),
+    foreignKey({ name: 'invoices_deal_fk', columns: [t.organizationId, t.dealId], foreignColumns: [deals.organizationId, deals.id] }),
+    foreignKey({ name: 'invoices_project_fk', columns: [t.organizationId, t.projectId], foreignColumns: [projects.organizationId, projects.id] }),
+    foreignKey({ name: 'invoices_quote_fk', columns: [t.organizationId, t.quoteId], foreignColumns: [quotes.organizationId, quotes.id] }),
+    check('invoices_status_check', sql`${t.status} in ${oneOf(INVOICE_STATUSES)}`),
+    check('invoices_tax_mode_check', sql`${t.taxMode} in ${oneOf(TAX_MODES)}`),
+    check('invoices_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and (${t.baseCurrency} is null or ${t.baseCurrency} ~ '^[A-Z]{3}$')`),
+    check('invoices_one_discount_check', sql`${t.discountPercent} is null or ${t.discountAmountMinor} is null`),
+    check('invoices_discount_check', sql`${t.discountPercent} between 0 and 100 and ${t.discountAmountMinor} >= 0`),
+    check('invoices_number_check', sql`(${t.status} = 'draft') = (${t.number} is null)`),
+    check(
+      'invoices_issued_check',
+      sql`(${t.status} = 'draft') = (${t.sentAt} is null and ${t.issueDate} is null and ${t.dueDate} is null and ${t.exchangeRateToBase} is null and ${t.baseCurrency} is null and ${t.totalBaseMinor} is null)`,
+    ),
+    check('invoices_exchange_rate_check', sql`${t.exchangeRateToBase} > 0`),
+    check('invoices_due_date_check', sql`${t.dueDate} is null or ${t.dueDate} >= ${t.issueDate}`),
+    check('invoices_payment_terms_check', sql`${t.paymentTermsDays} between 0 and 365`),
+    check('invoices_cancelled_check', sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+    check('invoices_paid_check', sql`${t.amountPaidMinor} >= 0 and (${t.paidAt} is null or ${t.status} in ('paid', 'refunded'))`),
+    check('invoices_viewed_check', sql`${t.viewedAt} is null or ${t.status} <> 'draft'`),
+  ],
+)
+
+export const invoiceLines = pgTable(
+  'invoice_lines',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    invoiceId: uuid('invoice_id').notNull(),
+    position: integer('position').notNull(),
+    serviceId: uuid('service_id'),
+    description: text('description').notNull(),
+    quantity: numeric('quantity', { precision: 14, scale: 4 }).notNull(),
+    unitAmountMinor: bigint('unit_amount_minor', { mode: 'number' }).notNull(),
+    discountPercent: numeric('discount_percent', { precision: 7, scale: 4 }),
+    taxRateId: uuid('tax_rate_id'),
+    taxName: text('tax_name'),
+    taxRatePctSnapshot: numeric('tax_rate_pct_snapshot', { precision: 7, scale: 4 }),
+
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
+    netMinor: bigint('net_minor', { mode: 'number' }).notNull(),
+    documentDiscountMinor: bigint('document_discount_minor', { mode: 'number' }).notNull(),
+    taxMinor: bigint('tax_minor', { mode: 'number' }).notNull(),
+    totalMinor: bigint('total_minor', { mode: 'number' }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    unique('invoice_lines_organization_id_id_key').on(t.organizationId, t.id),
+    index('invoice_lines_organization_invoice_position_idx').on(t.organizationId, t.invoiceId, t.position),
+    index('invoice_lines_organization_tax_rate_idx').on(t.organizationId, t.taxRateId),
+    foreignKey({ name: 'invoice_lines_invoice_fk', columns: [t.organizationId, t.invoiceId], foreignColumns: [invoices.organizationId, invoices.id] }).onDelete('cascade'),
+    foreignKey({ name: 'invoice_lines_service_fk', columns: [t.organizationId, t.serviceId], foreignColumns: [services.organizationId, services.id] }),
+    foreignKey({ name: 'invoice_lines_tax_rate_fk', columns: [t.organizationId, t.taxRateId], foreignColumns: [taxRates.organizationId, taxRates.id] }),
+    check('invoice_lines_quantity_check', sql`${t.quantity} <> 0`),
+    check('invoice_lines_discount_check', sql`${t.discountPercent} between 0 and 100`),
+    check('invoice_lines_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
+    check('invoice_lines_totals_check', sql`${t.netMinor} = ${t.amountMinor} - ${t.lineDiscountMinor}`),
   ],
 )

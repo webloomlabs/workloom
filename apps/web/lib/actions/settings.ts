@@ -22,6 +22,11 @@ export async function updateOrganizationAction(_: ActionState, form: FormData): 
       baseCurrency: (optional(form.get('baseCurrency')) as string | undefined)?.toUpperCase(),
       timezone: optional(form.get('timezone')) as string | undefined,
       dateFormat: optional(form.get('dateFormat')) as string | undefined,
+      legalName: form.has('legalName') ? String(form.get('legalName') ?? '').trim() : undefined,
+      billingAddress: form.has('billingAddress') ? String(form.get('billingAddress') ?? '').trim() : undefined,
+      taxNumber: form.has('taxNumber') ? String(form.get('taxNumber') ?? '').trim() : undefined,
+      paymentInstructions: form.has('paymentInstructions') ? String(form.get('paymentInstructions') ?? '').trim() : undefined,
+      paymentTermsDays: optional(form.get('paymentTermsDays')) ? Number(form.get('paymentTermsDays')) : undefined,
     })
   } catch (error) {
     return toActionError(error)
