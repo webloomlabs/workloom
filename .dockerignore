@@ -1,0 +1,23 @@
+# What must never reach a build context: the developer's real configuration,
+# their installed dependencies, and their build output. The image installs and
+# builds from the lockfile instead, so a container is reproducible rather than
+# a copy of whatever is on one machine.
+.env
+.env.local
+.env.*.local
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+**/.turbo
+dist
+**/dist
+coverage
+storage-data
+test-results
+playwright-report
+.git
+.github
+.DS_Store
+*.log

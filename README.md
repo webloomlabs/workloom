@@ -6,43 +6,57 @@ Workloom connects the operational lifecycle of an agency into one system —
 `Lead → Client → Proposal → Project → Tasks → Invoice → Payment → Maintenance` —
 so that a project is never separated from the commercial context around it.
 
-> **Status: pre-release.** In place: accounts, organizations, invitations, roles,
-> API keys, an audit log (S1); signed webhooks with retries and idempotent API
-> writes (S2); and the CRM — leads, companies, contacts, deals, a pipeline, activity
-> history, and lead-to-client conversion (S3); a unified client view (S4); and
-> projects with milestones, tasks, dependencies, comments, and files (S5); and time
-> tracking with timers, timesheets, and rates copied onto each entry (S6); quotes,
-> tax rates, and a service catalogue on an exact money and tax engine (S7a); invoices
-> with PDFs, email delivery, and a client link that records when it is opened (S7b);
-> payments, refunds, expenses, and the overdue sweep (S7c); project
-> profitability and revenue reporting (S8); and a dashboard of the nine headline
-> figures (S9).
-> Release hardening is S10. See [Roadmap.md](Roadmap.md).
+> **Status: v0.1 ready.** The agency lifecycle works end to end: accounts,
+> organizations, invitations, roles, API keys and an audit log (S1); signed
+> webhooks with retries and idempotent API writes (S2); the CRM — leads,
+> companies, contacts, deals, a pipeline and lead-to-client conversion (S3); a
+> unified client view (S4); projects with milestones, tasks, dependencies,
+> comments and files (S5); time tracking with rates copied onto each entry (S6);
+> quotes, tax rates and a service catalogue on an exact money engine (S7a);
+> invoices with PDFs, email and a client link (S7b); payments, refunds, expenses
+> and the overdue sweep (S7c); project profitability and revenue reporting (S8);
+> a dashboard (S9); and release hardening — containers, exports, published
+> OpenAPI, backup and restore, and a security pass (S10).
+> Phase 2 is in [Roadmap.md](Roadmap.md).
 
 ## Quick start
 
-Requires Docker and Node 22+.
+Requires Docker. Nothing else.
 
 ```bash
-pnpm install
+git clone https://github.com/webloomlabs/workloom.git
+cd workloom
 cp .env.example .env
 
-# Generate the two required secrets
+# Set the two secrets .env asks for
 openssl rand -base64 32   # -> BETTER_AUTH_SECRET
 openssl rand -base64 32   # -> WORKLOOM_ENCRYPTION_KEY
 
-pnpm services:up          # postgres, mail catcher, object storage
-pnpm dev                  # http://localhost:3000
-pnpm worker               # in a second terminal: delivers webhooks
+docker compose up -d
 ```
 
-Check it came up: `curl localhost:3000/api/health`
+Then open <http://localhost:3000> and create your account. The application
+migrates the database and verifies tenant isolation before it reports healthy,
+so a stack that is up is a stack that is safe to use.
 
 | Service | URL |
 | --- | --- |
 | Application | http://localhost:3000 |
 | Mail catcher (Mailpit) | http://localhost:8025 |
-| Object storage console (MinIO) | http://localhost:9001 |
+
+Full instructions, including what to change before anyone real uses it, are in
+[docs/installation.md](docs/installation.md).
+
+## Working on it instead
+
+```bash
+pnpm install
+cp .env.example .env      # set the two secrets
+pnpm services:up          # postgres, mail catcher, object storage
+pnpm db:migrate
+pnpm dev                  # http://localhost:3000
+pnpm worker               # in a second terminal
+```
 
 ## Commands
 
@@ -53,9 +67,11 @@ pnpm typecheck        # the only type gate — packages ship source, not builds
 pnpm lint
 pnpm test             # everything
 pnpm test:isolation   # tenant isolation only
-pnpm test:e2e         # browser journeys against a running app (pnpm dev)
+pnpm test:e2e         # browser journeys against a running app
 pnpm db:generate      # generate a migration from the schema
+pnpm openapi:check    # the published API description still matches the code
 pnpm services:down
+./scripts/backup.sh   # database and files
 ```
 
 ## A note on the database role
@@ -71,10 +87,12 @@ tell you.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — tenant isolation, money, events
-- [Configuration](docs/configuration.md) — every environment variable
-- [Webhooks](docs/webhooks.md) — payloads, signature verification, retries
-- API reference — served by a running instance at `/api/v1/openapi.json`
+Everything is in [docs/](docs/README.md).
+
+- [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Self-hosting](docs/self-hosting.md)
+- [Backup and restore](docs/backup-and-restore.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](docs/security.md)
+- [API](docs/api.md) · [openapi.json](docs/openapi.json) · [Webhooks](docs/webhooks.md) · [Automation](docs/automation.md)
+- [Architecture](docs/architecture.md) · [Database](docs/database.md) · [Permissions](docs/permissions.md) · [Development](docs/development.md)
 - [Roadmap](Roadmap.md)
 
 ## Licence

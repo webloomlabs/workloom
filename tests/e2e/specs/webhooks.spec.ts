@@ -32,8 +32,13 @@ test.beforeAll(async () => {
       res.writeHead(200).end('received')
     })
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  receiverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/hook`
+  // Where the worker has to reach this from. Loopback when the worker runs on
+  // this machine; `host.docker.internal` when it runs in a container, which is
+  // how the composed installation is proved end to end.
+  const host = process.env.E2E_RECEIVER_HOST ?? '127.0.0.1'
+  const bind = host === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0'
+  await new Promise<void>((resolve) => server.listen(0, bind, resolve))
+  receiverUrl = `http://${host}:${(server.address() as AddressInfo).port}/hook`
 })
 
 test.afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))

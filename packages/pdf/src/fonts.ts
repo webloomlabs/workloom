@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Font } from '@react-pdf/renderer'
 
@@ -15,11 +17,33 @@ import { Font } from '@react-pdf/renderer'
 export const FONT_FAMILY = 'Noto Sans'
 
 /**
- * An absolute path, not a URL or a buffer: the renderer reads the file itself.
- * A deployment that bundles the server (S10's container) must copy ../fonts
- * alongside it.
+ * Where the font files are, at runtime.
+ *
+ * Beside this module when the application runs from the repository. A bundled
+ * server -- the container -- compiles this file into a chunk somewhere else
+ * entirely, so it sets `WORKLOOM_FONT_DIR` instead and nothing has to guess.
+ *
+ * Built from `fileURLToPath(import.meta.url)` rather than `new URL('../fonts',
+ * …)`, because a bundler reads the second as a module reference and tries to
+ * resolve a directory it cannot.
  */
-const file = (name: string) => fileURLToPath(new URL(`../fonts/${name}`, import.meta.url))
+function directory(): string {
+  const configured = process.env.WORKLOOM_FONT_DIR
+  if (configured) return configured
+  return join(dirname(fileURLToPath(import.meta.url)), '..', 'fonts')
+}
+
+function file(name: string): string {
+  const path = join(directory(), name)
+  if (!existsSync(path)) {
+    // Loudly, and once, rather than as blank boxes on a client's invoice.
+    throw new Error(
+      `Font not found: ${path}. Set WORKLOOM_FONT_DIR to the directory holding ` +
+        `the .ttf files shipped in packages/pdf/fonts.`,
+    )
+  }
+  return path
+}
 
 let registered = false
 

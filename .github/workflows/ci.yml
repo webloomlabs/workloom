@@ -85,6 +85,27 @@ jobs:
             exit 1
           fi
 
+  openapi:
+    name: openapi document
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # docs/openapi.json is what integrators build against. A change to it
+      # should be a reviewed diff, never a surprise.
+      - run: pnpm openapi:check
+
+  docker-build:
+    name: images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+
   build-and-e2e:
     # Two things only a real build and a real browser catch: server modules
     # leaking into client bundles (which the dev server reports as nothing more
@@ -140,7 +161,9 @@ jobs:
 
   clean-install:
     # The mechanical proof that a stranger can self-host this: a fresh
-    # checkout, the documented commands, nothing else.
+    # checkout, the documented commands, nothing else. No pnpm, no Node, no
+    # build step on the runner -- only Docker, exactly as docs/installation.md
+    # describes it.
     name: clean install
     runs-on: ubuntu-latest
     steps:
@@ -150,8 +173,24 @@ jobs:
           cp .env.example .env
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
-          docker compose -f docker-compose.dev.yml up -d --wait
-      - name: health check
+          docker compose up -d --wait
+      - name: the application is up, migrated, and isolated
         run: |
-          docker compose -f docker-compose.dev.yml ps
-          # Application health is asserted here from S1, once the app image exists.
+          docker compose ps
+          curl -fsS localhost:3000/api/health
+          docker compose logs web | grep -q "boot: migrations up to date\|boot: migrations applied"
+          docker compose logs web | grep -q "boot: tenant isolation verified"
+          docker compose logs worker | grep -q "worker: tenant isolation verified"
+      - name: the API describes itself
+        run: curl -fsS localhost:3000/api/v1/openapi.json | head -c 200
+      - name: a backup can be taken and restored
+        run: |
+          ./scripts/backup.sh backups
+          BACKUP="$(ls -d backups/* | tail -1)"
+          docker compose down -v
+          docker compose up -d --wait postgres
+          ./scripts/restore.sh "$BACKUP"
+          docker compose up -d --wait
+          curl -fsS localhost:3000/api/health
+      - if: failure()
+        run: docker compose logs

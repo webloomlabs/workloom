@@ -1,4 +1,5 @@
-import { allProcedures, type AnyProcedure } from '@workloom/core/registry'
+import { allProcedures } from './registry.ts'
+import type { AnyProcedure } from './types.ts'
 import { z } from 'zod'
 
 /**

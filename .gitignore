@@ -16,3 +16,4 @@ coverage/
 storage-data/
 test-results/
 playwright-report/
+backups/

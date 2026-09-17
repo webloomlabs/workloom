@@ -1,0 +1,56 @@
+# The worker: the event dispatcher, webhook delivery, and the nightly sweeps.
+#
+# It runs TypeScript sources directly through tsx rather than being bundled.
+# The worker is a handful of files whose only dependency is the same core the
+# web app uses; a bundler here would buy nothing and hide the stack traces.
+FROM node:22-alpine AS base
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+RUN corepack enable
+
+FROM base AS deps
+WORKDIR /repo
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY packages/auth/package.json packages/auth/
+COPY packages/config/package.json packages/config/
+COPY packages/core/package.json packages/core/
+COPY packages/db/package.json packages/db/
+COPY packages/emails/package.json packages/emails/
+COPY packages/pdf/package.json packages/pdf/
+COPY packages/storage/package.json packages/storage/
+COPY packages/ui/package.json packages/ui/
+COPY tests/e2e/package.json tests/e2e/
+# Only what the worker runs on: no web app, no test or migration tooling. That
+# is a smaller image and a smaller thing to have to keep patched.
+RUN pnpm install --frozen-lockfile --prod --filter @workloom/worker...
+
+FROM base AS runtime
+WORKDIR /repo
+ENV NODE_ENV=production
+RUN addgroup -g 1001 workloom && adduser -u 1001 -G workloom -S workloom
+
+# The resolved workspace first -- pnpm puts a node_modules of symlinks inside
+# every package, and without them `@workloom/config` does not resolve -- then
+# the sources on top. COPY merges directories, so the result has both.
+COPY --from=deps --chown=workloom:workloom /repo/node_modules ./node_modules
+COPY --from=deps --chown=workloom:workloom /repo/packages ./packages
+COPY --from=deps --chown=workloom:workloom /repo/apps/worker ./apps/worker
+COPY --chown=workloom:workloom pnpm-workspace.yaml package.json ./
+COPY --chown=workloom:workloom packages ./packages
+COPY --chown=workloom:workloom apps/worker ./apps/worker
+
+# Attachments live here. Created and owned in the image on purpose: Docker
+# seeds a fresh named volume from the image's directory, ownership included, so
+# without this the volume belongs to root and the unprivileged app cannot write
+# a single upload to it.
+RUN mkdir -p /data/storage && chown -R workloom:workloom /data
+USER workloom
+WORKDIR /repo/apps/worker
+# Through tsx, not node's own type stripping: strip-only mode cannot compile a
+# TypeScript parameter property, which the shared packages use. This is the
+# same command `pnpm --filter @workloom/worker start` runs.
+#
+# The worker refuses to start unless tenant isolation verifies, so a container
+# that is up is a container whose database is safe to write to.
+CMD ["node_modules/.bin/tsx", "src/main.ts"]

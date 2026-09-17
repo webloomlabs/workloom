@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@workloom/config": "workspace:*",
-    "nodemailer": "^7.0.0"
+    "nodemailer": "^9.1.1"
   },
   "devDependencies": {
     "@types/nodemailer": "^7.0.0"

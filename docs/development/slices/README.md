@@ -43,4 +43,4 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S7c — Payments, expenses, and the overdue sweep](S7c.md) | Done |
 | [S8 — Profitability and reporting](S8.md) | Done |
 | [S9 — Dashboard](S9.md) | Done |
-| S10 — Release hardening | Next |
+| [S10 — Release hardening](S10.md) | Done |

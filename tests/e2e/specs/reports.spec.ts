@@ -115,3 +115,35 @@ test('an API key without financial reporting is refused', async ({ page, request
   expect((await request.get('/api/v1/reports/revenue', { headers })).status()).toBe(403)
   expect((await request.get('/api/v1/reports/projects', { headers })).status()).toBe(403)
 })
+
+test('exports come out as CSV, under the same permission as reading them', async ({ page, request }) => {
+  await signIn(page)
+  await page.goto('/settings/api-keys')
+  await page.getByLabel('Name', { exact: true }).fill(`exporter ${run}`)
+  await page.getByRole('checkbox').and(page.locator('[value="project:read"]')).check()
+  await page.getByRole('button', { name: 'Create key' }).click()
+  const secret = await page.getByLabel('API key').inputValue()
+  const headers = { authorization: `Bearer ${secret}` }
+
+  const csv = await request.get('/api/v1/exports/projects.csv', { headers })
+  expect(csv.status()).toBe(200)
+  expect(csv.headers()['content-type']).toContain('text/csv')
+  expect(csv.headers()['content-disposition']).toMatch(/^attachment; filename="workloom-projects-\d{4}-\d{2}-\d{2}\.csv"$/)
+
+  const body = await csv.text()
+  const [header, ...rows] = body.trim().split('\r\n')
+  // The columns are a contract: a spreadsheet gets built on them.
+  expect(header).toBe('id,name,companyId,companyName,status,startDate,dueDate,currency,budget,completedAt,createdAt')
+  expect(rows.some((r) => r.includes(`Harbour site ${run}`))).toBe(true)
+
+  // The same export as JSON, from the same URL without the suffix.
+  const json = await request.get('/api/v1/exports/projects', { headers })
+  expect(json.status()).toBe(200)
+  expect((await json.json()).columns).toContain('budgetMinor')
+
+  // And nothing this key was not given.
+  expect((await request.get('/api/v1/exports/invoices.csv', { headers })).status()).toBe(403)
+  expect((await request.get('/api/v1/exports/payments.csv', { headers })).status()).toBe(403)
+  // Signing in is still required.
+  expect((await request.get('/api/v1/exports/projects.csv')).status()).toBe(401)
+})

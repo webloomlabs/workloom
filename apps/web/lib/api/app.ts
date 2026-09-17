@@ -1,11 +1,11 @@
 import { resolveActor } from '@workloom/auth'
 import { consumeRateLimit, newId, rateLimitKey } from '@workloom/core'
-import { allProcedures, executeProcedure, type AnyProcedure } from '@workloom/core/registry'
+import { exportFilename, isExportResource, toCsv, type ExportResource } from '@workloom/core/modules'
+import { allProcedures, buildOpenApiDocument, executeProcedure, type AnyProcedure } from '@workloom/core/registry'
 import '@workloom/core/modules'
 import { env } from '@workloom/config'
 import { Hono, type Context } from 'hono'
 import { toApiError } from './errors.ts'
-import { buildOpenApiDocument } from './openapi.ts'
 
 /**
  * The public REST API.
@@ -18,7 +18,8 @@ import { buildOpenApiDocument } from './openapi.ts'
  * This layer does five things and no more: identify the caller, apply rate
  * limits, translate HTTP into a procedure call, translate errors back, and
  * serve the OpenAPI document. It contains no business logic, and a lint rule
- * stops any from arriving.
+ * stops any from arriving. The one hand-written route, the CSV export, is a
+ * second representation of a generated one and calls the same procedure.
  */
 type ApiEnv = { Variables: { requestId: string } }
 
@@ -26,6 +27,8 @@ export function createApiApp() {
   const app = new Hono<ApiEnv>().basePath('/api/v1')
 
   app.get('/openapi.json', (c) => c.json(buildOpenApiDocument(`${env.APP_URL}/api/v1`)))
+
+  mountCsvExport(app)
 
   for (const procedure of allProcedures()) {
     mount(app, procedure)
@@ -47,6 +50,143 @@ export function createApiApp() {
   return app
 }
 
+/**
+ * Who is calling, and may they call this much.
+ *
+ * Returns either a `Response` to send back untouched, or the resolved caller.
+ * Extracted so that the one hand-written route is identified and limited by
+ * exactly the same code as the generated ones -- an export that skipped the
+ * rate limit would be the most expensive endpoint in the system and the only
+ * unguarded one.
+ */
+type Authorized = Awaited<ReturnType<typeof resolveActor>> & { ok: true }
+
+async function authorize(
+  c: Context<ApiEnv, string>,
+  options: { requestId: string; klass: 'read' | 'write' | 'expensive' | 'auth'; write: boolean },
+): Promise<{ response: Response } | { caller: Authorized }> {
+  const { requestId, klass } = options
+  const headers = c.req.raw.headers
+
+  /**
+   * Cross-site request forgery.
+   *
+   * The API accepts the browser's session cookie as well as API keys. For a
+   * cookie-authenticated write, require the request to come from this
+   * application's own origin. SameSite=Lax cookies already stop the classic
+   * cross-site form post; this makes the guarantee explicit rather than
+   * dependent on a cookie attribute and browser behaviour. API-key requests
+   * carry no ambient credential, so they are exempt.
+   */
+  const usesCookie = !headers.get('authorization')?.startsWith('Bearer ')
+  if (usesCookie && options.write) {
+    const origin = headers.get('origin')
+    if (!origin || origin !== new URL(env.APP_URL).origin) {
+      return {
+        response: c.json(
+          {
+            error: {
+              code: 'cross_origin_forbidden',
+              message: 'Cookie-authenticated writes must come from this application. Use an API key for programmatic access.',
+              request_id: requestId,
+            },
+          },
+          403,
+        ),
+      }
+    }
+  }
+
+  const resolution = await resolveActor({ headers })
+  if (!resolution.ok) {
+    return {
+      response: c.json(
+        {
+          error: {
+            code: resolution.reason === 'not-a-member' ? 'not_found' : 'unauthorized',
+            message: unauthorizedMessage(resolution.reason),
+            request_id: requestId,
+          },
+        },
+        // A caller who is authenticated but not a member of the organization
+        // gets 404, not 403 -- 403 would confirm the organization exists.
+        resolution.reason === 'not-a-member' ? 404 : 401,
+      ),
+    }
+  }
+
+  const limit = await consumeRateLimit(
+    rateLimitKey({ organizationId: resolution.organizationId, actorId: actorKey(resolution.actor), klass }),
+    klass,
+  )
+
+  c.header('X-RateLimit-Limit', String(limit.limit))
+  c.header('X-RateLimit-Remaining', String(limit.remaining))
+  c.header('X-RateLimit-Reset', String(limit.resetSeconds))
+  c.header('X-Request-Id', requestId)
+
+  if (!limit.allowed) {
+    c.header('Retry-After', String(limit.resetSeconds))
+    return {
+      response: c.json(
+        {
+          error: {
+            code: 'rate_limited',
+            message: `Too many ${klass} requests. Retry in ${limit.resetSeconds}s.`,
+            request_id: requestId,
+          },
+        },
+        429,
+      ),
+    }
+  }
+
+  return { caller: resolution as Authorized }
+}
+
+/**
+ * The same export as `GET /exports/{resource}`, as a spreadsheet.
+ *
+ * Registered before the generated routes so the `.csv` suffix wins, and it
+ * calls the very same procedure -- so the two representations cannot disagree
+ * about what is in an export or who may have it.
+ */
+function mountCsvExport(app: Hono<ApiEnv>) {
+  app.get('/exports/:file{[a-z-]+\\.csv}', async (c) => {
+    const requestId = newId()
+    c.set('requestId', requestId)
+    const resource = c.req.param('file').replace(/\.csv$/, '')
+    if (!isExportResource(resource)) return c.notFound()
+
+    try {
+      const guard = await authorize(c, { requestId, klass: 'expensive', write: false })
+      if ('response' in guard) return guard.response
+
+      const output = (await executeProcedure('export.run', {
+        organizationId: guard.caller.organizationId,
+        actor: guard.caller.actor,
+        role: guard.caller.role as never,
+        permissions: guard.caller.permissions,
+        input: { resource },
+        requestId,
+        ipAddress: clientIp(c.req.raw.headers),
+        userAgent: c.req.raw.headers.get('user-agent') ?? undefined,
+      })) as { columns: string[]; rows: Array<Record<string, unknown>> }
+
+      const filename = exportFilename(resource as ExportResource, new Date().toISOString().slice(0, 10))
+      c.header('Content-Type', 'text/csv; charset=utf-8')
+      c.header('Content-Disposition', `attachment; filename="${filename}"`)
+      // Never sniffed as HTML, never cached by anything shared.
+      c.header('X-Content-Type-Options', 'nosniff')
+      c.header('Cache-Control', 'no-store')
+      return c.body(toCsv(output.columns, output.rows))
+    } catch (error) {
+      const { status, body } = toApiError(error, requestId)
+      return c.json(body, status as 500)
+    }
+  })
+}
+
 function mount(app: Hono<ApiEnv>, procedure: AnyProcedure) {
   // OpenAPI writes `{id}`; Hono expects `:id`.
   const honoPath = procedure.http.path.replace(/\{(\w+)\}/g, ':$1')
@@ -57,79 +197,10 @@ function mount(app: Hono<ApiEnv>, procedure: AnyProcedure) {
     c.set('requestId', requestId)
 
     try {
-      /**
-       * Cross-site request forgery.
-       *
-       * The API accepts the browser's session cookie as well as API keys. For a
-       * cookie-authenticated write, require the request to come from this
-       * application's own origin. SameSite=Lax cookies already stop the classic
-       * cross-site form post; this makes the guarantee explicit rather than
-       * dependent on a cookie attribute and browser behaviour. API-key requests
-       * carry no ambient credential, so they are exempt.
-       */
-      const headers = c.req.raw.headers
-      const usesCookie = !headers.get('authorization')?.startsWith('Bearer ')
-      if (usesCookie && procedure.http.method !== 'GET') {
-        const origin = headers.get('origin')
-        if (!origin || origin !== new URL(env.APP_URL).origin) {
-          return c.json(
-            {
-              error: {
-                code: 'cross_origin_forbidden',
-                message:
-                  'Cookie-authenticated writes must come from this application. Use an API key for programmatic access.',
-                request_id: requestId,
-              },
-            },
-            403,
-          )
-        }
-      }
-
-      const resolution = await resolveActor({ headers: c.req.raw.headers })
-      if (!resolution.ok) {
-        return c.json(
-          {
-            error: {
-              code: resolution.reason === 'not-a-member' ? 'not_found' : 'unauthorized',
-              message: unauthorizedMessage(resolution.reason),
-              request_id: requestId,
-            },
-          },
-          // A caller who is authenticated but not a member of the organization
-          // gets 404, not 403 -- 403 would confirm the organization exists.
-          resolution.reason === 'not-a-member' ? 404 : 401,
-        )
-      }
-
       const klass = procedure.rateLimit ?? (procedure.readOnly ? 'read' : 'write')
-      const limit = await consumeRateLimit(
-        rateLimitKey({
-          organizationId: resolution.organizationId,
-          actorId: actorKey(resolution.actor),
-          klass,
-        }),
-        klass,
-      )
-
-      c.header('X-RateLimit-Limit', String(limit.limit))
-      c.header('X-RateLimit-Remaining', String(limit.remaining))
-      c.header('X-RateLimit-Reset', String(limit.resetSeconds))
-      c.header('X-Request-Id', requestId)
-
-      if (!limit.allowed) {
-        c.header('Retry-After', String(limit.resetSeconds))
-        return c.json(
-          {
-            error: {
-              code: 'rate_limited',
-              message: `Too many ${klass} requests. Retry in ${limit.resetSeconds}s.`,
-              request_id: requestId,
-            },
-          },
-          429,
-        )
-      }
+      const guard = await authorize(c, { requestId, klass, write: procedure.http.method !== 'GET' })
+      if ('response' in guard) return guard.response
+      const resolution = guard.caller
 
       const output = await executeProcedure(procedure.name, {
         organizationId: resolution.organizationId,

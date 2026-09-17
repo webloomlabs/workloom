@@ -7,3 +7,4 @@ export type {
   ProcedurePermission,
   RateLimitClass,
 } from './types.ts'
+export { buildOpenApiDocument } from './openapi.ts'

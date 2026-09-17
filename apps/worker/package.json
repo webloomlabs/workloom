@@ -11,9 +11,7 @@
   "dependencies": {
     "@workloom/config": "workspace:*",
     "@workloom/core": "workspace:*",
-    "@workloom/db": "workspace:*"
-  },
-  "devDependencies": {
+    "@workloom/db": "workspace:*",
     "tsx": "^4.20.0"
   }
 }

@@ -1,0 +1,88 @@
+# A complete Workloom installation.
+#
+#   cp .env.example .env     # then set the two secrets it names
+#   docker compose up -d
+#
+# That is the whole of it. The web container migrates the database and verifies
+# tenant isolation before it reports healthy, so a stack that is up is a stack
+# that is safe to use.
+name: workloom
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # Creates the unprivileged role the application connects as. A superuser
+      # would bypass row-level security, which is what separates one
+      # organization's data from another's.
+      WORKLOOM_DB_USER: ${WORKLOOM_DB_USER:-workloom_app}
+      WORKLOOM_DB_PASSWORD: ${WORKLOOM_DB_PASSWORD:-workloom_dev_password}
+      WORKLOOM_DB_NAME: ${WORKLOOM_DB_NAME:-workloom}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Catches outbound mail so nothing escapes a trial installation. Point
+  # SMTP_HOST at your own relay when you are ready to send for real.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports: ["8025:8025"]
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # Inside the network the services are named, not localhost.
+      DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      STORAGE_LOCAL_PATH: /data/storage
+      NODE_ENV: production
+      # Off unless you ask for it. Set on the command line for a local test run
+      # -- WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true docker compose up -d -- rather
+      # than editing .env, which the test suites also read.
+      WORKLOOM_ALLOW_PRIVATE_WEBHOOKS: ${WORKLOOM_ALLOW_PRIVATE_WEBHOOKS:-false}
+    ports: ["${PORT:-3000}:3000"]
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      STORAGE_LOCAL_PATH: /data/storage
+      NODE_ENV: production
+      # Off unless you ask for it. Set on the command line for a local test run
+      # -- WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true docker compose up -d -- rather
+      # than editing .env, which the test suites also read.
+      WORKLOOM_ALLOW_PRIVATE_WEBHOOKS: ${WORKLOOM_ALLOW_PRIVATE_WEBHOOKS:-false}
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      # Not on the database directly: the web container owns migrations, and a
+      # worker against an unmigrated schema would fail in confusing ways.
+      web: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  storage-data:
