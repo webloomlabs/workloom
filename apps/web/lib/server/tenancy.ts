@@ -1,6 +1,7 @@
 import 'server-only'
 import { isInstalled } from '@workloom/auth'
 import { env } from '@workloom/config'
+import { connection } from 'next/server'
 import { cache } from 'react'
 
 /**
@@ -23,8 +24,20 @@ export function isMultiTenant(): boolean {
  *
  * Deduplicated per request: the layouts that guard on it render above the
  * pages that do too.
+ *
+ * `connection()` is what keeps this out of `next build`. The answer comes from
+ * the database, and the build has no database -- the image is built once and
+ * run against whichever one it is pointed at. Every route that asks is already
+ * dynamic because it reads the session, but a prerender pass runs the render
+ * optimistically until it meets a request-time API, and this query would
+ * otherwise run first and fail the build with ECONNREFUSED. Saying so here
+ * rather than at each call site means the guard cannot be lost by reordering
+ * two lines in a layout.
  */
 export const needsSetup = cache(async (): Promise<boolean> => {
+  // Before the connection check: multi-tenant installations never ask the
+  // database, so there is nothing to keep out of the prerender.
   if (env.MULTI_TENANT) return false
+  await connection()
   return !(await isInstalled())
 })
