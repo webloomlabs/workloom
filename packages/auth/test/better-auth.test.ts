@@ -3,6 +3,14 @@ import { sql } from '@workloom/db'
 import { startTestDatabase, loadDbWithEnv, type TestDatabase } from '@workloom/db/testing'
 
 /**
+ * These drive Better Auth's own sign-up and organization endpoints, which a
+ * single-tenant installation closes. See provisioning.test.ts for the default
+ * shape. Set before anything reads the environment: it is parsed once, on the
+ * first access, and cached.
+ */
+process.env.MULTI_TENANT = 'true'
+
+/**
  * Better Auth compatibility.
  *
  * This began as the spike the plan called for: confirm that Better Auth's

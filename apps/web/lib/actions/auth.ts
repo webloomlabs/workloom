@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@workloom/auth'
+import { env } from '@workloom/config'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -13,6 +14,16 @@ const email = z.email('Enter a valid email address.').transform((v) => v.trim().
 const password = z.string().min(12, 'Use at least 12 characters.').max(256)
 
 export async function signUpAction(_: ActionState, form: FormData): Promise<ActionState> {
+  // Better Auth refuses the endpoint too. Answering here as well means the
+  // form says something a person can act on rather than relaying "email and
+  // password sign up is not enabled".
+  if (!env.MULTI_TENANT) {
+    return {
+      status: 'error',
+      message: 'This installation does not allow sign-up. Ask an administrator to create your account.',
+    }
+  }
+
   const parsed = z
     .object({
       name: z.string().trim().min(1, 'Enter your name.').max(100),
@@ -136,6 +147,11 @@ function slugify(name: string): string {
 }
 
 export async function createOrganizationAction(_: ActionState, form: FormData): Promise<ActionState> {
+  // A single-tenant installation has the one organization its setup created.
+  if (!env.MULTI_TENANT) {
+    return { status: 'error', message: 'This installation runs a single organization.' }
+  }
+
   const parsed = z
     .object({ name: z.string().trim().min(1, 'Name your organization.').max(200) })
     .safeParse(Object.fromEntries(form))

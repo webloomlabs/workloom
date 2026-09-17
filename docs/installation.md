@@ -40,8 +40,17 @@ The first run builds both images, which takes a few minutes. After that:
 curl localhost:3000/api/health
 ```
 
-Open <http://localhost:3000>, create your account, and name your organization.
-The first account to sign up owns it.
+Open <http://localhost:3000>. You land on a setup screen: name your
+organization, then create the administrator account that will own it.
+
+**Do this straight away.** Setup is the one screen that creates an account
+without one already existing, so until it is completed it is open to whoever
+reaches the URL. It closes for good the moment the first account exists.
+
+If you are running one installation for several independent agencies instead,
+set `MULTI_TENANT=true` before the first boot. There is no setup screen in that
+shape: everyone signs up and creates their own organization. See
+[Authentication](authentication.md#how-accounts-come-to-exist).
 
 ## What just happened
 

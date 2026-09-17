@@ -37,6 +37,29 @@ happen mid-development; the CI job that catches it is `tenant-isolation`.
 The migration files are not where the application is looking. In a container,
 `WORKLOOM_MIGRATIONS_DIR` must point at them; the shipped image sets it.
 
+## The setup screen is gone, or will not appear
+
+Setup closes as soon as any account exists, and it only exists at all while
+`MULTI_TENANT` is off.
+
+| What you see | Why |
+| --- | --- |
+| `/setup` redirects to `/sign-in` | An account already exists. Sign in, or reset the password of one that does. |
+| `/setup` redirects to `/sign-up` | `MULTI_TENANT=true`. This installation uses sign-up instead. |
+| Every page redirects to `/setup` | No account exists yet. Complete it. |
+
+If the organization was deleted but accounts remain, nobody can get in and
+setup stays closed — that combination is deliberate, because the alternative is
+that deleting an organization reopens account creation to the internet. Restore
+from a backup; see [backup-and-restore.md](backup-and-restore.md).
+
+## Someone cannot sign in on a single-tenant installation
+
+There is no sign-up. An administrator adds them under **Settings → Members**,
+choosing a first password and passing it on directly. A password they have
+forgotten is reset from "Forgot password?", which needs mail to work — see
+below.
+
 ## Mail never arrives
 
 1. Check the worker is running: `docker compose ps`.

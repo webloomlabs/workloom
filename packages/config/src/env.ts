@@ -46,6 +46,24 @@ const schema = z
      */
     DANGEROUSLY_ALLOW_SUPERUSER_DB: bool.default(false),
 
+    /**
+     * Whether one installation serves several independent organizations.
+     *
+     * Off by default, because the common self-hosted case is one agency
+     * running Workloom for itself. With it off there is no public sign-up:
+     * the first administrator and their organization are created once,
+     * through the setup screen, and every account after that is created by
+     * an administrator from Settings -> Members. People still cannot create
+     * further organizations.
+     *
+     * Turning it on restores open sign-up and lets anyone create an
+     * organization -- the shape a hosted, multi-agency deployment needs.
+     *
+     * Row-level security isolates organizations either way. This flag decides
+     * who may create accounts and organizations, not how they are separated.
+     */
+    MULTI_TENANT: bool.default(false),
+
     BETTER_AUTH_SECRET: z.string().min(32),
     /** Encrypts webhook signing secrets and integration credentials at rest. */
     WORKLOOM_ENCRYPTION_KEY: encryptionKey,

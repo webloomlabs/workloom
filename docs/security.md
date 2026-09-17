@@ -42,6 +42,25 @@ Cross-tenant reads answer **404, never 403**: a 403 confirms the record exists.
 - Every registered procedure has a test asserting it refuses an actor without
   its permission.
 
+### Setup, on a single-tenant installation
+
+`MULTI_TENANT` is off by default, and with it off there is exactly one
+unauthenticated way to create an account: the setup screen at `/setup`. It is
+open until the first account exists and closed permanently afterwards, so
+**the window between the stack coming up and setup being completed is a real
+one** — complete it immediately, and do not expose a fresh installation to the
+internet before you have.
+
+What closes it is whether any account exists, not whether any organization
+does. An owner who deletes their organization would otherwise reopen setup for
+whoever reached the URL next; instead they lock themselves out.
+
+Everything else is closed in Better Auth rather than hidden in the UI:
+`sign-up/email` and `organization/create` both refuse. The only code that
+creates an account without a session is
+`packages/auth/src/provisioning.ts`, which is not reachable over HTTP and has
+two callers, each of which authorises first.
+
 ## The one public surface
 
 A client's invoice link (`/i/<token>`) is the only thing reachable without

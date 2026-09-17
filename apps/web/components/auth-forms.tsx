@@ -16,7 +16,12 @@ function nextQuery(next?: string) {
   return next ? `?next=${encodeURIComponent(next)}` : ''
 }
 
-export function SignInForm({ next, notice }: { next?: string; notice?: string }) {
+export function SignInForm({ next, notice, canSignUp }: {
+  next?: string
+  notice?: string
+  /** False on a single-tenant installation, where accounts come from an admin. */
+  canSignUp: boolean
+}) {
   const [state, action] = useActionState(signInAction, idle)
   return (
     <form action={action} className="space-y-4" noValidate>
@@ -34,7 +39,9 @@ export function SignInForm({ next, notice }: { next?: string; notice?: string })
       <SubmitButton className="w-full" pendingLabel="Signing in…">Sign in</SubmitButton>
       <div className="flex justify-between text-sm">
         <Link href="/forgot-password" className="text-neutral-600 hover:underline">Forgot password?</Link>
-        <Link href={`/sign-up${nextQuery(next)}`} className="font-medium hover:underline">Create an account</Link>
+        {canSignUp && (
+          <Link href={`/sign-up${nextQuery(next)}`} className="font-medium hover:underline">Create an account</Link>
+        )}
       </div>
     </form>
   )

@@ -1,7 +1,8 @@
 'use server'
 
-import { auth } from '@workloom/auth'
-import { ROLES } from '@workloom/core'
+import { auth, provisionMember } from '@workloom/auth'
+import { env } from '@workloom/config'
+import { ForbiddenError, ROLES } from '@workloom/core'
 import { apiKeyCreate, apiKeyRevoke, memberRemove, organizationUpdate } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
@@ -55,6 +56,69 @@ export async function inviteMemberAction(_: ActionState, form: FormData): Promis
   }
   revalidatePath('/settings/members')
   return { status: 'success', message: `Invitation sent to ${parsed.data.email}.` }
+}
+
+/**
+ * Creates an account and makes it a member, in one step.
+ *
+ * What replaces the invitation flow on a single-tenant installation, where
+ * there is no sign-up for an invitee to complete. The administrator chooses
+ * the first password and passes it on however they already talk to the person;
+ * the person changes it from "Forgot password?", or has it reset for them.
+ *
+ * Restricted to single-tenant installations on purpose. Where several
+ * organizations share an installation, one organization's administrator
+ * minting accounts that exist instance-wide is a bigger grant than
+ * `member:invite` is meant to be -- there, an invitation that the recipient
+ * has to accept is the right shape.
+ */
+export async function addMemberAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const raw = Object.fromEntries(form)
+  const parsed = z
+    .object({
+      name: z.string().trim().min(1, 'Enter their name.').max(100),
+      email: z.email('Enter a valid email address.').transform((v) => v.trim().toLowerCase()),
+      role: z.enum(ROLES, 'Choose a role.'),
+      password: z.string().min(12, 'Use at least 12 characters.').max(256),
+    })
+    .safeParse(raw)
+  if (!parsed.success) {
+    const error = toActionError(parsed.error)
+    return error.status === 'error'
+      ? { ...error, values: { name: String(raw.name ?? ''), email: String(raw.email ?? '') } }
+      : error
+  }
+
+  if (env.MULTI_TENANT) {
+    return { status: 'error', message: 'Invite people by email on a multi-organization installation.' }
+  }
+
+  const viewer = await requireViewer()
+  try {
+    if (!viewer.permissions.has('member:invite')) throw new ForbiddenError('member:invite')
+    // The same rule the invitation form follows: only an owner may make
+    // another owner, or an admin could promote themselves past the one
+    // permission that sets owners apart.
+    if (parsed.data.role === 'owner' && viewer.role !== 'owner') {
+      throw new ForbiddenError('member:invite')
+    }
+
+    await provisionMember({
+      organizationId: viewer.organizationId,
+      role: parsed.data.role,
+      person: { name: parsed.data.name, email: parsed.data.email, password: parsed.data.password },
+      createdBy: viewer.actor,
+      context: { headers: await headers() },
+    })
+  } catch (error) {
+    return toActionError(error)
+  }
+
+  revalidatePath('/settings/members')
+  return {
+    status: 'success',
+    message: `${parsed.data.name} can now sign in as ${parsed.data.email}. Pass the password on yourself — it is not emailed.`,
+  }
 }
 
 export async function cancelInvitationAction(form: FormData): Promise<void> {

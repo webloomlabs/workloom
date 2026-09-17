@@ -3,7 +3,7 @@
 import { ROLES } from '@workloom/core/permissions'
 import { Button, Field, Input, Select } from '@workloom/ui'
 import { useActionState } from 'react'
-import { changeMemberRoleAction, inviteMemberAction, removeMemberAction } from '@/lib/actions/settings'
+import { addMemberAction, changeMemberRoleAction, inviteMemberAction, removeMemberAction } from '@/lib/actions/settings'
 import { idle } from '@/lib/actions/state'
 import { fieldError, FormMessage, SubmitButton } from './form-bits'
 
@@ -42,6 +42,50 @@ export function InviteMemberForm({ canInviteOwner }: { canInviteOwner: boolean }
         </Field>
         <SubmitButton pendingLabel="Sending…">Send invitation</SubmitButton>
       </div>
+    </form>
+  )
+}
+
+/**
+ * Creating an account outright, for a single-tenant installation.
+ *
+ * There is no sign-up for an invitee to complete, so the administrator sets
+ * the first password here and passes it on themselves. Nothing is emailed,
+ * which is the point: adding a colleague should not depend on a mail server
+ * being configured.
+ */
+export function AddMemberForm({ canAddOwner }: { canAddOwner: boolean }) {
+  const [state, action] = useActionState(addMemberAction, idle)
+  const values = state.status === 'error' ? state.values : undefined
+
+  return (
+    <form action={action} className="space-y-4" noValidate>
+      <FormMessage state={state} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="member-name" label="Name" error={fieldError(state, 'name')}>
+          <Input id="member-name" name="name" required placeholder="Dev Eloper" defaultValue={values?.name}
+            aria-invalid={!!fieldError(state, 'name')} />
+        </Field>
+        <Field id="member-email" label="Email" error={fieldError(state, 'email')}>
+          <Input id="member-email" name="email" type="email" required placeholder="name@agency.com"
+            defaultValue={values?.email} aria-invalid={!!fieldError(state, 'email')} />
+        </Field>
+        <Field id="member-role" label="Role" error={fieldError(state, 'role')}>
+          <Select id="member-role" name="role" defaultValue="developer">
+            <RoleOptions allowOwner={canAddOwner} />
+          </Select>
+        </Field>
+        <Field
+          id="member-password"
+          label="Initial password"
+          hint="At least 12 characters. Give it to them directly; it is not emailed."
+          error={fieldError(state, 'password')}
+        >
+          <Input id="member-password" name="password" type="password" autoComplete="new-password" required
+            minLength={12} aria-invalid={!!fieldError(state, 'password')} />
+        </Field>
+      </div>
+      <SubmitButton pendingLabel="Adding…">Add member</SubmitButton>
     </form>
   )
 }

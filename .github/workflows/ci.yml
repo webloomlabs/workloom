@@ -125,6 +125,10 @@ jobs:
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+          # These journeys are the multi-organization ones: signing up, holding
+          # two organizations, inviting by email. The default shape has its own
+          # job below.
+          sed -i "s|^MULTI_TENANT=.*|MULTI_TENANT=true|" .env
           # The browser journeys deliver webhooks to a receiver on localhost,
           # which the SSRF guard refuses unless this is set. Test-only.
           echo "WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true" >> .env
@@ -157,6 +161,49 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces
+          path: tests/e2e/test-results
+
+  single-tenant-e2e:
+    # The default shape, and the one a self-hoster meets first: no sign-up, a
+    # setup screen, and accounts created by an administrator. It needs its own
+    # job rather than its own spec in the job above, because setup runs exactly
+    # once per database and the two configurations cannot share an instance.
+    name: single-tenant journey
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: configure from .env.example, unchanged
+        run: |
+          cp .env.example .env
+          sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
+          sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
+          sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+      - run: docker compose -f docker-compose.dev.yml up -d --wait
+      - run: pnpm --filter @workloom/web exec next build
+      - name: start the app (migrates and verifies isolation on boot)
+        run: |
+          pnpm --filter @workloom/web exec next start > web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fs localhost:3000/api/health && break
+            sleep 2
+          done
+          curl -fs localhost:3000/api/health
+      - run: pnpm --filter @workloom/e2e exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          CI: "true"
+          E2E_SINGLE_TENANT: "true"
+      - if: failure()
+        run: cat web.log
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-single-tenant
           path: tests/e2e/test-results
 
   clean-install:

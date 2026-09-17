@@ -43,6 +43,14 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 12,
+    /**
+     * Single-tenant installations have no public sign-up. Accounts are
+     * created by an administrator -- the first through the setup screen, the
+     * rest from Settings -> Members -- which is why `provisionUser` writes
+     * the user and credential rows itself rather than calling this endpoint.
+     * Nothing else creates accounts, so closing the endpoint closes the door.
+     */
+    disableSignUp: !env.MULTI_TENANT,
     async sendResetPassword({ user, url }) {
       await sendEmail(passwordResetEmail({ to: user.email, resetUrl: url }))
     },
@@ -55,9 +63,15 @@ export const auth = betterAuth({
    * browser history, a proxy log -- plus a sign-up using the invitee's address
    * would be enough to join someone else's organization. Confirming control of
    * the inbox closes that.
+   *
+   * Single-tenant installations have neither sign-up nor invitations: an
+   * administrator creates each account with the address they already know, so
+   * there is nothing left for verification to establish, and requiring it
+   * would make a working mail server a condition of adding a colleague.
+   * `provisionUser` marks those accounts verified for that reason.
    */
   emailVerification: {
-    sendOnSignUp: true,
+    sendOnSignUp: env.MULTI_TENANT,
     autoSignInAfterVerification: true,
     expiresIn: 60 * 60 * 24,
     async sendVerificationEmail({ user, url }) {
@@ -105,8 +119,12 @@ export const auth = betterAuth({
        * A person may belong to several organizations -- an agency using
        * Workloom for itself and for a subsidiary, or a contractor working
        * across two. The tenant boundary is the organization, not the user.
+       *
+       * A single-tenant installation has exactly one, created at setup, so
+       * the endpoint that would make a second is closed rather than merely
+       * hidden from the navigation.
        */
-      allowUserToCreateOrganization: true,
+      allowUserToCreateOrganization: env.MULTI_TENANT,
       invitationExpiresIn: 60 * 60 * 24 * INVITATION_EXPIRY_DAYS,
       // Explicit, so a future default change cannot quietly weaken it.
       requireEmailVerificationOnInvitation: true,

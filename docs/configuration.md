@@ -25,6 +25,7 @@ See [.env.example](../.env.example) for the annotated list.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
+| `MULTI_TENANT` | `false` | `false`: one agency, one organization, no public sign-up. The first visit goes to a setup screen that creates the administrator and the organization; every account after that is created by an administrator under Settings → Members. `true`: anyone may sign up and create their own organization, which is what a hosted installation serving several agencies needs. Organizations are isolated by row-level security either way — see [Authentication](authentication.md#how-accounts-come-to-exist). |
 | `REDIS_URL` | unset | Queues and rate limiting run on Postgres by default. Redis is an opt-in upgrade for larger installations, not a requirement. |
 | `STORAGE_DRIVER` | `local` | `local` or `s3`. S3 requires `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Attachments are up to 20 MB each; a reverse proxy in front must accept request bodies of at least 21 MB. |
 | `DATABASE_POOL_SIZE` | `10` | Per process. |

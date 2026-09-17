@@ -1,0 +1,14 @@
+# PostgreSQL with Workloom's role setup baked in.
+#
+# The init script could be bind-mounted into the stock image, and was, until
+# that turned out not to survive every deployment platform: a relative bind
+# mount depends on the compose project directory still existing, with that
+# file in it, at the moment the container starts. Where it does not, Docker
+# silently mounts an empty directory instead, the script never runs, and the
+# unprivileged role is never created -- which surfaces much later as
+# "password authentication failed", because PostgreSQL will not admit over the
+# wire that a role is simply missing.
+#
+# Baked into the image, it travels with it and runs everywhere.
+FROM postgres:17-alpine
+COPY docker/init-db.sh /docker-entrypoint-initdb.d/10-init-db.sh

@@ -9,13 +9,20 @@ import { OrganizationSwitcher } from '@/components/org-switcher'
 import { RunningTimer } from '@/components/time/time-forms'
 import { signOutAction } from '@/lib/actions/auth'
 import { call } from '@/lib/server/procedures'
+import { isMultiTenant, needsSetup } from '@/lib/server/tenancy'
 import { getSession, getViewer } from '@/lib/server/viewer'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  if (await needsSetup()) redirect('/setup')
+
   const session = await getSession()
   if (!session) redirect('/sign-in')
 
-  const organizations = await auth.api.listOrganizations({ headers: await headers() })
+  // Only worth fetching where a person can have more than one. A single-tenant
+  // installation has exactly one organization and no switcher.
+  const organizations = isMultiTenant()
+    ? await auth.api.listOrganizations({ headers: await headers() })
+    : []
   const viewer = await getViewer()
 
   // A courtesy, like the settings tabs: each page's procedures authorise again.

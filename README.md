@@ -35,9 +35,15 @@ openssl rand -base64 32   # -> WORKLOOM_ENCRYPTION_KEY
 docker compose up -d
 ```
 
-Then open <http://localhost:3000> and create your account. The application
-migrates the database and verifies tenant isolation before it reports healthy,
-so a stack that is up is a stack that is safe to use.
+Then open <http://localhost:3000> and complete the setup screen — it creates
+the administrator account and your organization, and closes behind you. Do it
+as soon as the stack is up. The application migrates the database and verifies
+tenant isolation before it reports healthy, so a stack that is up is a stack
+that is safe to use.
+
+One installation, one agency, no public sign-up: administrators add everyone
+else under Settings → Members. Set `MULTI_TENANT=true` to run one installation
+for several independent agencies instead.
 
 | Service | URL |
 | --- | --- |

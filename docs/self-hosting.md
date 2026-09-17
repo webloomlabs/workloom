@@ -84,8 +84,23 @@ v0.1 is built for one of each container, and says so honestly.
   entry and in the error envelope. That is the thread to pull when someone
   reports something.
 
+## Who can get an account
+
+`MULTI_TENANT` is off by default, which is almost certainly what you want: one
+agency, one organization, no public sign-up. The first visit goes to a setup
+screen that creates the administrator and the organization, and closes behind
+itself; after that, administrators add people under **Settings → Members** with
+a first password they pass on directly. Nothing there depends on mail working.
+
+Turn it on only if one installation is serving several independent agencies
+that should each sign up and run their own organization. See
+[Authentication](authentication.md#how-accounts-come-to-exist).
+
+**Complete setup before the installation is reachable from the internet.**
+Until it is completed, it is open to whoever finds it.
+
 ## Keeping it safe
 
 Read [security.md](security.md). The short version: keep the two secrets out of
-the repository, keep the database role unprivileged, put TLS in front, and leave
-`WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` off.
+the repository, keep the database role unprivileged, put TLS in front, complete
+setup immediately, and leave `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` off.

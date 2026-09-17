@@ -24,11 +24,69 @@ organization context exists. Membership is checked on every request. Being
 signed in but not a member of the organization you asked about is a **404**, not
 a 403: a 403 would confirm it exists.
 
-### Invitations
+## How accounts come to exist
+
+This is the one thing `MULTI_TENANT` changes. Isolation between organizations
+is row-level security either way; the flag decides who may create accounts and
+organizations, not how they are kept apart.
+
+| | `MULTI_TENANT=false` (default) | `MULTI_TENANT=true` |
+| --- | --- | --- |
+| First account | The setup screen at `/setup` | Sign-up |
+| Later accounts | An administrator, under Settings → Members | Sign-up, or an invitation |
+| Email verification | Not required — the address came from an administrator | Required before joining an organization |
+| Creating an organization | Only at setup | Anyone, at any time |
+| `POST /api/auth/sign-up/email` | Refused | Open |
+| `POST /api/auth/organization/create` | Refused | Open |
+
+### Setup, on a single-tenant installation
+
+`/setup` is the one screen that creates an account without one already
+existing, so it is open to whoever reaches it — and it closes the moment the
+first account exists, permanently. **Complete it as soon as the stack is up.**
+
+It creates the administrator, the organization, and the owning membership in a
+single transaction, then signs the administrator in.
+
+The test for "already set up" is whether **any account** exists, not whether
+any organization does. An owner who deletes their organization would otherwise
+reopen setup for whoever reached the URL next; instead they lock themselves out,
+which is the better of the two failures. Recovering from that means restoring a
+backup.
+
+### Adding people, on a single-tenant installation
+
+Anyone with `member:invite` adds a member under **Settings → Members** by
+entering their name, email, role, and a first password. The account is created
+already verified and already a member; **nothing is emailed**, so adding a
+colleague does not depend on a working mail server. Pass the password on
+yourself. They can change it from "Forgot password?" — which does need mail — or
+you can add them again after removing them.
+
+Only an owner may create another owner, the same rule invitations follow.
+
+This is restricted to single-tenant installations on purpose. Where several
+organizations share an installation, one organization's administrator minting
+accounts that exist instance-wide is a larger grant than `member:invite` is
+meant to be; there, an invitation the recipient has to accept is the right
+shape.
+
+The two functions that create accounts without a session live in
+`packages/auth/src/provisioning.ts` and authorise nothing themselves. Their
+only callers are `setupAction` (guarded by "no account exists yet") and
+`addMemberAction` (guarded by `member:invite`).
+
+### Invitations, on a multi-tenant installation
 
 An owner or admin invites by email and chooses a role. The invitee follows the
 emailed link, creates an account or signs in, **confirms their email address**,
 and accepts. Unconfirmed addresses cannot accept an invitation.
+
+Verification matters here because an invitation link that leaks — a forwarded
+email, a browser history, a proxy log — plus a sign-up using the invitee's
+address would otherwise be enough to join someone else's organization. A
+single-tenant installation has no invitations and no sign-up, which is why it
+does not require verification.
 
 ## Programs
 

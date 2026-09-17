@@ -12,7 +12,11 @@ name: workloom
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # Built rather than pulled, so the role setup is inside the image instead of
+    # bind-mounted beside it -- see docker/Dockerfile.postgres.
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -25,7 +29,6 @@ services:
       WORKLOOM_DB_NAME: ${WORKLOOM_DB_NAME:-workloom}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-init-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -54,6 +57,9 @@ services:
       SMTP_PORT: "1025"
       STORAGE_LOCAL_PATH: /data/storage
       NODE_ENV: production
+      # One organization unless you ask for more. With this off the first visit
+      # goes to a setup screen instead of a sign-up form; see .env.example.
+      MULTI_TENANT: ${MULTI_TENANT:-false}
       # Off unless you ask for it. Set on the command line for a local test run
       # -- WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true docker compose up -d -- rather
       # than editing .env, which the test suites also read.
@@ -78,6 +84,7 @@ services:
       SMTP_PORT: "1025"
       STORAGE_LOCAL_PATH: /data/storage
       NODE_ENV: production
+      MULTI_TENANT: ${MULTI_TENANT:-false}
       # Off unless you ask for it. Set on the command line for a local test run
       # -- WORKLOOM_ALLOW_PRIVATE_WEBHOOKS=true docker compose up -d -- rather
       # than editing .env, which the test suites also read.

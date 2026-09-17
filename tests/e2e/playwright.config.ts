@@ -9,9 +9,18 @@ import { defineConfig } from '@playwright/test'
  *
  * Outbound email is read back from Mailpit (E2E_MAILPIT_URL), so flows that
  * depend on an emailed link -- invitations, verification -- run for real.
+ *
+ * The suite is split by the tenancy the instance is configured for, because
+ * the two are mutually exclusive: sign-up exists or it does not. Specs tagged
+ * `@single-tenant` need MULTI_TENANT=false and a database with no accounts in
+ * it yet -- setup runs once and then closes -- so they are skipped unless
+ * E2E_SINGLE_TENANT is set, and everything else is skipped when it is.
  */
+const singleTenant = process.env.E2E_SINGLE_TENANT === 'true'
+
 export default defineConfig({
   testDir: './specs',
+  ...(singleTenant ? { grep: /@single-tenant/ } : { grepInvert: /@single-tenant/ }),
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
