@@ -3,7 +3,9 @@
 #   cp .env.example .env     # then set the two secrets it names
 #   docker compose up -d
 #
-# That is the whole of it. The web container migrates the database and verifies
+# That is the whole of it. The .env is optional, so the same file also runs on
+# a platform that injects the variables itself and never writes one -- Coolify,
+# Dokploy, and anything else that manages configuration outside the repository. The web container migrates the database and verifies
 # tenant isolation before it reports healthy, so a stack that is up is a stack
 # that is safe to use.
 name: workloom
@@ -42,7 +44,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile.web
     restart: unless-stopped
-    env_file: [.env]
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Inside the network the services are named, not localhost.
       DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
@@ -65,7 +69,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile.worker
     restart: unless-stopped
-    env_file: [.env]
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
       SMTP_HOST: mailpit
