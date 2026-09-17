@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // A courtesy, like the settings tabs: each page's procedures authorise again.
   const items: Array<{ href: string; label: string; permission: Permission; match?: string[] }> = [
+    { href: '/', label: 'Dashboard', permission: 'report:read' },
     { href: '/pipeline', label: 'Pipeline', permission: 'deal:read', match: ['/deals'] },
     { href: '/leads', label: 'Leads', permission: 'lead:read' },
     { href: '/clients', label: 'Clients', permission: 'company:read' },

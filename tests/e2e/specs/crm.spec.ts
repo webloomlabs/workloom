@@ -68,6 +68,8 @@ test('a lead is worked, converted, and becomes a client with its history', async
 
 test('a deal moves through the pipeline, and winning it makes a client', async ({ page }) => {
   await signIn(page)
+  // Home is the dashboard (S9); the pipeline is a click away.
+  await page.getByRole('link', { name: 'Pipeline', exact: true }).click()
   await expect(page).toHaveURL(/\/pipeline/)
 
   await page.getByRole('link', { name: 'Companies', exact: true }).click()

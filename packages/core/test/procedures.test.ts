@@ -655,6 +655,7 @@ const READS: Record<string, Fixture> = {
   'project.financials': async () => ({ id: await createProject() }),
   'report.projects': async () => ({ companyId: await createCompany() }),
   'report.revenue': async () => ({ companyId: await createCompany() }),
+  'dashboard.get': async () => ({ period: 'month' }),
   'attachment.download': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
     return { id: attachment.id }

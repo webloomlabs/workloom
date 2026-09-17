@@ -50,8 +50,8 @@ test('an owner signs up and creates their organization', async ({ page }) => {
 test('the owner changes a setting, and it is audited', async ({ page }) => {
   await signIn(page, owner)
   // A single organization is selected automatically on sign-in, and home is
-  // the sales pipeline for anyone who can see deals.
-  await expect(page).toHaveURL(/\/pipeline/)
+  // the dashboard (S9).
+  await expect(page).toHaveURL(new RegExp(`^${process.env.E2E_BASE_URL ?? 'http://localhost:3000'}/?$`))
   await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/settings\/organization/)
 

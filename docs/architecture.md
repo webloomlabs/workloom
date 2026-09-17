@@ -593,3 +593,38 @@ would put September's work against October's invoice.
 
 **Everything in S8 needs `report:readFinancial`.** `report:read`, which every
 role has, is left for non-financial dashboard metrics.
+
+## The dashboard
+
+Nine figures, nine independent queries, run at once by `dashboard.get`. The
+plan's "one query per card" is about not building a nine-way join; it is not
+nine endpoints, and one round trip keeps the permission story in one place.
+
+**A card the viewer may not see is null, never zero.** "You do not have access
+to this" and "there is nothing here" are different answers, and a dashboard that
+confuses them is worse than one that omits the card. Each section is gated on
+its own reading -- money on `report:readFinancial`, the pipeline on `deal:read`,
+recent activity on `auditLog:read` -- so a developer and a finance lead open the
+same page and get different ones. `report:read`, which every role has, is what
+gets you through the door.
+
+**Every figure carries the same span from the period before it.** The
+comparison is like for like: six days into September are compared with the first
+six days of August, not with the whole of it, or every month would look like a
+collapse until its last day. The span is clipped to the previous period, so the
+31st of March compares against the whole of February.
+
+**Some numbers have no previous.** Active projects and open tasks are positions,
+not flows: answering "how many were live a month ago" needs history the schema
+does not keep, so they carry no comparison rather than a fabricated one. What
+was *completed* in the period is a flow, and does compare.
+
+**Money is in the base currency, at rates that were actually recorded.** Every
+invoice, expense, and payment carries a base-currency amount captured when it
+was written. A part of a document -- its net of tax, the part still unpaid -- is
+that same proportion of the converted figure, so there is one rounding per
+currency and none at all for a document already in the base currency, which is
+the usual case. Labour is the exception: a time entry is not a document and no
+rate was ever recorded for it, so the profit card counts time logged in the base
+currency and reports the hours it had to leave out. The spec calls the metric
+"estimated"; that is the part which makes it so.
