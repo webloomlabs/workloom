@@ -1,7 +1,7 @@
 import type { Permission } from '@workloom/core'
 import { ATTACHMENT_MAX_BYTES, attachmentList, commentList, milestoneList, projectGet, taskGet, taskList, timeEntryList } from '@workloom/core/modules'
 import { formatDuration } from '@workloom/core/time'
-import { Alert, Badge, Card, CardHeader } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -53,26 +53,28 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href={`/projects/${projectId}`} className="text-sm text-neutral-500 hover:underline">← {project.name}</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{task.title}</h1>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href={`/projects/${projectId}`} className="text-sm text-muted hover:underline">← {project.name}</Link>}
+        title={task.title}
+        description={
+          <div className="flex flex-wrap items-center gap-2">
             <TaskStatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
             <BlockedBadge count={task.openDependencies} />
             <span>{task.assigneeName ?? 'Unassigned'}</span>
             {task.dueDate && <span>· Due {formatDate(task.dueDate)}</span>}
             {task.labels.map((l) => (
-              <span key={l} className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">{l}</span>
+              <span key={l} className="rounded bg-raised px-1.5 py-0.5 text-xs">{l}</span>
             ))}
           </div>
-        </div>
-        <div className="flex items-start gap-2">
-          {canUpdate && <TaskStatusControl id={task.id} projectId={projectId} status={task.status} />}
-          {live && can('task:delete') && <DeleteTaskButton id={task.id} projectId={projectId} />}
-        </div>
-      </div>
+        }
+        actions={
+          <div className="flex items-start gap-2">
+            {canUpdate && <TaskStatusControl id={task.id} projectId={projectId} status={task.status} />}
+            {live && can('task:delete') && <DeleteTaskButton id={task.id} projectId={projectId} />}
+          </div>
+        }
+      />
 
       {task.openDependencies > 0 && task.status !== 'done' && (
         <Alert tone="warning">
@@ -85,7 +87,7 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
           <Card>
             <CardHeader title="Discussion" />
             {can('comment:create') && live && (
-              <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-b border-line p-5">
                 <CommentForm projectId={projectId} taskId={taskId} returnTo={returnTo} canPublish={can('project:update')} placeholder="Add a comment…" />
               </div>
             )}
@@ -100,7 +102,7 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
           <Card>
             <CardHeader title="Files" />
             {canUpdate && (
-              <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-b border-line p-5">
                 <UploadForm projectId={projectId} taskId={taskId} returnTo={returnTo} canPublish={can('project:update')} maxLabel={formatBytes(ATTACHMENT_MAX_BYTES)} />
               </div>
             )}
@@ -124,21 +126,21 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
                 {live && can('timeEntry:create') && (
                   <>
                     {running ? (
-                      <p className="flex items-center gap-2 text-sm"><Badge tone="green">Running</Badge> Your timer is on this task. Stop it from the header.</p>
+                      <p className="flex items-center gap-2 text-sm"><Badge tone="positive">Running</Badge> Your timer is on this task. Stop it from the header.</p>
                     ) : (
                       <StartTimerForm work={`task:${task.id}`} />
                     )}
                     <details className="text-sm">
-                      <summary className="cursor-pointer text-neutral-600 dark:text-neutral-400">Log time by hand</summary>
+                      <summary className="cursor-pointer text-muted">Log time by hand</summary>
                       <div className="pt-3"><LogTimeForm work={`task:${task.id}`} defaultDate={todayIn(settings.timezone)} /></div>
                     </details>
                   </>
                 )}
                 {time.data.length > 0 && (
-                  <ul className="space-y-1 border-t border-neutral-200 pt-3 text-sm dark:border-neutral-800">
+                  <ul className="space-y-1 border-t border-line pt-3 text-sm">
                     {time.data.slice(0, 10).map((e) => (
                       <li key={e.id} className="flex justify-between gap-2">
-                        <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">
+                        <span className="min-w-0 truncate text-muted">
                           {formatDate(e.spentOn)} · {e.userName}{e.description ? ` · ${e.description}` : ''}
                         </span>
                         <span className="tabular-nums">{e.running ? 'Running' : formatDuration(e.durationSeconds!)}</span>
@@ -154,7 +156,7 @@ export default async function TaskPage({ params }: PageProps<'/projects/[id]/tas
             <CardHeader title="Waits on" description="This task cannot be completed until these are done or cancelled." />
             <div className="space-y-4 p-5">
               {task.dependencies.length === 0 ? (
-                <p className="text-sm text-neutral-500">Nothing.</p>
+                <p className="text-sm text-muted">Nothing.</p>
               ) : (
                 <ul className="space-y-1">
                   {task.dependencies.map((d) => (

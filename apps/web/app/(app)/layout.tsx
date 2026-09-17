@@ -1,16 +1,72 @@
 import { auth } from '@workloom/auth'
 import { timerGet } from '@workloom/core/modules'
 import type { Permission } from '@workloom/core/permissions'
+import { Alert, Button, LogOutIcon } from '@workloom/ui'
 import { headers } from 'next/headers'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { MainNav } from '@/components/main-nav'
+import { AppShell, type NavGroup } from '@/components/app-shell'
+import type { NavIconName } from '@/components/nav-icons'
 import { OrganizationSwitcher } from '@/components/org-switcher'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { RunningTimer } from '@/components/time/time-forms'
 import { signOutAction } from '@/lib/actions/auth'
 import { call } from '@/lib/server/procedures'
 import { isMultiTenant, needsSetup } from '@/lib/server/tenancy'
 import { getSession, getViewer } from '@/lib/server/viewer'
+
+type Entry = {
+  href: string
+  label: string
+  icon: NavIconName
+  permission: Permission
+  match?: string[]
+}
+
+/**
+ * The sections, grouped the way the work is: who you are selling to, what the
+ * money is doing, what is being delivered.
+ *
+ * Hiding a section is a courtesy, not a control -- every page's data comes
+ * from a procedure that checks the same permission again.
+ */
+const SECTIONS: Array<{ key: string; label: string; items: Entry[] }> = [
+  {
+    key: 'overview',
+    label: '',
+    items: [{ href: '/', label: 'Dashboard', icon: 'home', permission: 'report:read' }],
+  },
+  {
+    key: 'sales',
+    label: 'Sales',
+    items: [
+      { href: '/pipeline', label: 'Pipeline', icon: 'pipeline', permission: 'deal:read', match: ['/deals'] },
+      { href: '/leads', label: 'Leads', icon: 'leads', permission: 'lead:read' },
+      { href: '/clients', label: 'Clients', icon: 'clients', permission: 'company:read' },
+      { href: '/companies', label: 'Companies', icon: 'companies', permission: 'company:read' },
+      { href: '/contacts', label: 'Contacts', icon: 'contacts', permission: 'contact:read' },
+    ],
+  },
+  {
+    key: 'finance',
+    label: 'Finance',
+    items: [
+      { href: '/quotes', label: 'Quotes', icon: 'quotes', permission: 'quote:read' },
+      { href: '/invoices', label: 'Invoices', icon: 'invoices', permission: 'invoice:read' },
+      { href: '/payments', label: 'Payments', icon: 'payments', permission: 'payment:read' },
+      { href: '/expenses', label: 'Expenses', icon: 'expenses', permission: 'expense:read' },
+      { href: '/reports', label: 'Reports', icon: 'reports', permission: 'report:readFinancial' },
+    ],
+  },
+  {
+    key: 'delivery',
+    label: 'Delivery',
+    items: [
+      { href: '/projects', label: 'Projects', icon: 'projects', permission: 'project:read' },
+      { href: '/tasks', label: 'My tasks', icon: 'tasks', permission: 'task:read' },
+      { href: '/time', label: 'Time', icon: 'time', permission: 'timeEntry:read' },
+    ],
+  },
+]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   if (await needsSetup()) redirect('/setup')
@@ -25,74 +81,66 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : []
   const viewer = await getViewer()
 
-  // A courtesy, like the settings tabs: each page's procedures authorise again.
-  const items: Array<{ href: string; label: string; permission: Permission; match?: string[] }> = [
-    { href: '/', label: 'Dashboard', permission: 'report:read' },
-    { href: '/pipeline', label: 'Pipeline', permission: 'deal:read', match: ['/deals'] },
-    { href: '/leads', label: 'Leads', permission: 'lead:read' },
-    { href: '/clients', label: 'Clients', permission: 'company:read' },
-    { href: '/companies', label: 'Companies', permission: 'company:read' },
-    { href: '/contacts', label: 'Contacts', permission: 'contact:read' },
-    { href: '/quotes', label: 'Quotes', permission: 'quote:read' },
-    { href: '/invoices', label: 'Invoices', permission: 'invoice:read' },
-    { href: '/payments', label: 'Payments', permission: 'payment:read' },
-    { href: '/expenses', label: 'Expenses', permission: 'expense:read' },
-    { href: '/reports', label: 'Reports', permission: 'report:readFinancial' },
-    { href: '/projects', label: 'Projects', permission: 'project:read' },
-    { href: '/tasks', label: 'My tasks', permission: 'task:read' },
-    { href: '/time', label: 'Time', permission: 'timeEntry:read' },
-    { href: '/settings/organization', label: 'Settings', permission: 'organization:read', match: ['/settings'] },
-  ]
-  const nav = viewer
-    ? items.filter((item) => viewer.permissions.has(item.permission)).map(({ permission: _, ...item }) => item)
-    : []
+  const groups: NavGroup[] = SECTIONS.map((section) => ({
+    key: section.key,
+    label: section.label,
+    items: section.items
+      .filter((item) => viewer?.permissions.has(item.permission))
+      .map(({ permission: _permission, ...item }) => item),
+  })).filter((group) => group.items.length > 0)
+
   const timer = viewer?.permissions.has('timeEntry:read') ? (await call(timerGet, {})).entry : null
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
-          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-4 gap-y-2">
-            <Link href="/" className="text-sm font-semibold tracking-tight">Workloom</Link>
-            {organizations.length > 0 && (
-              <OrganizationSwitcher
-                organizations={organizations.map((o) => ({ id: o.id, name: o.name }))}
-                activeId={session.session.activeOrganizationId ?? null}
-              />
-            )}
-            {nav.length > 0 && <MainNav items={nav} />}
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            {timer && (
-              <RunningTimer
-                // A new timer restarts the clock.
-                key={timer.id}
-                entry={{
-                  id: timer.id,
-                  projectId: timer.projectId,
-                  projectName: timer.projectName,
-                  taskId: timer.taskId,
-                  taskTitle: timer.taskTitle,
-                  startedAt: timer.startedAt!.toISOString(),
-                }}
-              />
-            )}
-            <span className="hidden text-neutral-500 2xl:inline">{session.user.email}</span>
-            <form action={signOutAction}>
-              <button type="submit" className="text-neutral-700 hover:underline dark:text-neutral-300">
-                Sign out
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
-      {!session.user.emailVerified && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          Confirm your email address — check your inbox for the link. You&apos;ll need it to join
-          other organizations.
-        </div>
-      )}
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
-    </div>
+    <AppShell
+      brand="Workloom"
+      groups={groups}
+      settingsHref={viewer?.permissions.has('organization:read') ? '/settings/organization' : undefined}
+      user={{ name: session.user.name || session.user.email, email: session.user.email }}
+      orgSwitcher={
+        organizations.length > 0 ? (
+          <OrganizationSwitcher
+            organizations={organizations.map((o) => ({ id: o.id, name: o.name }))}
+            activeId={session.session.activeOrganizationId ?? null}
+          />
+        ) : undefined
+      }
+      timer={
+        timer ? (
+          <RunningTimer
+            // A new timer restarts the clock.
+            key={timer.id}
+            entry={{
+              id: timer.id,
+              projectId: timer.projectId,
+              projectName: timer.projectName,
+              taskId: timer.taskId,
+              taskTitle: timer.taskTitle,
+              startedAt: timer.startedAt!.toISOString(),
+            }}
+          />
+        ) : undefined
+      }
+      utilities={
+        <>
+          <ThemeToggle />
+          <form action={signOutAction}>
+            <Button type="submit" variant="ghost" size="icon-sm" title="Sign out" aria-label="Sign out">
+              <LogOutIcon />
+            </Button>
+          </form>
+        </>
+      }
+    >
+      <div className="space-y-6">
+        {!session.user.emailVerified && (
+          <Alert tone="warning">
+            Confirm your email address — check your inbox for the link. You&apos;ll need it to join other
+            organizations.
+          </Alert>
+        )}
+        {children}
+      </div>
+    </AppShell>
   )
 }

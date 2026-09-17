@@ -1,3 +1,4 @@
+import { PageHeader } from '@workloom/ui'
 import { SettingsNav } from '@/components/settings-nav'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -19,7 +20,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
+      <PageHeader title="Settings" description="How this organization works, and who can work in it." />
       <SettingsNav
         items={items
           .filter((i) => viewer.permissions.has(i.permission))

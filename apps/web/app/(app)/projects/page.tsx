@@ -1,5 +1,5 @@
 import { projectList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
@@ -32,17 +32,21 @@ export default async function ProjectsPage({ searchParams }: PageProps<'/project
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <SearchBox action="/projects" q={q} hidden={show ? { show } : {}} placeholder="Project name" />
-          {viewer.permissions.has('project:create') && (
-            <Link href="/projects/new" className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
-              New project
-            </Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Projects"
+        actions={
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <SearchBox action="/projects" q={q} hidden={show ? { show } : {}} placeholder="Project name" />
+              {viewer.permissions.has('project:create') && (
+                <Link href="/projects/new" className={buttonStyles()}>
+                  New project
+                </Link>
+              )}
+            </div>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader title="Projects" action={<FilterTabs tabs={tabs} active={status ?? (show === 'all' ? 'all' : 'active')} />} />
@@ -53,16 +57,16 @@ export default async function ProjectsPage({ searchParams }: PageProps<'/project
             <thead><tr><Th>Project</Th><Th>Status</Th><Th>Progress</Th><Th>Owner</Th><Th>Due</Th></tr></thead>
             <tbody>
               {projects.map((p) => (
-                <tr key={p.id}>
+                <Tr key={p.id}>
                   <Td>
                     <Link href={`/projects/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
-                    <div className="text-xs text-neutral-500">{p.companyName ?? 'Internal'}</div>
+                    <div className="text-xs text-muted">{p.companyName ?? 'Internal'}</div>
                   </Td>
                   <Td><ProjectStatusBadge status={p.status} /></Td>
                   <Td><ProgressBar percent={p.progress.percent} detail={`${p.progress.tasksDone} of ${p.progress.tasksTotal} tasks done`} /></Td>
-                  <Td className="text-neutral-600">{members.nameOf(p.ownerId)}</Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(p.dueDate)}</Td>
-                </tr>
+                  <Td className="text-muted">{members.nameOf(p.ownerId)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(p.dueDate)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

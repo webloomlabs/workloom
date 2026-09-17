@@ -1,5 +1,5 @@
 import { companyList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArchivedBadge, LifecycleBadge } from '@/components/crm/badges'
@@ -37,16 +37,18 @@ export default async function CompaniesPage({ searchParams }: PageProps<'/compan
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Companies</h1>
-        <SearchBox action="/companies" q={q} hidden={stage ? { stage } : {}} placeholder="Name or website" />
-      </div>
+      <PageHeader
+        title="Companies"
+        actions={
+          <SearchBox action="/companies" q={q} hidden={stage ? { stage } : {}} placeholder="Name or website" />
+        }
+      />
 
       {viewer.permissions.has('company:create') && (
         <Card>
           <details>
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">Add a company</summary>
-            <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+            <div className="border-t border-line p-5">
               <CreateCompanyForm members={members.choices} currentUserId={viewer.actor.type === 'user' ? viewer.actor.id : null} />
             </div>
           </details>
@@ -62,15 +64,15 @@ export default async function CompaniesPage({ searchParams }: PageProps<'/compan
             <thead><tr><Th>Company</Th><Th>Stage</Th><Th>Owner</Th><Th>Last activity</Th></tr></thead>
             <tbody>
               {companies.map((company) => (
-                <tr key={company.id}>
+                <Tr key={company.id}>
                   <Td>
                     <Link href={`/companies/${company.id}`} className="font-medium hover:underline">{company.name}</Link>
-                    {company.website && <div className="text-xs text-neutral-500">{company.website.replace(/^https?:\/\//, '')}</div>}
+                    {company.website && <div className="text-xs text-muted">{company.website.replace(/^https?:\/\//, '')}</div>}
                   </Td>
                   <Td><span className="flex gap-1"><LifecycleBadge stage={company.lifecycleStage} />{company.archivedAt && <ArchivedBadge />}</span></Td>
-                  <Td className="text-neutral-600">{members.nameOf(company.ownerId)}</Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(company.lastActivityAt, settings.timezone)}</Td>
-                </tr>
+                  <Td className="text-muted">{members.nameOf(company.ownerId)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(company.lastActivityAt, settings.timezone)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

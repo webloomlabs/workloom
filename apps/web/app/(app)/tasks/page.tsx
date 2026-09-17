@@ -1,5 +1,5 @@
 import { taskList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, param } from '@/components/crm/list-controls'
@@ -35,7 +35,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<'/tasks'>)
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold tracking-tight">My tasks</h1>
+      <PageHeader title="My tasks" description="Everything assigned to you, across every project." />
       <Card>
         <CardHeader
           title={showDone ? 'Recently done' : 'Open'}
@@ -48,7 +48,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<'/tasks'>)
             <thead><tr><Th>Task</Th><Th>Project</Th><Th>Due</Th><Th>Status</Th></tr></thead>
             <tbody>
               {tasks.map((t) => (
-                <tr key={t.id}>
+                <Tr key={t.id}>
                   <Td>
                     <span className="flex flex-wrap items-center gap-2">
                       <Link href={`/projects/${t.projectId}/tasks/${t.id}`} className="font-medium hover:underline">{t.title}</Link>
@@ -56,12 +56,12 @@ export default async function MyTasksPage({ searchParams }: PageProps<'/tasks'>)
                       <BlockedBadge count={t.openDependencies} />
                     </span>
                   </Td>
-                  <Td><Link href={`/projects/${t.projectId}`} className="text-neutral-600 hover:underline">{t.projectName}</Link></Td>
-                  <Td className={`whitespace-nowrap ${t.dueDate && t.dueDate < today && !showDone ? 'font-medium text-red-600' : 'text-neutral-500'}`}>
+                  <Td><Link href={`/projects/${t.projectId}`} className="text-muted hover:underline">{t.projectName}</Link></Td>
+                  <Td className={`whitespace-nowrap ${t.dueDate && t.dueDate < today && !showDone ? 'font-medium text-critical' : 'text-muted'}`}>
                     {formatDate(t.dueDate)}
                   </Td>
                   <Td>{canUpdate ? <TaskStatusControl id={t.id} projectId={t.projectId} status={t.status} /> : t.status}</Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>

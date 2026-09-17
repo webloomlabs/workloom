@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Field, Input } from '@workloom/ui'
+import { Button, Checkbox, Field, Input } from '@workloom/ui'
 import Link from 'next/link'
 import { useActionState, useState } from 'react'
 import { idle, type ActionState } from '@/lib/actions/state'
@@ -33,7 +33,7 @@ function EventPicker({ families, initial }: { families: EventFamily[]; initial: 
     <fieldset className="space-y-3">
       <legend className="text-sm font-medium">Events</legend>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="allEvents" checked={all} onChange={(e) => setAll(e.target.checked)} />
+        <Checkbox name="allEvents" checked={all} onChange={(e) => setAll(e.target.checked)} />
         All events, including ones added in future releases
       </label>
       {!all && (
@@ -41,10 +41,9 @@ function EventPicker({ families, initial }: { families: EventFamily[]; initial: 
           {families.map(({ family, types }) => {
             const familyOn = checkedFamilies.has(family)
             return (
-              <div key={family} className="rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
+              <div key={family} className="rounded-md border border-line p-3">
                 <label className="flex items-center gap-2 text-sm font-medium">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     name="families"
                     value={family}
                     checked={familyOn}
@@ -59,10 +58,9 @@ function EventPicker({ families, initial }: { families: EventFamily[]; initial: 
                 </label>
                 <div className="mt-2 space-y-1 pl-5">
                   {types.map((t) => (
-                    <label key={t.type} className="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400"
+                    <label key={t.type} className="flex items-start gap-2 text-xs text-muted"
                       title={t.description}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         name="types"
                         value={t.type}
                         disabled={familyOn}
@@ -71,7 +69,7 @@ function EventPicker({ families, initial }: { families: EventFamily[]; initial: 
                       />
                       <span>
                         {t.type.split('.')[1]}
-                        {!t.emitted && <span className="ml-1 text-neutral-400">(coming)</span>}
+                        {!t.emitted && <span className="ml-1 text-faint">(coming)</span>}
                       </span>
                     </label>
                   ))}
@@ -92,7 +90,7 @@ function SigningSecretReveal({ secret, children }: { secret: string; children?: 
       secret={secret}
       warning="Copy this signing secret into your receiver now. It won't be shown again; rotate it to get a new one."
     >
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted">
         Verify each request&apos;s <code className="font-mono">Workloom-Signature</code> header with it.
         See the webhooks guide in the documentation.
       </p>
@@ -126,7 +124,7 @@ export function CreateWebhookForm({ families }: { families: EventFamily[] }) {
         </Field>
       </div>
       <EventPicker families={families} initial={['*']} />
-      {fieldError(state, 'eventTypes') && <p role="alert" className="text-xs text-red-600">{fieldError(state, 'eventTypes')}</p>}
+      {fieldError(state, 'eventTypes') && <p role="alert" className="text-xs text-critical">{fieldError(state, 'eventTypes')}</p>}
       <SubmitButton pendingLabel="Creating…">Create endpoint</SubmitButton>
     </form>
   )
@@ -153,7 +151,7 @@ export function EditWebhookForm({
         </Field>
       </div>
       <EventPicker families={families} initial={endpoint.eventTypes} />
-      {fieldError(state, 'eventTypes') && <p role="alert" className="text-xs text-red-600">{fieldError(state, 'eventTypes')}</p>}
+      {fieldError(state, 'eventTypes') && <p role="alert" className="text-xs text-critical">{fieldError(state, 'eventTypes')}</p>}
       <SubmitButton pendingLabel="Saving…">Save endpoint</SubmitButton>
     </form>
   )
@@ -175,7 +173,7 @@ export function RotateSecretForm({ id }: { id: string }) {
   if (state.status === 'success' && state.data) {
     return (
       <SigningSecretReveal secret={state.data.secret}>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           The previous secret keeps signing deliveries for 24 hours, so you can update your receiver without missing events.
         </p>
       </SigningSecretReveal>

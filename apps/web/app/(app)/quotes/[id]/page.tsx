@@ -1,6 +1,6 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
 import { contactList, invoiceList, quoteGet, serviceList, taxRateList, type Quote } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
@@ -46,24 +46,26 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href="/quotes" className="text-sm text-neutral-500 hover:underline">← Quotes</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{quote.title}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/quotes" className="text-sm text-muted hover:underline">← Quotes</Link>}
+        title={quote.title}
+        description={
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <QuoteStatusBadge status={quote.status} />
-            {quote.number && <span className="font-medium text-neutral-800 dark:text-neutral-200">{quote.number}</span>}
+            {quote.number && <span className="font-medium text-ink">{quote.number}</span>}
             <Link href={`/companies/${quote.companyId}?tab=quotes`} className="hover:underline">{quote.companyName}</Link>
             {quote.contactName && <span>{quote.contactName}</span>}
             {quote.dealId && <Link href={`/deals/${quote.dealId}`} className="hover:underline">View deal</Link>}
             <span>{TAX_MODE_LABELS[quote.taxMode]}</span>
           </div>
-        </div>
-        <div className="flex items-start gap-2">
-          {can('quote:create') && <DuplicateQuoteButton quoteId={quote.id} />}
-          {draft && can('quote:delete') && <DeleteDraftButton quoteId={quote.id} />}
-        </div>
-      </div>
+        }
+        actions={
+          <div className="flex items-start gap-2">
+            {can('quote:create') && <DuplicateQuoteButton quoteId={quote.id} />}
+            {draft && can('quote:delete') && <DeleteDraftButton quoteId={quote.id} />}
+          </div>
+        }
+      />
 
       <StatusAlert quote={quote} timezone={settings.timezone} />
 
@@ -88,12 +90,12 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                 </thead>
                 <tbody>
                   {quote.lines.map((line) => (
-                    <tr key={line.id}>
+                    <Tr key={line.id}>
                       <Td>{line.description}</Td>
                       <Td className="text-right tabular-nums">{line.quantity}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.unitAmountMinor, quote.currency)}</Td>
-                      <Td className="text-right tabular-nums text-neutral-600">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
-                      <Td className="whitespace-nowrap text-neutral-600">{line.taxName ? `${line.taxName} ${line.taxRate}%` : 'No tax'}</Td>
+                      <Td className="text-right tabular-nums text-muted">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
+                      <Td className="whitespace-nowrap text-muted">{line.taxName ? `${line.taxName} ${line.taxRate}%` : 'No tax'}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.netMinor, quote.currency)}</Td>
                       {editable && (
                         <Td>
@@ -105,13 +107,13 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                           />
                         </Td>
                       )}
-                    </tr>
+                    </Tr>
                   ))}
                 </tbody>
               </Table>
             )}
             {editable && (
-              <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-t border-line p-5">
                 <AddLineForm
                   documentId={quote.id}
                   currency={quote.currency}
@@ -154,7 +156,7 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                 <CardHeader title="Notes and terms" />
                 <div className="space-y-4 p-5 text-sm">
                   {quote.notes && <p className="whitespace-pre-wrap">{quote.notes}</p>}
-                  {quote.terms && <p className="whitespace-pre-wrap text-neutral-600">{quote.terms}</p>}
+                  {quote.terms && <p className="whitespace-pre-wrap text-muted">{quote.terms}</p>}
                 </div>
               </Card>
             )
@@ -220,7 +222,7 @@ function StatusAlert({ quote, timezone }: { quote: Quote; timezone: string }) {
 
 function Totals({ quote }: { quote: Quote }) {
   const row = (label: string, minor: number, strong = false) => (
-    <div className={`flex justify-between gap-4 ${strong ? 'border-t border-neutral-200 pt-2 text-base font-semibold dark:border-neutral-800' : ''}`}>
+    <div className={`flex justify-between gap-4 ${strong ? 'border-t border-line pt-2 text-base font-semibold' : ''}`}>
       <dt>{label}</dt>
       <dd className="tabular-nums">{money(minor, quote.currency)}</dd>
     </div>
@@ -236,13 +238,13 @@ function Totals({ quote }: { quote: Quote }) {
         {row('Total', quote.totalMinor, true)}
         {inclusive &&
           quote.taxes.map((t) => (
-            <div key={t.taxRateId} className="flex justify-between gap-4 text-neutral-500">
+            <div key={t.taxRateId} className="flex justify-between gap-4 text-muted">
               <dt>Includes {t.name} {t.rate}%</dt>
               <dd className="tabular-nums">{money(t.taxMinor, quote.currency)}</dd>
             </div>
           ))}
         {quote.totalBaseMinor !== null && quote.baseCurrency !== quote.currency && (
-          <div className="flex justify-between gap-4 text-neutral-500">
+          <div className="flex justify-between gap-4 text-muted">
             <dt>In {quote.baseCurrency} at {quote.exchangeRateToBase}</dt>
             <dd className="tabular-nums">{money(quote.totalBaseMinor, quote.baseCurrency!)}</dd>
           </div>

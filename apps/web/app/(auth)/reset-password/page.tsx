@@ -13,7 +13,7 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<'/re
   if (!token || params.error) {
     return (
       <Card className="space-y-4 p-6">
-        <h1 className="text-lg font-semibold">This link has expired</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">This link has expired</h1>
         <Alert tone="warning">Reset links work once and expire after an hour.</Alert>
         <Link href="/forgot-password" className="text-sm font-medium hover:underline">Send a new link</Link>
       </Card>
@@ -21,8 +21,8 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<'/re
   }
 
   return (
-    <Card className="p-6">
-      <h1 className="mb-5 text-lg font-semibold">Choose a new password</h1>
+    <Card className="p-6 sm:p-7">
+      <h1 className="mb-5 text-lg font-semibold tracking-tight text-ink">Choose a new password</h1>
       <ResetPasswordForm token={token} />
     </Card>
   )

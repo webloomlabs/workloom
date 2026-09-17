@@ -1,5 +1,5 @@
 import { apiKeyList } from '@workloom/core/modules'
-import { Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { CreateApiKeyForm, RevokeApiKeyForm } from '@/components/api-key-forms'
 import { call } from '@/lib/server/procedures'
@@ -48,22 +48,22 @@ export default async function ApiKeysPage() {
               {keys.map((key) => {
                 const expired = key.expiresAt !== null && key.expiresAt.getTime() <= now
                 return (
-                  <tr key={key.id}>
+                  <Tr key={key.id}>
                     <Td className="font-medium">{key.name}</Td>
-                    <Td><code className="font-mono text-xs text-neutral-500">{key.keyPrefix}…</code></Td>
+                    <Td><code className="font-mono text-xs text-muted">{key.keyPrefix}…</code></Td>
                     <Td>
                       {key.scopes === null ? (
                         <Badge>Owner&apos;s permissions</Badge>
                       ) : (
-                        <span className="text-xs text-neutral-600">{key.scopes.join(', ')}</span>
+                        <span className="text-xs text-muted">{key.scopes.join(', ')}</span>
                       )}
                     </Td>
-                    <Td className="text-neutral-500">{formatDate(key.lastUsedAt)}</Td>
-                    <Td>{expired ? <Badge tone="red">Expired</Badge> : formatDate(key.expiresAt)}</Td>
+                    <Td className="text-muted">{formatDate(key.lastUsedAt)}</Td>
+                    <Td>{expired ? <Badge tone="critical">Expired</Badge> : formatDate(key.expiresAt)}</Td>
                     <Td>
                       {viewer.permissions.has('apiKey:revoke') && <RevokeApiKeyForm id={key.id} name={key.name} />}
                     </Td>
-                  </tr>
+                  </Tr>
                 )
               })}
             </tbody>

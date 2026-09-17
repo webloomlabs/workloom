@@ -1,5 +1,5 @@
 import { companyList, contactList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArchivedBadge } from '@/components/crm/badges'
@@ -26,16 +26,18 @@ export default async function ContactsPage({ searchParams }: PageProps<'/contact
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Contacts</h1>
-        <SearchBox action="/contacts" q={q} placeholder="Name or email" />
-      </div>
+      <PageHeader
+        title="Contacts"
+        actions={
+          <SearchBox action="/contacts" q={q} placeholder="Name or email" />
+        }
+      />
 
       {companies && (
         <Card>
           <details>
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">Add a contact</summary>
-            <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+            <div className="border-t border-line p-5">
               <CreateContactForm
                 members={members.choices}
                 currentUserId={viewer.actor.type === 'user' ? viewer.actor.id : null}
@@ -55,18 +57,18 @@ export default async function ContactsPage({ searchParams }: PageProps<'/contact
             <thead><tr><Th>Name</Th><Th>Company</Th><Th>Email</Th><Th>Phone</Th></tr></thead>
             <tbody>
               {contacts.map((c) => (
-                <tr key={c.id}>
+                <Tr key={c.id}>
                   <Td>
                     <span className="flex items-center gap-2">
                       <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">{c.fullName}</Link>
                       {c.archivedAt && <ArchivedBadge />}
                     </span>
-                    {c.jobTitle && <div className="text-xs text-neutral-500">{c.jobTitle}</div>}
+                    {c.jobTitle && <div className="text-xs text-muted">{c.jobTitle}</div>}
                   </Td>
                   <Td>{c.companyId ? <Link href={`/companies/${c.companyId}`} className="hover:underline">{c.companyName}</Link> : '—'}</Td>
-                  <Td className="text-neutral-600">{c.email ?? '—'}</Td>
-                  <Td className="whitespace-nowrap text-neutral-600">{c.phone ?? '—'}</Td>
-                </tr>
+                  <Td className="text-muted">{c.email ?? '—'}</Td>
+                  <Td className="whitespace-nowrap text-muted">{c.phone ?? '—'}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

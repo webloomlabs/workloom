@@ -1,5 +1,5 @@
 import { dealList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArchivedBadge, DealStageBadge } from '@/components/crm/badges'
@@ -35,18 +35,19 @@ export default async function DealsPage({ searchParams }: PageProps<'/deals'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Link href="/pipeline" className="text-sm text-neutral-500 hover:underline">← Pipeline</Link>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">Deals</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <SearchBox action="/deals" q={q} hidden={stage ? { stage } : {}} placeholder="Deal or company" />
-          {viewer.permissions.has('deal:create') && (
-            <Link href="/deals/new" className="text-sm font-medium hover:underline">New deal</Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Deals"
+        actions={
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <SearchBox action="/deals" q={q} hidden={stage ? { stage } : {}} placeholder="Deal or company" />
+              {viewer.permissions.has('deal:create') && (
+                <Link href="/deals/new" className="text-sm font-medium hover:underline">New deal</Link>
+              )}
+            </div>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader title="Deals" action={<FilterTabs tabs={tabs} active={stage ?? 'all'} />} />
@@ -57,16 +58,16 @@ export default async function DealsPage({ searchParams }: PageProps<'/deals'>) {
             <thead><tr><Th>Deal</Th><Th>Stage</Th><Th className="text-right">Value</Th><Th>Owner</Th><Th>Close</Th></tr></thead>
             <tbody>
               {deals.map((d) => (
-                <tr key={d.id}>
+                <Tr key={d.id}>
                   <Td>
                     <Link href={`/deals/${d.id}`} className="font-medium hover:underline">{d.name}</Link>
-                    <div className="text-xs text-neutral-500">{d.companyName}</div>
+                    <div className="text-xs text-muted">{d.companyName}</div>
                   </Td>
                   <Td><span className="flex gap-1"><DealStageBadge stage={d.stage} />{d.archivedAt && <ArchivedBadge />}</span></Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{money(d.valueMinor, d.currency)}</Td>
-                  <Td className="text-neutral-600">{members.nameOf(d.ownerId)}</Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(d.closedAt ?? d.expectedCloseDate)}</Td>
-                </tr>
+                  <Td className="text-muted">{members.nameOf(d.ownerId)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(d.closedAt ?? d.expectedCloseDate)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

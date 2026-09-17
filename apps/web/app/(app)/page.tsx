@@ -1,9 +1,8 @@
 import { dashboardGet } from '@workloom/core/modules'
 import { formatDuration } from '@workloom/core/time'
-import { Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
 import { param } from '@/components/crm/list-controls'
 import { PeriodTabs } from '@/components/reports/period'
 import { PERIODS } from '@workloom/core'
@@ -34,13 +33,13 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-neutral-500">{span}, against the same days before</p>
-        </div>
-        <PeriodTabs active={period} />
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={`${span}, against the same days before`}
+        actions={
+          <PeriodTabs active={period} />
+        }
+      />
 
       {board.money && (
         <section aria-label={`Money in ${board.baseCurrency}`} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -83,7 +82,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
       )}
 
       {board.money && board.money.profit.uncountedSeconds > 0 && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           {formatDuration(board.money.profit.uncountedSeconds)} was logged in {board.money.profit.uncountedCurrencies.join(' and ')} and is not in the
           profit above: no exchange rate is recorded against tracked time.
         </p>
@@ -132,7 +131,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
       </section>
 
       {board.pipeline && board.pipeline.length > 1 && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           Pipeline also holds{' '}
           {board.pipeline.slice(1).map((row) => `${money(row.openMinor, row.currency)} in ${row.currency}`).join(', ')}. A deal records a value and a
           currency, never an exchange rate, so nothing is converted.
@@ -152,18 +151,18 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
                 </thead>
                 <tbody>
                   {board.deadlines.map((item) => (
-                    <tr key={`${item.kind}-${item.id}`}>
+                    <Tr key={`${item.kind}-${item.id}`}>
                       <Td>
                         <span className="font-medium">{item.title}</span>
-                        <div className="text-xs text-neutral-500">{item.kind === 'milestone' ? 'Milestone' : 'Task'}</div>
+                        <div className="text-xs text-muted">{item.kind === 'milestone' ? 'Milestone' : 'Task'}</div>
                       </Td>
-                      <Td className="text-neutral-600">
+                      <Td className="text-muted">
                         <Link href={`/projects/${item.projectId}`} className="hover:underline">{item.projectName}</Link>
                       </Td>
                       <Td className="whitespace-nowrap">
-                        {item.overdue ? <Badge tone="red">{formatDate(item.dueDate)}</Badge> : <span className="text-neutral-500">{formatDate(item.dueDate)}</span>}
+                        {item.overdue ? <Badge tone="critical">{formatDate(item.dueDate)}</Badge> : <span className="text-muted">{formatDate(item.dueDate)}</span>}
                       </Td>
-                    </tr>
+                    </Tr>
                   ))}
                 </tbody>
               </Table>
@@ -177,14 +176,14 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
             {board.activity.length === 0 ? (
               <EmptyState>Nothing recorded yet.</EmptyState>
             ) : (
-              <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+              <ul className="divide-y divide-line">
                 {board.activity.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-3 text-sm">
                     <span>
                       <span className="font-medium">{entry.action}</span>
-                      {entry.entityLabel && <span className="text-neutral-600 dark:text-neutral-400"> · {entry.entityLabel}</span>}
+                      {entry.entityLabel && <span className="text-muted"> · {entry.entityLabel}</span>}
                     </span>
-                    <span className="text-xs text-neutral-500">
+                    <span className="text-xs text-muted">
                       {entry.actorLabel ?? 'System'} · {formatDateTime(entry.at, settings.timezone)}
                     </span>
                   </li>
@@ -205,11 +204,10 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
 }
 
 /**
- * One figure, and what it was before.
+ * One figure, in a card that links to where it came from.
  *
- * `invert` is for the figures where up is bad: spending more is not an
- * improvement, and colouring it green because the arrow points up would be
- * actively misleading.
+ * The figure itself is the design system's `Stat`; what this adds is the card
+ * around it and the link out, which only the dashboard needs.
  */
 function Metric({
   label,
@@ -228,34 +226,25 @@ function Metric({
   invert?: boolean | undefined
   href?: string | undefined
 }) {
-  const body: ReactNode = (
-    <>
-      <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`text-2xl font-semibold tabular-nums ${tone === 'bad' ? 'text-red-600' : ''}`}>{value}</div>
-      <div className="flex flex-wrap items-baseline gap-2 text-xs text-neutral-500">
-        {change != null && <Change percent={change} invert={invert} />}
-        {detail && <span>{detail}</span>}
-      </div>
-    </>
+  const stat = (
+    <Stat
+      label={label}
+      value={value}
+      detail={detail}
+      change={change}
+      invert={invert}
+      tone={tone === 'bad' ? 'critical' : undefined}
+    />
   )
   return (
-    <Card className="space-y-1 p-4">
+    <Card className="p-4 transition-colors hover:border-line-strong">
       {href ? (
-        <Link href={href} className="block space-y-1 hover:opacity-80">{body}</Link>
+        <Link href={href} className="block">
+          {stat}
+        </Link>
       ) : (
-        body
+        stat
       )}
     </Card>
-  )
-}
-
-function Change({ percent, invert }: { percent: string; invert?: boolean | undefined }) {
-  const value = Number(percent)
-  const good = invert ? value < 0 : value > 0
-  const flat = value === 0
-  return (
-    <span className={`font-medium ${flat ? 'text-neutral-500' : good ? 'text-green-600' : 'text-red-600'}`}>
-      {value > 0 ? '↑' : value < 0 ? '↓' : '·'} {Math.abs(value)}%
-    </span>
   )
 }

@@ -1,0 +1,172 @@
+/**
+ * Workloom design tokens.
+ *
+ * Two layers, deliberately:
+ *
+ * 1. `--wl-*` custom properties hold the raw values, and are redefined per
+ *    theme on the `<html>` element. Dark is the default -- the product is used
+ *    all day, and the dark surface is the one the design was drawn against.
+ * 2. `@theme inline` maps those onto Tailwind's colour scale, so a utility
+ *    like `bg-surface` compiles to `background-color: var(--wl-surface)` and
+ *    follows whichever theme is live. Nothing re-renders on a theme change;
+ *    the variables simply resolve differently.
+ *
+ * Components never name a palette colour (`neutral-800`, `red-600`). They name
+ * a role -- surface, line, ink, muted, critical -- so that retheming is one
+ * file, not nine hundred class names.
+ */
+
+:root,
+:root[data-theme='dark'],
+[data-wl-theme='dark'] {
+  color-scheme: dark;
+
+  /* Elevation: canvas sits behind surface, surface behind raised. */
+  --wl-canvas: #100f0e;
+  --wl-surface: #191817;
+  --wl-raised: #211f1e;
+  --wl-inset: #0b0a0a;
+  --wl-overlay: rgb(0 0 0 / 0.6);
+
+  /* Hairlines. `line` separates, `line-strong` outlines something interactive. */
+  --wl-line: #2a2827;
+  --wl-line-strong: #3b3836;
+
+  /* Type. `ink` is body copy, `muted` is secondary, `faint` is placeholder. */
+  --wl-ink: #f2f0ec;
+  --wl-muted: #a5a099;
+  --wl-faint: #6f6a63;
+
+  /* The one brand colour. Used for primary actions and the current-page mark. */
+  --wl-accent: #d9f24b;
+  --wl-accent-hover: #e6ff63;
+  --wl-accent-ink: #171a05;
+  --wl-accent-soft: rgb(217 242 75 / 0.12);
+  --wl-accent-text: #d9f24b;
+
+  /* Status. Each has a foreground and the wash it sits on. */
+  --wl-positive: #6ee7a8;
+  --wl-positive-soft: rgb(110 231 168 / 0.12);
+  --wl-caution: #f5c563;
+  --wl-caution-soft: rgb(245 197 99 / 0.12);
+  --wl-critical: #ff8f85;
+  --wl-critical-soft: rgb(255 143 133 / 0.12);
+  --wl-critical-ink: #2b0c09;
+  --wl-info: #93b8ff;
+  --wl-info-soft: rgb(147 184 255 / 0.12);
+
+  /* Transient states, kept translucent so they work on any surface. */
+  --wl-hover: rgb(255 255 255 / 0.04);
+  --wl-selected: rgb(255 255 255 / 0.07);
+
+  --wl-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --wl-shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --wl-shadow-lg: 0 16px 48px rgb(0 0 0 / 0.55);
+}
+
+/**
+ * The light theme, either for the whole document or for one subtree: a client
+ * opening an invoice should get a document, not the operator's dark console.
+ */
+:root[data-theme='light'],
+[data-wl-theme='light'] {
+  color-scheme: light;
+
+  --wl-canvas: #f6f6f3;
+  --wl-surface: #ffffff;
+  --wl-raised: #f1f0ec;
+  --wl-inset: #fbfbf9;
+  --wl-overlay: rgb(24 23 21 / 0.35);
+
+  --wl-line: #e6e4de;
+  --wl-line-strong: #d0cdc5;
+
+  --wl-ink: #1a1917;
+  --wl-muted: #5f5b54;
+  --wl-faint: #8b8780;
+
+  --wl-accent: #cfe832;
+  --wl-accent-hover: #c2db24;
+  --wl-accent-ink: #1a1c06;
+  --wl-accent-soft: rgb(160 186 6 / 0.14);
+  /* The lime is a surface colour; as text on white it needs to go darker. */
+  --wl-accent-text: #5d6b00;
+
+  --wl-positive: #16794a;
+  --wl-positive-soft: rgb(22 121 74 / 0.1);
+  --wl-caution: #8a6206;
+  --wl-caution-soft: rgb(138 98 6 / 0.1);
+  --wl-critical: #bc2f28;
+  --wl-critical-soft: rgb(188 47 40 / 0.09);
+  --wl-critical-ink: #ffffff;
+  --wl-info: #2760c4;
+  --wl-info-soft: rgb(39 96 196 / 0.09);
+
+  --wl-hover: rgb(20 19 17 / 0.04);
+  --wl-selected: rgb(20 19 17 / 0.07);
+
+  --wl-shadow-sm: 0 1px 2px rgb(24 23 21 / 0.06);
+  --wl-shadow-md: 0 4px 16px rgb(24 23 21 / 0.08);
+  --wl-shadow-lg: 0 16px 48px rgb(24 23 21 / 0.12);
+}
+
+@theme inline {
+  --color-canvas: var(--wl-canvas);
+  --color-surface: var(--wl-surface);
+  --color-raised: var(--wl-raised);
+  --color-inset: var(--wl-inset);
+  --color-overlay: var(--wl-overlay);
+
+  --color-line: var(--wl-line);
+  --color-line-strong: var(--wl-line-strong);
+
+  --color-ink: var(--wl-ink);
+  --color-muted: var(--wl-muted);
+  --color-faint: var(--wl-faint);
+
+  --color-accent: var(--wl-accent);
+  --color-accent-hover: var(--wl-accent-hover);
+  --color-accent-ink: var(--wl-accent-ink);
+  --color-accent-soft: var(--wl-accent-soft);
+  --color-accent-text: var(--wl-accent-text);
+
+  --color-positive: var(--wl-positive);
+  --color-positive-soft: var(--wl-positive-soft);
+  --color-caution: var(--wl-caution);
+  --color-caution-soft: var(--wl-caution-soft);
+  --color-critical: var(--wl-critical);
+  --color-critical-soft: var(--wl-critical-soft);
+  --color-critical-ink: var(--wl-critical-ink);
+  --color-info: var(--wl-info);
+  --color-info-soft: var(--wl-info-soft);
+
+  --color-hover: var(--wl-hover);
+  --color-selected: var(--wl-selected);
+
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --shadow-sm: var(--wl-shadow-sm);
+  --shadow-md: var(--wl-shadow-md);
+  --shadow-lg: var(--wl-shadow-lg);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* The app chrome is dense; a hairline scrollbar keeps panes from looking framed. */
+@supports (scrollbar-width: thin) {
+  .wl-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--wl-line-strong) transparent;
+  }
+}
+
+/* Theme swaps should not animate every colour on the page at once. */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --wl-transition: 120ms ease;
+  }
+}

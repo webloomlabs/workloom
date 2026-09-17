@@ -1,6 +1,6 @@
 'use client'
 
-import { Button } from '@workloom/ui'
+import { Button, Checkbox } from '@workloom/ui'
 import { useActionState } from 'react'
 import { billExpensesAction, createExpenseAction, deleteExpenseAction, updateExpenseAction } from '@/lib/actions/expenses'
 import { idle } from '@/lib/actions/state'
@@ -70,7 +70,7 @@ export function ExpenseForm({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="billable" defaultChecked={expense.billable} /> Rebill this to the client
+          <Checkbox name="billable" defaultChecked={expense.billable} /> Rebill this to the client
         </label>
         <TextField state={state} name="markupPercent" label="Markup (%)" defaultValue={expense.markupPercent} hint="Added when it is rebilled. Blank charges it at cost." />
       </div>

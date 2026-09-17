@@ -11,7 +11,7 @@ import {
   quoteList,
   type ClientSectionKey,
 } from '@workloom/core/modules'
-import { Alert, Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -118,28 +118,32 @@ export default async function CompanyPage({ params, searchParams }: PageProps<'/
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href={isClient ? '/clients' : '/companies'} className="text-sm text-neutral-500 hover:underline">
+      <PageHeader
+        breadcrumb={
+          <Link href={isClient ? '/clients' : '/companies'} className="text-sm text-muted hover:text-ink">
             ← {isClient ? 'Clients' : 'Companies'}
           </Link>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">{company.name}</h1>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+        }
+        title={company.name}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             <LifecycleBadge stage={company.lifecycleStage} />
             {company.archivedAt && <ArchivedBadge />}
             {company.becameClientAt && <span>Client since {formatDate(company.becameClientAt, settings.timezone)}</span>}
             <span>· {members.nameOf(company.ownerId)}</span>
             {company.website && (
-              <a href={company.website} target="_blank" rel="noreferrer noopener" className="hover:underline">
+              <a href={company.website} target="_blank" rel="noreferrer noopener" className="hover:text-ink">
                 · {company.website.replace(/^https?:\/\//, '')}
               </a>
             )}
-          </p>
-        </div>
-        {can('company:archive') && (
-          <ArchiveControl entity="company" id={company.id} archived={Boolean(company.archivedAt)} label="company" />
-        )}
-      </div>
+          </span>
+        }
+        actions={
+          can('company:archive') && (
+            <ArchiveControl entity="company" id={company.id} archived={Boolean(company.archivedAt)} label="company" />
+          )
+        }
+      />
 
       <SectionTabs tabs={tabs} active={active} label="Client sections" />
 
@@ -151,9 +155,9 @@ export default async function CompanyPage({ params, searchParams }: PageProps<'/
 function Stat({ label, value, detail }: { label: string; value: ReactNode; detail?: ReactNode }) {
   return (
     <Card className="px-4 py-3">
-      <div className="text-xs text-neutral-500">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
-      {detail && <div className="text-xs text-neutral-500">{detail}</div>}
+      {detail && <div className="text-xs text-muted">{detail}</div>}
     </Card>
   )
 }
@@ -209,13 +213,13 @@ async function Overview({ id, summary, can, timezone, baseCurrency, members }: C
                 <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
                   {facts.map(([k, v]) => (
                     <div key={k} className="contents">
-                      <dt className="text-neutral-500">{k}</dt>
+                      <dt className="text-muted">{k}</dt>
                       <dd>{v}</dd>
                     </div>
                   ))}
                 </dl>
               ) : (
-                !company.description && <p className="text-neutral-500">No details yet.</p>
+                !company.description && <p className="text-muted">No details yet.</p>
               )}
             </div>
           </Card>
@@ -226,14 +230,14 @@ async function Overview({ id, summary, can, timezone, baseCurrency, members }: C
               {contacts.data.length === 0 ? (
                 <EmptyState>No contacts yet.</EmptyState>
               ) : (
-                <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                <ul className="divide-y divide-line">
                   {contacts.data.map((c) => (
                     <li key={c.id} className="flex items-baseline justify-between gap-3 px-5 py-2.5 text-sm">
                       <span>
                         <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">{c.fullName}</Link>
-                        {c.jobTitle && <span className="text-neutral-500"> · {c.jobTitle}</span>}
+                        {c.jobTitle && <span className="text-muted"> · {c.jobTitle}</span>}
                       </span>
-                      <span className="truncate text-neutral-500">{c.email ?? c.phone ?? ''}</span>
+                      <span className="truncate text-muted">{c.email ?? c.phone ?? ''}</span>
                     </li>
                   ))}
                 </ul>
@@ -249,7 +253,7 @@ async function Overview({ id, summary, can, timezone, baseCurrency, members }: C
               {openDeals.data.length === 0 ? (
                 <EmptyState>No open deals.</EmptyState>
               ) : (
-                <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                <ul className="divide-y divide-line">
                   {openDeals.data.map((d) => (
                     <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
                       <span className="flex items-center gap-2">
@@ -290,15 +294,15 @@ async function Contacts({ id, summary, can, cursor, currentUserId, members }: Co
             <thead><tr><Th>Name</Th><Th>Email</Th><Th>Phone</Th><Th>Owner</Th></tr></thead>
             <tbody>
               {contacts.data.map((c) => (
-                <tr key={c.id}>
+                <Tr key={c.id}>
                   <Td>
                     <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">{c.fullName}</Link>
-                    {c.jobTitle && <div className="text-xs text-neutral-500">{c.jobTitle}</div>}
+                    {c.jobTitle && <div className="text-xs text-muted">{c.jobTitle}</div>}
                   </Td>
-                  <Td className="text-neutral-600">{c.email ?? '—'}</Td>
-                  <Td className="whitespace-nowrap text-neutral-600">{c.phone ?? '—'}</Td>
-                  <Td className="text-neutral-600">{members.nameOf(c.ownerId)}</Td>
-                </tr>
+                  <Td className="text-muted">{c.email ?? '—'}</Td>
+                  <Td className="whitespace-nowrap text-muted">{c.phone ?? '—'}</Td>
+                  <Td className="text-muted">{members.nameOf(c.ownerId)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>
@@ -335,16 +339,16 @@ async function Deals({ id, summary, can, cursor, timezone, baseCurrency, members
           <thead><tr><Th>Deal</Th><Th>Stage</Th><Th className="text-right">Value</Th><Th>Owner</Th><Th>Close</Th></tr></thead>
           <tbody>
             {deals.data.map((d) => (
-              <tr key={d.id}>
+              <Tr key={d.id}>
                 <Td>
                   <Link href={`/deals/${d.id}`} className="font-medium hover:underline">{d.name}</Link>
-                  {d.contactName && <div className="text-xs text-neutral-500">{d.contactName}</div>}
+                  {d.contactName && <div className="text-xs text-muted">{d.contactName}</div>}
                 </Td>
                 <Td><span className="flex gap-1"><DealStageBadge stage={d.stage} />{d.archivedAt && <ArchivedBadge />}</span></Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{money(d.valueMinor, d.currency)}</Td>
-                <Td className="text-neutral-600">{members.nameOf(d.ownerId)}</Td>
-                <Td className="whitespace-nowrap text-neutral-500">{d.closedAt ? formatDate(d.closedAt, timezone) : formatDate(d.expectedCloseDate)}</Td>
-              </tr>
+                <Td className="text-muted">{members.nameOf(d.ownerId)}</Td>
+                <Td className="whitespace-nowrap text-muted">{d.closedAt ? formatDate(d.closedAt, timezone) : formatDate(d.expectedCloseDate)}</Td>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -370,13 +374,13 @@ async function Projects({ id, summary, can, cursor, members }: Context) {
           <thead><tr><Th>Project</Th><Th>Status</Th><Th>Progress</Th><Th>Owner</Th><Th>Due</Th></tr></thead>
           <tbody>
             {projects.data.map((p) => (
-              <tr key={p.id}>
+              <Tr key={p.id}>
                 <Td><Link href={`/projects/${p.id}`} className="font-medium hover:underline">{p.name}</Link></Td>
                 <Td><ProjectStatusBadge status={p.status} /></Td>
                 <Td><ProgressBar percent={p.progress.percent} detail={`${p.progress.tasksDone} of ${p.progress.tasksTotal} tasks done`} /></Td>
-                <Td className="text-neutral-600">{members.nameOf(p.ownerId)}</Td>
-                <Td className="whitespace-nowrap text-neutral-500">{formatDate(p.dueDate)}</Td>
-              </tr>
+                <Td className="text-muted">{members.nameOf(p.ownerId)}</Td>
+                <Td className="whitespace-nowrap text-muted">{formatDate(p.dueDate)}</Td>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -402,15 +406,15 @@ async function Quotes({ id, summary, can, cursor }: Context) {
           <thead><tr><Th>Quote</Th><Th>Status</Th><Th className="text-right">Total</Th><Th>Valid until</Th></tr></thead>
           <tbody>
             {quotes.data.map((q) => (
-              <tr key={q.id}>
+              <Tr key={q.id}>
                 <Td>
                   <Link href={`/quotes/${q.id}`} className="font-medium hover:underline">{q.title}</Link>
-                  <div className="text-xs text-neutral-500">{q.number ?? 'Draft'}</div>
+                  <div className="text-xs text-muted">{q.number ?? 'Draft'}</div>
                 </Td>
                 <Td><QuoteStatusBadge status={q.status} /></Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{money(q.totalMinor, q.currency)}</Td>
-                <Td className="whitespace-nowrap text-neutral-500">{formatDate(q.validUntil)}</Td>
-              </tr>
+                <Td className="whitespace-nowrap text-muted">{formatDate(q.validUntil)}</Td>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -436,16 +440,16 @@ async function Invoices({ id, summary, can, cursor }: Context) {
           <thead><tr><Th>Invoice</Th><Th>Status</Th><Th className="text-right">Total</Th><Th className="text-right">Due</Th><Th>Due date</Th></tr></thead>
           <tbody>
             {invoices.data.map((invoice) => (
-              <tr key={invoice.id}>
+              <Tr key={invoice.id}>
                 <Td>
                   <Link href={`/invoices/${invoice.id}`} className="font-medium hover:underline">{invoice.title}</Link>
-                  <div className="text-xs text-neutral-500">{invoice.number ?? 'Draft'}</div>
+                  <div className="text-xs text-muted">{invoice.number ?? 'Draft'}</div>
                 </Td>
                 <Td><InvoiceStatusBadge status={invoice.status} /></Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{money(invoice.totalMinor, invoice.currency)}</Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{invoice.amountDueMinor === 0 ? '—' : money(invoice.amountDueMinor, invoice.currency)}</Td>
-                <Td className="whitespace-nowrap text-neutral-500">{formatDate(invoice.dueDate)}</Td>
-              </tr>
+                <Td className="whitespace-nowrap text-muted">{formatDate(invoice.dueDate)}</Td>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -472,22 +476,22 @@ async function Payments({ id, summary, can, cursor }: Context) {
           <thead><tr><Th>Date</Th><Th>How</Th><Th>Reference</Th><Th>Against</Th><Th className="text-right">Amount</Th></tr></thead>
           <tbody>
             {payments.data.map((payment) => (
-              <tr key={payment.id}>
+              <Tr key={payment.id}>
                 <Td className="whitespace-nowrap">
                   <Link href={`/payments/${payment.id}`} className="font-medium hover:underline">{formatDate(payment.receivedOn)}</Link>
-                  {payment.kind === 'refund' && <div className="text-xs text-amber-600">Refund</div>}
+                  {payment.kind === 'refund' && <div className="text-xs text-caution">Refund</div>}
                 </Td>
-                <Td className="text-neutral-600">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
-                <Td className="text-neutral-600">{payment.reference ?? '—'}</Td>
-                <Td className="text-neutral-600">
+                <Td className="text-muted">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
+                <Td className="text-muted">{payment.reference ?? '—'}</Td>
+                <Td className="text-muted">
                   {payment.allocations.length === 0
-                    ? <span className="text-neutral-400">On account</span>
+                    ? <span className="text-faint">On account</span>
                     : payment.allocations.map((a) => (
                         <Link key={a.id} href={`/invoices/${a.invoiceId}`} className="mr-2 hover:underline">{a.invoiceNumber ?? a.invoiceTitle}</Link>
                       ))}
                 </Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{money(payment.amountMinor, payment.currency)}</Td>
-              </tr>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -514,23 +518,23 @@ async function Expenses({ id, summary, can, cursor }: Context) {
           <thead><tr><Th>Date</Th><Th>What</Th><Th>Project</Th><Th className="text-right">Cost</Th><Th>Rebilling</Th></tr></thead>
           <tbody>
             {expenses.data.map((expense) => (
-              <tr key={expense.id}>
-                <Td className="whitespace-nowrap text-neutral-500">{formatDate(expense.incurredOn)}</Td>
+              <Tr key={expense.id}>
+                <Td className="whitespace-nowrap text-muted">{formatDate(expense.incurredOn)}</Td>
                 <Td><Link href={`/expenses/${expense.id}`} className="font-medium hover:underline">{expense.description}</Link></Td>
-                <Td className="text-neutral-600">
+                <Td className="text-muted">
                   {expense.projectId ? <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link> : '—'}
                 </Td>
                 <Td className="whitespace-nowrap text-right tabular-nums">{money(expense.amountMinor, expense.currency)}</Td>
                 <Td className="whitespace-nowrap">
                   {expense.invoiceId ? (
-                    <Link href={`/invoices/${expense.invoiceId}`}><Badge tone="green">{expense.invoiceNumber ?? 'Rebilled'}</Badge></Link>
+                    <Link href={`/invoices/${expense.invoiceId}`}><Badge tone="positive">{expense.invoiceNumber ?? 'Rebilled'}</Badge></Link>
                   ) : expense.billable ? (
-                    <Badge tone="amber">To rebill</Badge>
+                    <Badge tone="caution">To rebill</Badge>
                   ) : (
-                    <span className="text-sm text-neutral-400">Absorbed</span>
+                    <span className="text-sm text-faint">Absorbed</span>
                   )}
                 </Td>
-              </tr>
+              </Tr>
             ))}
           </tbody>
         </Table>
@@ -551,7 +555,7 @@ async function Activity({ id, summary, can, cursor, timezone }: Context) {
     <Card>
       <CardHeader title="Activity" description="Everything logged against this company, its contacts, and its deals." />
       {!summary.company.archivedAt && can('activity:create') && (
-        <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+        <div className="border-b border-line p-5">
           <LogActivityForm target="companyId" targetId={id} returnTo={base} />
         </div>
       )}
@@ -590,7 +594,7 @@ function Details({ context: { summary, can, members } }: { context: Context }) {
               ] as const
             ).map(([k, v]) => (
               <div key={k} className="contents">
-                <dt className="text-neutral-500">{k}</dt>
+                <dt className="text-muted">{k}</dt>
                 <dd className="whitespace-pre-wrap">{v ?? '—'}</dd>
               </div>
             ))}

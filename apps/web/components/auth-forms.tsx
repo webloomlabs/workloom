@@ -25,7 +25,7 @@ export function SignInForm({ next, notice, canSignUp }: {
   const [state, action] = useActionState(signInAction, idle)
   return (
     <form action={action} className="space-y-4" noValidate>
-      {notice && state.status === 'idle' && <p className="text-sm text-green-700">{notice}</p>}
+      {notice && state.status === 'idle' && <p className="text-sm text-positive">{notice}</p>}
       <FormMessage state={state} />
       <input type="hidden" name="next" value={next ?? ''} />
       <Field id="email" label="Email" error={fieldError(state, 'email')}>
@@ -38,7 +38,7 @@ export function SignInForm({ next, notice, canSignUp }: {
       </Field>
       <SubmitButton className="w-full" pendingLabel="Signing in…">Sign in</SubmitButton>
       <div className="flex justify-between text-sm">
-        <Link href="/forgot-password" className="text-neutral-600 hover:underline">Forgot password?</Link>
+        <Link href="/forgot-password" className="text-muted hover:underline">Forgot password?</Link>
         {canSignUp && (
           <Link href={`/sign-up${nextQuery(next)}`} className="font-medium hover:underline">Create an account</Link>
         )}
@@ -65,7 +65,7 @@ export function SignUpForm({ next, email }: { next?: string; email?: string }) {
           aria-invalid={!!fieldError(state, 'password')} />
       </Field>
       <SubmitButton className="w-full" pendingLabel="Creating account…">Create account</SubmitButton>
-      <p className="text-center text-sm text-neutral-600">
+      <p className="text-center text-sm text-muted">
         Already have an account?{' '}
         <Link href={`/sign-in${nextQuery(next)}`} className="font-medium hover:underline">Sign in</Link>
       </p>
@@ -83,7 +83,7 @@ export function ForgotPasswordForm() {
       </Field>
       <SubmitButton className="w-full" pendingLabel="Sending…">Send reset link</SubmitButton>
       <p className="text-center text-sm">
-        <Link href="/sign-in" className="text-neutral-600 hover:underline">Back to sign in</Link>
+        <Link href="/sign-in" className="text-muted hover:underline">Back to sign in</Link>
       </p>
     </form>
   )

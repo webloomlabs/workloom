@@ -1,5 +1,5 @@
 import { reportProjects, reportRevenue } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -36,15 +36,13 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-sm text-neutral-500">
-            {formatDate(revenue.from)} to {formatDate(revenue.to)}
-          </p>
-        </div>
-        <PeriodPicker from={revenue.from} to={revenue.to} />
-      </div>
+      <PageHeader
+        title="Reports"
+        description={`${formatDate(revenue.from)} to ${formatDate(revenue.to)}`}
+        actions={
+          <PeriodPicker from={revenue.from} to={revenue.to} />
+        }
+      />
 
       {revenue.currencies.length === 0 ? (
         <Card>
@@ -56,7 +54,7 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
           return (
             <div key={figures.currency} className="space-y-4">
               {revenue.currencies.length > 1 && (
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{figures.currency}</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{figures.currency}</h2>
               )}
               <section aria-label={`Money in ${figures.currency}`} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Stat label="Billed" value={amount(figures.billedMinor)} detail={figures.taxMinor > 0 ? `plus ${amount(figures.taxMinor)} tax` : 'excluding tax'} />
@@ -97,16 +95,16 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
                   </thead>
                   <tbody>
                     {figures.byMonth.map((row) => (
-                      <tr key={row.month}>
+                      <Tr key={row.month}>
                         <Td className="whitespace-nowrap">{row.month}</Td>
                         <Td className="whitespace-nowrap text-right tabular-nums">{amount(row.billedMinor)}</Td>
                         <Td className="whitespace-nowrap text-right tabular-nums">{amount(row.collectedMinor)}</Td>
-                        <Td className="whitespace-nowrap text-right tabular-nums text-neutral-500">{amount(row.labourCostMinor)}</Td>
-                        <Td className="whitespace-nowrap text-right tabular-nums text-neutral-500">{amount(row.expenseCostMinor)}</Td>
-                        <Td className={`whitespace-nowrap text-right tabular-nums ${row.profitMinor < 0 ? 'font-medium text-red-600' : ''}`}>
+                        <Td className="whitespace-nowrap text-right tabular-nums text-muted">{amount(row.labourCostMinor)}</Td>
+                        <Td className="whitespace-nowrap text-right tabular-nums text-muted">{amount(row.expenseCostMinor)}</Td>
+                        <Td className={`whitespace-nowrap text-right tabular-nums ${row.profitMinor < 0 ? 'font-medium text-critical' : ''}`}>
                           {amount(row.profitMinor)}
                         </Td>
-                      </tr>
+                      </Tr>
                     ))}
                   </tbody>
                 </Table>
@@ -132,14 +130,14 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
             </thead>
             <tbody>
               {revenue.byClient.map((row) => (
-                <tr key={`${row.companyId}-${row.currency}`}>
+                <Tr key={`${row.companyId}-${row.currency}`}>
                   <Td>
                     <Link href={`/companies/${row.companyId}?tab=invoices`} className="font-medium hover:underline">{row.companyName}</Link>
                   </Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{money(row.billedMinor, row.currency)}</Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{money(row.collectedMinor, row.currency)}</Td>
-                  <Td className="whitespace-nowrap text-right tabular-nums text-neutral-500">{money(row.outstandingMinor, row.currency)}</Td>
-                </tr>
+                  <Td className="whitespace-nowrap text-right tabular-nums text-muted">{money(row.outstandingMinor, row.currency)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>
@@ -167,31 +165,31 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
             </thead>
             <tbody>
               {portfolio.data.map((row) => (
-                <tr key={`${row.projectId}-${row.currency}`}>
+                <Tr key={`${row.projectId}-${row.currency}`}>
                   <Td>
                     <Link href={`/projects/${row.projectId}?tab=financials`} className="font-medium hover:underline">{row.name}</Link>
                     {portfolio.data.some((r) => r.projectId === row.projectId && r.currency !== row.currency) && (
-                      <div className="text-xs text-neutral-500">{row.currency}</div>
+                      <div className="text-xs text-muted">{row.currency}</div>
                     )}
                   </Td>
-                  <Td className="text-neutral-600">
+                  <Td className="text-muted">
                     {row.companyId ? <Link href={`/companies/${row.companyId}`} className="hover:underline">{row.companyName}</Link> : 'Internal'}
                   </Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{money(row.billedMinor, row.currency)}</Td>
-                  <Td className="whitespace-nowrap text-right tabular-nums text-neutral-500">{money(row.costMinor, row.currency)}</Td>
-                  <Td className={`whitespace-nowrap text-right tabular-nums ${row.marginMinor < 0 ? 'font-medium text-red-600' : ''}`}>
+                  <Td className="whitespace-nowrap text-right tabular-nums text-muted">{money(row.costMinor, row.currency)}</Td>
+                  <Td className={`whitespace-nowrap text-right tabular-nums ${row.marginMinor < 0 ? 'font-medium text-critical' : ''}`}>
                     {money(row.marginMinor, row.currency)}
-                    {row.marginPercent !== null && <span className="ml-2 text-xs text-neutral-500">{row.marginPercent}%</span>}
+                    {row.marginPercent !== null && <span className="ml-2 text-xs text-muted">{row.marginPercent}%</span>}
                   </Td>
-                  <Td className="whitespace-nowrap text-right tabular-nums text-neutral-500">{money(row.uninvoicedMinor, row.currency)}</Td>
-                </tr>
+                  <Td className="whitespace-nowrap text-right tabular-nums text-muted">{money(row.uninvoicedMinor, row.currency)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>
         )}
       </Card>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted">
         Figures are in the currency they were recorded in and nothing is converted between them. Amounts are shown against {settings.baseCurrency} only
         where that is the currency they were recorded in.
       </p>
@@ -202,9 +200,9 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
 function Stat({ label, value, detail, tone }: { label: string; value: string; detail?: string | undefined; tone?: 'warn' | undefined }) {
   return (
     <Card className="space-y-1 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`text-lg font-semibold tabular-nums ${tone === 'warn' ? 'text-red-600' : ''}`}>{value}</div>
-      {detail && <div className="text-xs text-neutral-500">{detail}</div>}
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className={`text-lg font-semibold tabular-nums ${tone === 'warn' ? 'text-critical' : ''}`}>{value}</div>
+      {detail && <div className="text-xs text-muted">{detail}</div>}
     </Card>
   )
 }

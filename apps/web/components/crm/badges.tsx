@@ -1,9 +1,9 @@
 import { Badge } from '@workloom/ui'
 import { DEAL_STAGE_LABELS, LEAD_STATUS_LABELS, LIFECYCLE_LABELS, label } from '@/lib/crm-labels'
 
-const leadTones = { new: 'amber', contacted: 'neutral', qualified: 'green', disqualified: 'red', converted: 'green' } as const
-const dealTones = { qualified: 'neutral', proposal_sent: 'neutral', negotiation: 'amber', won: 'green', lost: 'red' } as const
-const lifecycleTones = { prospect: 'neutral', client: 'green', former_client: 'amber' } as const
+const leadTones = { new: 'caution', contacted: 'neutral', qualified: 'positive', disqualified: 'critical', converted: 'positive' } as const
+const dealTones = { qualified: 'neutral', proposal_sent: 'neutral', negotiation: 'caution', won: 'positive', lost: 'critical' } as const
+const lifecycleTones = { prospect: 'neutral', client: 'positive', former_client: 'caution' } as const
 
 export function LeadStatusBadge({ status }: { status: string }) {
   return <Badge tone={leadTones[status as keyof typeof leadTones] ?? 'neutral'}>{label(LEAD_STATUS_LABELS, status)}</Badge>
@@ -18,5 +18,5 @@ export function LifecycleBadge({ stage }: { stage: string }) {
 }
 
 export function ArchivedBadge() {
-  return <Badge tone="amber">Archived</Badge>
+  return <Badge tone="caution">Archived</Badge>
 }

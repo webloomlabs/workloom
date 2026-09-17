@@ -104,7 +104,7 @@ export function MemberRoleForm({ memberId, role, canInviteOwner }: {
         onChange={(e) => e.currentTarget.form?.requestSubmit()}>
         <RoleOptions allowOwner={canInviteOwner || role === 'owner'} />
       </Select>
-      {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{state.message}</span>}
+      {state.status === 'error' && <span role="alert" className="text-xs text-critical">{state.message}</span>}
     </form>
   )
 }
@@ -123,7 +123,7 @@ export function RemoveMemberForm({ userId, name }: { userId: string; name: strin
     >
       <input type="hidden" name="userId" value={userId} />
       <Button type="submit" variant="ghost" size="sm">Remove</Button>
-      {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{state.message}</span>}
+      {state.status === 'error' && <span role="alert" className="text-xs text-critical">{state.message}</span>}
     </form>
   )
 }

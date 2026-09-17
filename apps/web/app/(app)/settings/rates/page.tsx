@@ -1,6 +1,6 @@
 import { minorToDecimalString } from '@workloom/core'
 import { rateList } from '@workloom/core/modules'
-import { Button, Card, CardHeader, Input, Table, Td, Th } from '@workloom/ui'
+import { Button, Card, CardHeader, Input, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { param } from '@/components/crm/list-controls'
 import { RateForm } from '@/components/time/time-forms'
@@ -48,10 +48,10 @@ export default async function RatesPage({ searchParams }: PageProps<'/settings/r
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.userId ?? 'organization'}>
+            <Tr key={row.userId ?? 'organization'}>
               <Td>
                 <div className="font-medium">{row.name}</div>
-                <div className="text-xs text-neutral-500">{row.detail}</div>
+                <div className="text-xs text-muted">{row.detail}</div>
               </Td>
               {canEdit ? (
                 <Td>
@@ -71,7 +71,7 @@ export default async function RatesPage({ searchParams }: PageProps<'/settings/r
                   <Td className="tabular-nums">{shown(row.costRateMinor)}</Td>
                 </>
               )}
-            </tr>
+            </Tr>
           ))}
         </tbody>
       </Table>

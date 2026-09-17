@@ -1,6 +1,6 @@
 import { auth } from '@workloom/auth'
 import { memberList } from '@workloom/core/modules'
-import { Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { AddMemberForm, InviteMemberForm, MemberRoleForm, RemoveMemberForm, ROLE_LABELS } from '@/components/member-forms'
@@ -65,10 +65,10 @@ export default async function MembersPage() {
             {members.map((m) => {
               const isSelf = m.userId === selfId
               return (
-                <tr key={m.id}>
+                <Tr key={m.id}>
                   <Td>
                     <div className="font-medium">{m.name} {isSelf && <Badge>You</Badge>}</div>
-                    <div className="text-xs text-neutral-500">{m.email}</div>
+                    <div className="text-xs text-muted">{m.email}</div>
                   </Td>
                   <Td>
                     {canUpdate && !isSelf ? (
@@ -77,11 +77,11 @@ export default async function MembersPage() {
                       ROLE_LABELS[m.role]
                     )}
                   </Td>
-                  <Td className="text-neutral-500">{m.joinedAt.toLocaleDateString()}</Td>
+                  <Td className="text-muted">{m.joinedAt.toLocaleDateString()}</Td>
                   <Td className="text-right">
                     {canRemove && !isSelf && <RemoveMemberForm userId={m.userId} name={m.name} />}
                   </Td>
-                </tr>
+                </Tr>
               )
             })}
           </tbody>
@@ -98,17 +98,17 @@ export default async function MembersPage() {
               <thead><tr><Th>Email</Th><Th>Role</Th><Th>Expires</Th><Th /></tr></thead>
               <tbody>
                 {invitations.map((i) => (
-                  <tr key={i.id}>
+                  <Tr key={i.id}>
                     <Td>{i.email}</Td>
                     <Td>{ROLE_LABELS[i.role as keyof typeof ROLE_LABELS] ?? i.role}</Td>
-                    <Td className="text-neutral-500">{new Date(i.expiresAt).toLocaleDateString()}</Td>
+                    <Td className="text-muted">{new Date(i.expiresAt).toLocaleDateString()}</Td>
                     <Td className="text-right">
                       <form action={cancelInvitationAction}>
                         <input type="hidden" name="invitationId" value={i.id} />
                         <Button type="submit" variant="ghost" size="sm">Cancel</Button>
                       </form>
                     </Td>
-                  </tr>
+                  </Tr>
                 ))}
               </tbody>
             </Table>

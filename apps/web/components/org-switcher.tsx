@@ -1,5 +1,6 @@
 'use client'
 
+import { Select } from '@workloom/ui'
 import { switchOrganizationAction } from '@/lib/actions/auth'
 
 /**
@@ -14,22 +15,22 @@ export function OrganizationSwitcher({
   activeId: string | null
 }) {
   return (
-    <form action={switchOrganizationAction} className="flex items-center gap-2">
+    <form action={switchOrganizationAction}>
       <label htmlFor="organizationId" className="sr-only">Organization</label>
-      <select
+      <Select
         id="organizationId"
         name="organizationId"
         defaultValue={activeId ?? ''}
         onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+        className="h-8 bg-raised text-[13px]"
       >
         {!activeId && <option value="" disabled>Choose an organization</option>}
         {organizations.map((o) => (
           <option key={o.id} value={o.id}>{o.name}</option>
         ))}
-      </select>
+      </Select>
       <noscript>
-        <button type="submit" className="text-sm">Switch</button>
+        <button type="submit" className="mt-1 text-xs text-muted underline">Switch</button>
       </noscript>
     </form>
   )

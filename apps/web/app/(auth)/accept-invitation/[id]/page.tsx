@@ -1,5 +1,5 @@
 import { auth, authErrorCode } from '@workloom/auth'
-import { Alert, Card } from '@workloom/ui'
+import { Alert, Card, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Link from 'next/link'
@@ -20,17 +20,17 @@ export default async function AcceptInvitationPage({ params }: PageProps<'/accep
     const next = encodeURIComponent(here)
     return (
       <Card className="space-y-4 p-6">
-        <h1 className="text-lg font-semibold">You&apos;ve been invited to Workloom</h1>
-        <p className="text-sm text-neutral-600">
+        <h1 className="text-lg font-semibold tracking-tight text-ink">You&apos;ve been invited to Workloom</h1>
+        <p className="text-sm text-muted">
           Sign in, or create an account using the address the invitation was sent to.
         </p>
         <div className="flex gap-2">
           <Link href={`/sign-up?next=${next}`}
-            className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-neutral-900 text-sm font-medium text-white">
+            className={buttonStyles({ className: 'flex-1' })}>
             Create account
           </Link>
           <Link href={`/sign-in?next=${next}`}
-            className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-neutral-300 text-sm font-medium">
+            className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-line-strong text-sm font-medium">
             Sign in
           </Link>
         </div>
@@ -56,8 +56,8 @@ export default async function AcceptInvitationPage({ params }: PageProps<'/accep
   if (refusal === 'EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION') {
     return (
       <Card className="space-y-4 p-6">
-        <h1 className="text-lg font-semibold">Confirm your email to accept this invitation</h1>
-        <p className="text-sm text-neutral-600">
+        <h1 className="text-lg font-semibold tracking-tight text-ink">Confirm your email to accept this invitation</h1>
+        <p className="text-sm text-muted">
           We sent a confirmation link to <strong>{session.user.email}</strong>. Open it, and you&apos;ll
           come straight back here.
         </p>
@@ -71,7 +71,7 @@ export default async function AcceptInvitationPage({ params }: PageProps<'/accep
   if (!invitation) {
     return (
       <Card className="space-y-4 p-6">
-        <h1 className="text-lg font-semibold">This invitation can&apos;t be used</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">This invitation can&apos;t be used</h1>
         <Alert tone="warning">
           It may have expired or been cancelled, or it was sent to an address other than{' '}
           <strong>{session.user.email}</strong>.
@@ -87,8 +87,8 @@ export default async function AcceptInvitationPage({ params }: PageProps<'/accep
 
   return (
     <Card className="space-y-4 p-6">
-      <h1 className="text-lg font-semibold">Join {invitation.organizationName}</h1>
-      <p className="text-sm text-neutral-600">
+      <h1 className="text-lg font-semibold tracking-tight text-ink">Join {invitation.organizationName}</h1>
+      <p className="text-sm text-muted">
         {invitation.inviterEmail} invited you to join as <strong>{invitation.role}</strong>.
       </p>
       <AcceptInvitationForm invitationId={invitation.id} />

@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Select } from '@workloom/ui'
+import { Button, Checkbox, Select } from '@workloom/ui'
 import { useActionState } from 'react'
 import {
   addDependencyAction,
@@ -69,7 +69,7 @@ export function EditTaskForm({ task, members, milestones, canPublish }: { task: 
       {canPublish && (
         <label className="flex items-center gap-2 text-sm">
           <input type="hidden" name="clientVisibleField" value="1" />
-          <input type="checkbox" name="clientVisible" defaultChecked={task.clientVisible} /> Visible to the client
+          <Checkbox name="clientVisible" defaultChecked={task.clientVisible} /> Visible to the client
         </label>
       )}
       <SubmitButton pendingLabel="Saving…">Save task</SubmitButton>
@@ -98,14 +98,14 @@ export function TaskStatusControl({ id, projectId, status, compact = false }: { 
         </Select>
       </div>
       <noscript><Button type="submit" size="sm" variant="secondary">Update</Button></noscript>
-      {state.status === 'error' && <p role="alert" className="text-xs text-red-600">{fieldError(state, 'status') ?? state.message}</p>}
+      {state.status === 'error' && <p role="alert" className="text-xs text-critical">{fieldError(state, 'status') ?? state.message}</p>}
     </form>
   )
 }
 
 export function AddDependencyForm({ taskId, projectId, candidates }: { taskId: string; projectId: string; candidates: Choice[] }) {
   const [state, action] = useActionState(addDependencyAction, idle)
-  if (candidates.length === 0) return <p className="text-sm text-neutral-500">No other tasks in this project to wait on.</p>
+  if (candidates.length === 0) return <p className="text-sm text-muted">No other tasks in this project to wait on.</p>
   return (
     <form action={action} className="space-y-2">
       <input type="hidden" name="id" value={taskId} />

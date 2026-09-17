@@ -23,6 +23,7 @@
 
 - **[Development](development.md)** — running from source, the commands, the conventions
 - **[Architecture](architecture.md)** — the decisions worth knowing about
+- **[Design system](design-system.md)** — the tokens, the components, and the rule that keeps them
 - **[Database](database.md)** — the schema rules, isolation, triggers, migrations
 - **[Contributing](contributing.md)** — what a change looks like
 - **[Slices](development/slices/)** — how each part was built, and what it found

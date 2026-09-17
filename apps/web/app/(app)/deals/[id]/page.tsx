@@ -1,6 +1,6 @@
 import { minorToDecimalString } from '@workloom/core'
 import { activityList, contactList, dealGet, quoteList } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LogActivityForm, Timeline } from '@/components/crm/activity'
@@ -35,21 +35,21 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/pipeline" className="text-sm text-neutral-500 hover:underline">← Pipeline</Link>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">{deal.name}</h1>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/pipeline" className="text-sm text-muted hover:text-ink">← Pipeline</Link>}
+        title={deal.name}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             <DealStageBadge stage={deal.stage} />
             {deal.archivedAt && <ArchivedBadge />}
-            <span className="font-medium tabular-nums text-neutral-800 dark:text-neutral-200">{money(deal.valueMinor, deal.currency)}</span>
-            <Link href={`/companies/${deal.companyId}`} className="hover:underline">· {deal.companyName}</Link>
-            {deal.contactId && <Link href={`/contacts/${deal.contactId}`} className="hover:underline">· {deal.contactName}</Link>}
+            <span className="font-medium tabular-nums text-ink">{money(deal.valueMinor, deal.currency)}</span>
+            <Link href={`/companies/${deal.companyId}`} className="hover:text-ink">· {deal.companyName}</Link>
+            {deal.contactId && <Link href={`/contacts/${deal.contactId}`} className="hover:text-ink">· {deal.contactName}</Link>}
             <span>· {members.nameOf(deal.ownerId)}</span>
-          </p>
-        </div>
-        {can('deal:archive') && <ArchiveControl entity="deal" id={deal.id} archived={!live} label="deal" />}
-      </div>
+          </span>
+        }
+        actions={can('deal:archive') && <ArchiveControl entity="deal" id={deal.id} archived={!live} label="deal" />}
+      />
 
       {deal.stage === 'won' && (
         <Alert tone="success">
@@ -85,8 +85,8 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
                 />
               ) : (
                 <dl className="grid grid-cols-[8rem_1fr] gap-2 text-sm">
-                  <dt className="text-neutral-500">Expected close</dt><dd>{formatDate(deal.expectedCloseDate)}</dd>
-                  <dt className="text-neutral-500">Opened</dt><dd>{formatDate(deal.createdAt, settings.timezone)}</dd>
+                  <dt className="text-muted">Expected close</dt><dd>{formatDate(deal.expectedCloseDate)}</dd>
+                  <dt className="text-muted">Opened</dt><dd>{formatDate(deal.createdAt, settings.timezone)}</dd>
                 </dl>
               )}
             </div>
@@ -105,14 +105,14 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
                   <thead><tr><Th>Quote</Th><Th>Status</Th><Th className="text-right">Total</Th></tr></thead>
                   <tbody>
                     {quotes.data.map((q) => (
-                      <tr key={q.id}>
+                      <Tr key={q.id}>
                         <Td>
                           <Link href={`/quotes/${q.id}`} className="font-medium hover:underline">{q.title}</Link>
-                          <div className="text-xs text-neutral-500">{q.number ?? 'Draft'}</div>
+                          <div className="text-xs text-muted">{q.number ?? 'Draft'}</div>
                         </Td>
                         <Td><QuoteStatusBadge status={q.status} /></Td>
                         <Td className="whitespace-nowrap text-right tabular-nums">{money(q.totalMinor, q.currency)}</Td>
-                      </tr>
+                      </Tr>
                     ))}
                   </tbody>
                 </Table>
@@ -125,7 +125,7 @@ export default async function DealPage({ params }: PageProps<'/deals/[id]'>) {
           <Card className="self-start">
             <CardHeader title="Activity" />
             {live && can('activity:create') && (
-              <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-b border-line p-5">
                 <LogActivityForm target="dealId" targetId={deal.id} returnTo={returnTo} />
               </div>
             )}

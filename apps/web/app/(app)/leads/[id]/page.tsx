@@ -1,5 +1,5 @@
 import { activityList, companyGet, companyList, contactGet, dealGet, leadGet } from '@workloom/core/modules'
-import { Alert, Card, CardHeader } from '@workloom/ui'
+import { Alert, Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LogActivityForm, Timeline } from '@/components/crm/activity'
@@ -40,20 +40,21 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/leads" className="text-sm text-neutral-500 hover:underline">← Leads</Link>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/leads" className="text-sm text-muted hover:text-ink">← Leads</Link>}
+        title={title}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             <LeadStatusBadge status={lead.status} />
             {lead.archivedAt && <ArchivedBadge />}
             <span>{label(LEAD_SOURCE_LABELS, lead.source)} · added {formatDate(lead.createdAt, settings.timezone)} · {members.nameOf(lead.ownerId)}</span>
-          </p>
-        </div>
-        {can('lead:archive') && !converted && (
-          <ArchiveControl entity="lead" id={lead.id} archived={Boolean(lead.archivedAt)} label="lead" />
-        )}
-      </div>
+          </span>
+        }
+        actions={
+          can('lead:archive') &&
+          !converted && <ArchiveControl entity="lead" id={lead.id} archived={Boolean(lead.archivedAt)} label="lead" />
+        }
+      />
 
       {convertedTo && (
         <Alert tone="success">
@@ -110,7 +111,7 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
                   ] as const
                 ).map(([k, v]) => (
                   <div key={k} className="contents">
-                    <dt className="text-neutral-500">{k}</dt>
+                    <dt className="text-muted">{k}</dt>
                     <dd className="whitespace-pre-wrap">{v ?? '—'}</dd>
                   </div>
                 ))}
@@ -123,7 +124,7 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
           <Card className="self-start">
             <CardHeader title="Activity" />
             {can('activity:create') && !lead.archivedAt && (
-              <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-b border-line p-5">
                 <LogActivityForm target="leadId" targetId={lead.id} returnTo={returnTo} />
               </div>
             )}

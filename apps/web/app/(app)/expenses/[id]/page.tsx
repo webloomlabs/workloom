@@ -1,6 +1,6 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
 import { companyList, expenseGet, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
-import { Alert, Card, CardHeader } from '@workloom/ui'
+import { Alert, Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DeleteExpenseButton, ExpenseForm } from '@/components/finance/expense-forms'
@@ -31,20 +31,22 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href="/expenses" className="text-sm text-neutral-500 hover:underline">← Expenses</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{expense.description}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/expenses" className="text-sm text-muted hover:underline">← Expenses</Link>}
+        title={expense.description}
+        description={
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>{formatDate(expense.incurredOn)}</span>
             <span>{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</span>
             {expense.supplier && <span>{expense.supplier}</span>}
             {expense.projectId && <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link>}
             {expense.companyId && <Link href={`/companies/${expense.companyId}?tab=expenses`} className="hover:underline">{expense.companyName}</Link>}
           </div>
-        </div>
-        {editable && can('expense:delete') && <DeleteExpenseButton expenseId={expense.id} />}
-      </div>
+        }
+        actions={
+          editable && can('expense:delete') && <DeleteExpenseButton expenseId={expense.id} />
+        }
+      />
 
       {rebilled && (
         <Alert tone="info">
@@ -85,7 +87,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
         ) : (
           <Card>
             <CardHeader title="Notes" />
-            <div className="p-5 text-sm">{expense.notes ? <p className="whitespace-pre-wrap">{expense.notes}</p> : <p className="text-neutral-500">None.</p>}</div>
+            <div className="p-5 text-sm">{expense.notes ? <p className="whitespace-pre-wrap">{expense.notes}</p> : <p className="text-muted">None.</p>}</div>
           </Card>
         )}
 
@@ -94,7 +96,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
           <dl className="space-y-2 p-5 text-sm" aria-label="Expense cost">
             <Row label="Net" value={money(expense.amountMinor, expense.currency)} />
             {expense.taxName && <Row label={`${expense.taxName} ${expense.taxRate}%`} value={money(expense.taxMinor, expense.currency)} />}
-            <div className="flex justify-between gap-4 border-t border-neutral-200 pt-2 font-semibold dark:border-neutral-800">
+            <div className="flex justify-between gap-4 border-t border-line pt-2 font-semibold">
               <dt>Paid out</dt>
               <dd className="tabular-nums">{money(expense.totalMinor, expense.currency)}</dd>
             </div>
@@ -112,7 +114,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-neutral-500">{label}</dt>
+      <dt className="text-muted">{label}</dt>
       <dd className="tabular-nums">{value}</dd>
     </div>
   )

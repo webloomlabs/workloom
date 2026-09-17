@@ -1,6 +1,6 @@
 import { addDays } from '@workloom/core/time'
 import { companyList, dealGet } from '@workloom/core/modules'
-import { Card, CardHeader } from '@workloom/ui'
+import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -26,10 +26,10 @@ export default async function NewQuotePage({ searchParams }: PageProps<'/quotes/
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href={back} className="text-sm text-neutral-500 hover:underline">← Back</Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">New quote</h1>
-      </div>
+      <PageHeader
+        breadcrumb={<Link href={back} className="text-sm text-muted hover:text-ink">← Back</Link>}
+        title="New quote"
+      />
       <Card>
         <CardHeader title="Quote" description="It starts as a draft. Add lines next, then mark it as sent when it goes to the client." />
         <div className="p-5">

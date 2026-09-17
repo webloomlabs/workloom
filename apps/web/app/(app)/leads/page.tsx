@@ -1,5 +1,5 @@
 import { leadList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArchivedBadge, LeadStatusBadge } from '@/components/crm/badges'
@@ -40,16 +40,18 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Leads</h1>
-        <SearchBox action="/leads" q={q} hidden={status ? { status } : {}} placeholder="Name, company, or email" />
-      </div>
+      <PageHeader
+        title="Leads"
+        actions={
+          <SearchBox action="/leads" q={q} hidden={status ? { status } : {}} placeholder="Name, company, or email" />
+        }
+      />
 
       {viewer.permissions.has('lead:create') && (
         <Card>
           <details>
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">Add a lead</summary>
-            <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+            <div className="border-t border-line p-5">
               <CreateLeadForm members={members.choices} currentUserId={viewer.actor.type === 'user' ? viewer.actor.id : null} />
             </div>
           </details>
@@ -65,20 +67,20 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
             <thead><tr><Th>Lead</Th><Th>Source</Th><Th>Status</Th><Th>Owner</Th><Th>Added</Th></tr></thead>
             <tbody>
               {leads.map((lead) => (
-                <tr key={lead.id}>
+                <Tr key={lead.id}>
                   <Td>
                     <Link href={`/leads/${lead.id}`} className="font-medium hover:underline">
                       {lead.contactName ?? lead.companyName ?? lead.email}
                     </Link>
-                    <div className="text-xs text-neutral-500">
+                    <div className="text-xs text-muted">
                       {[lead.contactName ? lead.companyName : null, lead.email].filter(Boolean).join(' · ')}
                     </div>
                   </Td>
-                  <Td className="text-neutral-600">{label(LEAD_SOURCE_LABELS, lead.source)}</Td>
+                  <Td className="text-muted">{label(LEAD_SOURCE_LABELS, lead.source)}</Td>
                   <Td><span className="flex gap-1"><LeadStatusBadge status={lead.status} />{lead.archivedAt && <ArchivedBadge />}</span></Td>
-                  <Td className="text-neutral-600">{members.nameOf(lead.ownerId)}</Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(lead.createdAt, settings.timezone)}</Td>
-                </tr>
+                  <Td className="text-muted">{members.nameOf(lead.ownerId)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(lead.createdAt, settings.timezone)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

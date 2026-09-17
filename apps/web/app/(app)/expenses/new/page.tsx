@@ -1,5 +1,5 @@
 import { companyList, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
-import { Card, CardHeader } from '@workloom/ui'
+import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -25,10 +25,10 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/expenses" className="text-sm text-neutral-500 hover:underline">← Expenses</Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">Record an expense</h1>
-      </div>
+      <PageHeader
+        breadcrumb={<Link href="/expenses" className="text-sm text-muted hover:text-ink">← Expenses</Link>}
+        title="Record an expense"
+      />
       <Card>
         <CardHeader title="Expense" description="A billable expense is rebilled onto a draft invoice at cost plus its markup." />
         <div className="p-5">

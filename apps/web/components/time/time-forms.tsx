@@ -1,7 +1,7 @@
 'use client'
 
 import { formatElapsed } from '@workloom/core/time'
-import { Button, Field, Input, Select } from '@workloom/ui'
+import { Button, Checkbox, Field, Input, Select } from '@workloom/ui'
 import Link from 'next/link'
 import { useActionState, useEffect, useState } from 'react'
 import { deleteEntryAction, logTimeAction, setRateAction, startTimerAction, stopTimerAction, updateEntryAction } from '@/lib/actions/time'
@@ -104,15 +104,15 @@ export function RunningTimer({ entry }: { entry: RunningEntry }) {
 
   const href = entry.taskId ? `/projects/${entry.projectId}/tasks/${entry.taskId}` : `/projects/${entry.projectId}`
   return (
-    <form action={action} role="status" aria-label="Running timer" className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 py-1 pl-2.5 pr-1 text-xs dark:border-green-900 dark:bg-green-950">
-      <span aria-hidden className="size-2 animate-pulse rounded-full bg-green-600" />
-      <Link href={href} className="max-w-40 truncate font-medium text-green-900 hover:underline dark:text-green-200">
+    <form action={action} role="status" aria-label="Running timer" className="flex items-center gap-2 rounded-md border border-positive/30 bg-positive-soft py-1 pl-2.5 pr-1 text-xs">
+      <span aria-hidden className="size-2 animate-pulse rounded-full bg-positive" />
+      <Link href={href} className="max-w-40 truncate font-medium text-positive hover:underline">
         {entry.taskTitle ?? entry.projectName}
       </Link>
       {/* Rendered after mount: the server cannot know the viewer's clock. */}
-      <span className="font-mono tabular-nums text-green-900 dark:text-green-200">{elapsed === null ? '…' : formatElapsed(elapsed)}</span>
+      <span className="font-mono tabular-nums text-positive">{elapsed === null ? '…' : formatElapsed(elapsed)}</span>
       <Button type="submit" size="sm" variant="secondary" className="h-6 px-2 text-xs">Stop</Button>
-      {state.status === 'error' && <span role="alert" className="text-red-600">{state.message}</span>}
+      {state.status === 'error' && <span role="alert" className="text-critical">{state.message}</span>}
     </form>
   )
 }
@@ -146,13 +146,13 @@ export function EntryControls({ entry }: { entry: EditableEntry }) {
         <Button type="submit" size="sm" variant="ghost">Delete</Button>
       </form>
       {open && (
-        <form action={action} className="mt-2 grid w-full gap-3 rounded-md border border-neutral-200 p-3 text-left sm:grid-cols-[9rem_6rem_1fr] dark:border-neutral-800" noValidate>
+        <form action={action} className="mt-2 grid w-full gap-3 rounded-md border border-line p-3 text-left sm:grid-cols-[9rem_6rem_1fr]" noValidate>
           <input type="hidden" name="id" value={entry.id} />
           <TextField state={state} id={`entry-${entry.id}-spentOn`} name="spentOn" label="Date" type="date" defaultValue={entry.spentOn} />
           {entry.running ? <div /> : <TextField state={state} id={`entry-${entry.id}-duration`} name="duration" label="Time" defaultValue={entry.duration} />}
           <TextField state={state} id={`entry-${entry.id}-description`} name="description" label="Notes" defaultValue={entry.description} />
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="billable" value="yes" defaultChecked={entry.billable} /> Billable
+            <Checkbox name="billable" value="yes" defaultChecked={entry.billable} /> Billable
           </label>
           <div className="flex items-center gap-3 sm:col-span-2">
             <SubmitButton size="sm" pendingLabel="Saving…">Save</SubmitButton>
@@ -170,7 +170,7 @@ function StopEntryButton({ id }: { id: string }) {
     <form action={action}>
       <input type="hidden" name="id" value={id} />
       <Button type="submit" size="sm" variant="secondary">Stop</Button>
-      {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{state.message}</span>}
+      {state.status === 'error' && <span role="alert" className="text-xs text-critical">{state.message}</span>}
     </form>
   )
 }
@@ -192,8 +192,8 @@ export function RateForm({ userId, name, currency, billableRate, costRate }: { u
         <Input id={`cost-${key}`} name="costRate" defaultValue={initial(state, 'costRate', costRate)} placeholder="Cost/h" className="h-8 text-xs" />
       </div>
       <SubmitButton size="sm" variant="secondary" pendingLabel="…">Save</SubmitButton>
-      {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? state.message}</span>}
-      {state.status === 'success' && <span role="status" className="text-xs text-green-700">Saved</span>}
+      {state.status === 'error' && <span role="alert" className="text-xs text-critical">{fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? state.message}</span>}
+      {state.status === 'success' && <span role="status" className="text-xs text-positive">Saved</span>}
     </form>
   )
 }

@@ -1,6 +1,6 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
 import { contactList, invoiceGet, paymentList, projectList, serviceList, taxRateList, type Invoice, type Payment } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Card, CardHeader, DownloadIcon, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { InvoiceStatusBadge } from '@/components/finance/badges'
@@ -49,24 +49,31 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href="/invoices" className="text-sm text-neutral-500 hover:underline">← Invoices</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{invoice.title}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/invoices" className="text-sm text-muted hover:underline">← Invoices</Link>}
+        title={invoice.title}
+        description={
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <InvoiceStatusBadge status={invoice.status} overdue={overdue} />
-            {invoice.number && <span className="font-medium text-neutral-800 dark:text-neutral-200">{invoice.number}</span>}
+            {invoice.number && <span className="font-medium text-ink">{invoice.number}</span>}
             <Link href={`/companies/${invoice.companyId}?tab=invoices`} className="hover:underline">{invoice.companyName}</Link>
             {invoice.contactName && <span>{invoice.contactName}</span>}
             {invoice.quoteId && <Link href={`/quotes/${invoice.quoteId}`} className="hover:underline">From a quote</Link>}
             <span>{TAX_MODE_LABELS[invoice.taxMode]}</span>
           </div>
-        </div>
-        <div className="flex items-start gap-2">
-          {!draft && <Link href={`/invoices/${invoice.id}/pdf`} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800">Download PDF</Link>}
-          {draft && can('invoice:delete') && <DeleteInvoiceButton invoiceId={invoice.id} />}
-        </div>
-      </div>
+        }
+        actions={
+          <div className="flex items-start gap-2">
+            {!draft && (
+              <Link href={`/invoices/${invoice.id}/pdf`} className={buttonStyles({ variant: 'secondary', size: 'sm' })}>
+                <DownloadIcon />
+                Download PDF
+              </Link>
+            )}
+            {draft && can('invoice:delete') && <DeleteInvoiceButton invoiceId={invoice.id} />}
+          </div>
+        }
+      />
 
       <StatusAlert invoice={invoice} overdue={overdue} timezone={settings.timezone} />
 
@@ -91,12 +98,12 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                 </thead>
                 <tbody>
                   {invoice.lines.map((line) => (
-                    <tr key={line.id}>
+                    <Tr key={line.id}>
                       <Td>{line.description}</Td>
                       <Td className="text-right tabular-nums">{line.quantity}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.unitAmountMinor, invoice.currency)}</Td>
-                      <Td className="text-right tabular-nums text-neutral-600">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
-                      <Td className="whitespace-nowrap text-neutral-600">{line.taxName ? `${line.taxName} ${line.taxRate}%` : 'No tax'}</Td>
+                      <Td className="text-right tabular-nums text-muted">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
+                      <Td className="whitespace-nowrap text-muted">{line.taxName ? `${line.taxName} ${line.taxRate}%` : 'No tax'}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.netMinor, invoice.currency)}</Td>
                       {editable && (
                         <Td>
@@ -117,13 +124,13 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                           />
                         </Td>
                       )}
-                    </tr>
+                    </Tr>
                   ))}
                 </tbody>
               </Table>
             )}
             {editable && (
-              <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-t border-line p-5">
                 <AddLineForm
                   documentId={invoice.id}
                   currency={invoice.currency}
@@ -189,7 +196,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                 <CardHeader title="Notes and terms" />
                 <div className="space-y-4 p-5 text-sm">
                   {invoice.notes && <p className="whitespace-pre-wrap">{invoice.notes}</p>}
-                  {invoice.terms && <p className="whitespace-pre-wrap text-neutral-600">{invoice.terms}</p>}
+                  {invoice.terms && <p className="whitespace-pre-wrap text-muted">{invoice.terms}</p>}
                 </div>
               </Card>
             )
@@ -259,20 +266,20 @@ function Payments({ invoice, payments, canChange }: { invoice: Invoice; payments
               const allocation = payment.allocations.find((a) => a.invoiceId === invoice.id)
               const refund = payment.kind === 'refund'
               return (
-                <tr key={payment.id}>
+                <Tr key={payment.id}>
                   <Td className="whitespace-nowrap">
                     <Link href={`/payments/${payment.id}`} className="font-medium hover:underline">{formatDate(payment.receivedOn)}</Link>
-                    {refund && <div className="text-xs text-amber-600">Refund</div>}
+                    {refund && <div className="text-xs text-caution">Refund</div>}
                   </Td>
-                  <Td className="text-neutral-600">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
-                  <Td className="text-neutral-600">{payment.reference ?? '—'}</Td>
+                  <Td className="text-muted">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</Td>
+                  <Td className="text-muted">{payment.reference ?? '—'}</Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">
                     {money(refund ? -(allocation?.amountMinor ?? 0) : (allocation?.amountMinor ?? 0), invoice.currency)}
                   </Td>
                   {canChange && (
                     <Td>{allocation && <UnallocateButton allocationId={allocation.id} invoiceId={invoice.id} label={invoice.number ?? invoice.title} />}</Td>
                   )}
-                </tr>
+                </Tr>
               )
             })}
           </tbody>
@@ -295,7 +302,7 @@ function StatusAlert({ invoice, overdue, timezone }: { invoice: Invoice; overdue
 
 function Totals({ invoice }: { invoice: Invoice }) {
   const row = (label: string, minor: number, strong = false) => (
-    <div className={`flex justify-between gap-4 ${strong ? 'border-t border-neutral-200 pt-2 text-base font-semibold dark:border-neutral-800' : ''}`}>
+    <div className={`flex justify-between gap-4 ${strong ? 'border-t border-line pt-2 text-base font-semibold' : ''}`}>
       <dt>{label}</dt>
       <dd className="tabular-nums">{money(minor, invoice.currency)}</dd>
     </div>
@@ -311,7 +318,7 @@ function Totals({ invoice }: { invoice: Invoice }) {
         {row('Total', invoice.totalMinor, true)}
         {inclusive &&
           invoice.taxes.map((t) => (
-            <div key={t.taxRateId} className="flex justify-between gap-4 text-neutral-500">
+            <div key={t.taxRateId} className="flex justify-between gap-4 text-muted">
               <dt>Includes {t.name} {t.rate}%</dt>
               <dd className="tabular-nums">{money(t.taxMinor, invoice.currency)}</dd>
             </div>
@@ -319,7 +326,7 @@ function Totals({ invoice }: { invoice: Invoice }) {
         {invoice.amountPaidMinor > 0 && row('Paid', -invoice.amountPaidMinor)}
         {invoice.status !== 'draft' && row('Amount due', invoice.amountDueMinor, true)}
         {invoice.totalBaseMinor !== null && invoice.baseCurrency !== invoice.currency && (
-          <div className="flex justify-between gap-4 text-neutral-500">
+          <div className="flex justify-between gap-4 text-muted">
             <dt>In {invoice.baseCurrency} at {invoice.exchangeRateToBase}</dt>
             <dd className="tabular-nums">{money(invoice.totalBaseMinor, invoice.baseCurrency!)}</dd>
           </div>

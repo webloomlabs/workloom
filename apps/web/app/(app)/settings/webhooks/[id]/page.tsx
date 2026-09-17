@@ -1,5 +1,5 @@
 import { webhookDeliveryList, webhookGet } from '@workloom/core/modules'
-import { Alert, Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { EndpointStatus } from '@/components/endpoint-status'
@@ -11,7 +11,7 @@ import { requireViewer } from '@/lib/server/viewer'
 
 export const metadata: Metadata = { title: 'Webhook endpoint · Workloom' }
 
-const statusTone = { succeeded: 'green', pending: 'amber', failed: 'red' } as const
+const statusTone = { succeeded: 'positive', pending: 'caution', failed: 'critical' } as const
 
 export default async function WebhookEndpointPage({ params, searchParams }: PageProps<'/settings/webhooks/[id]'>) {
   const { id } = await params
@@ -27,7 +27,7 @@ export default async function WebhookEndpointPage({ params, searchParams }: Page
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <Link href="/settings/webhooks" className="text-sm text-neutral-500 hover:underline">← Webhooks</Link>
+          <Link href="/settings/webhooks" className="text-sm text-muted hover:underline">← Webhooks</Link>
           <h2 className="mt-1 break-all font-mono text-sm">{endpoint.url}</h2>
         </div>
         <EndpointStatus enabled={endpoint.enabled} disabledReason={endpoint.disabledReason} />
@@ -71,24 +71,24 @@ export default async function WebhookEndpointPage({ params, searchParams }: Page
             <thead><tr><Th>Event</Th><Th>Status</Th><Th>Attempts</Th><Th>Response</Th><Th>Last attempt</Th><Th /></tr></thead>
             <tbody>
               {deliveries.map((d) => (
-                <tr key={d.id}>
+                <Tr key={d.id}>
                   <Td><code className="font-mono text-xs">{d.eventType}</code></Td>
                   <Td><Badge tone={statusTone[d.status]}>{d.status}</Badge></Td>
                   <Td>{d.attempts}</Td>
                   <Td className="max-w-xs">
                     <div className="text-xs">
                       {d.responseStatus ?? '—'}
-                      {d.durationMs !== null && <span className="text-neutral-500"> · {d.durationMs} ms</span>}
+                      {d.durationMs !== null && <span className="text-muted"> · {d.durationMs} ms</span>}
                     </div>
-                    {d.error && <div className="text-xs text-red-600">{d.error}</div>}
+                    {d.error && <div className="text-xs text-critical">{d.error}</div>}
                     {d.responseBody && (
                       <details className="text-xs">
-                        <summary className="cursor-pointer text-neutral-500">Body</summary>
-                        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-neutral-100 p-2 dark:bg-neutral-800">{d.responseBody}</pre>
+                        <summary className="cursor-pointer text-muted">Body</summary>
+                        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-raised p-2">{d.responseBody}</pre>
                       </details>
                     )}
                   </Td>
-                  <Td className="whitespace-nowrap text-xs text-neutral-500">
+                  <Td className="whitespace-nowrap text-xs text-muted">
                     {d.lastAttemptAt?.toLocaleString() ?? '—'}
                     {d.status === 'pending' && d.nextAttemptAt && <div>next {d.nextAttemptAt.toLocaleTimeString()}</div>}
                   </Td>
@@ -101,7 +101,7 @@ export default async function WebhookEndpointPage({ params, searchParams }: Page
                       </form>
                     )}
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>

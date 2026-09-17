@@ -13,7 +13,7 @@ import {
   timeEntrySummary,
 } from '@workloom/core/modules'
 import { formatDuration } from '@workloom/core/time'
-import { Alert, Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -83,29 +83,33 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href="/projects" className="text-sm text-neutral-500 hover:underline">← Projects</Link>
-          <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
-            <ProjectStatusBadge status={project.status} />
-            {project.archivedAt && <ArchivedBadge />}
-            {project.companyId ? (
-              <Link href={`/companies/${project.companyId}?tab=projects`} className="hover:underline">{project.companyName}</Link>
-            ) : (
-              <span>Internal</span>
-            )}
-            <span>{members.nameOf(project.ownerId)}</span>
-            {project.dueDate && <span>Due {formatDate(project.dueDate)}</span>}
-            {project.budgetMinor !== null && <span>Budget {money(project.budgetMinor, project.currency)}</span>}
-          </div>
-          <ProgressBar
-            percent={project.progress.percent}
-            detail={`${project.progress.tasksDone} of ${project.progress.tasksTotal} tasks done · ${project.progress.milestonesDone} of ${project.progress.milestonesTotal} milestones`}
-          />
-        </div>
-        {live && can('project:update') && <ProjectStatusControl id={project.id} status={project.status} />}
-      </div>
+      <PageHeader
+        breadcrumb={<Link href="/projects" className="text-sm text-muted hover:underline">← Projects</Link>}
+        title={project.name}
+        description={
+          <>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <ProjectStatusBadge status={project.status} />
+              {project.archivedAt && <ArchivedBadge />}
+              {project.companyId ? (
+                <Link href={`/companies/${project.companyId}?tab=projects`} className="hover:underline">{project.companyName}</Link>
+              ) : (
+                <span>Internal</span>
+              )}
+              <span>{members.nameOf(project.ownerId)}</span>
+              {project.dueDate && <span>Due {formatDate(project.dueDate)}</span>}
+              {project.budgetMinor !== null && <span>Budget {money(project.budgetMinor, project.currency)}</span>}
+            </div>
+            <ProgressBar
+              percent={project.progress.percent}
+              detail={`${project.progress.tasksDone} of ${project.progress.tasksTotal} tasks done · ${project.progress.milestonesDone} of ${project.progress.milestonesTotal} milestones`}
+            />
+          </>
+        }
+        actions={
+          live && can('project:update') && <ProjectStatusControl id={project.id} status={project.status} />
+        }
+      />
 
       {project.archivedAt && <Alert tone="warning">This project is archived. Restore it from Details to change anything.</Alert>}
 
@@ -142,10 +146,10 @@ async function Tasks({ project, can, members }: Context) {
             return (
               <section key={status} aria-labelledby={`column-${status}`} className="space-y-2">
                 <h2 id={`column-${status}`} className="px-1 text-sm font-semibold">
-                  {TASK_STATUS_LABELS[status]} <span className="font-normal text-neutral-500">{column.length}</span>
+                  {TASK_STATUS_LABELS[status]} <span className="font-normal text-muted">{column.length}</span>
                 </h2>
                 {column.length === 0 && (
-                  <p className="rounded-md border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-400 dark:border-neutral-700">No tasks</p>
+                  <p className="rounded-md border border-dashed border-line-strong p-4 text-center text-xs text-faint">No tasks</p>
                 )}
                 {column.map((task) => (
                   <Card key={task.id} className="space-y-2 p-3">
@@ -154,7 +158,7 @@ async function Tasks({ project, can, members }: Context) {
                       <PriorityBadge priority={task.priority} />
                       <BlockedBadge count={task.openDependencies} />
                     </div>
-                    <div className="space-y-0.5 text-xs text-neutral-500">
+                    <div className="space-y-0.5 text-xs text-muted">
                       <div>{task.assigneeName ?? 'Unassigned'}</div>
                       {task.dueDate && <div>Due {formatDate(task.dueDate)}</div>}
                       {task.milestoneId && <div>{milestoneName.get(task.milestoneId)}</div>}
@@ -169,7 +173,7 @@ async function Tasks({ project, can, members }: Context) {
       </div>
       {cancelled.length > 0 && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-neutral-500">{cancelled.length} cancelled</summary>
+          <summary className="cursor-pointer text-muted">{cancelled.length} cancelled</summary>
           <ul className="mt-2 space-y-1 pl-4">
             {cancelled.map((t) => (
               <li key={t.id}><Link href={`/projects/${project.id}/tasks/${t.id}`} className="hover:underline">{t.title}</Link></li>
@@ -195,21 +199,21 @@ async function Milestones({ project, can }: Context) {
             <thead><tr><Th>Milestone</Th><Th>Due</Th><Th>Progress</Th><Th /></tr></thead>
             <tbody>
               {milestones.map((m) => (
-                <tr key={m.id}>
+                <Tr key={m.id}>
                   <Td>
                     <span className="flex flex-wrap items-center gap-2">
-                      <span className={m.completedAt ? 'text-neutral-500 line-through' : 'font-medium'}>{m.name}</span>
-                      {m.clientVisible && <span className="text-xs text-green-700 dark:text-green-400">Client-visible</span>}
+                      <span className={m.completedAt ? 'text-muted line-through' : 'font-medium'}>{m.name}</span>
+                      {m.clientVisible && <span className="text-xs text-positive">Client-visible</span>}
                     </span>
                   </Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(m.dueDate)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(m.dueDate)}</Td>
                   <Td><ProgressBar percent={m.completedAt ? 100 : m.percent} detail={`${m.tasksDone} of ${m.tasksTotal} tasks done`} /></Td>
                   <Td className="text-right">
                     {live && can('milestone:update') && (
                       <MilestoneControls id={m.id} projectId={project.id} completed={Boolean(m.completedAt)} canDelete={can('milestone:delete')} />
                     )}
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>
@@ -228,9 +232,9 @@ async function Milestones({ project, can }: Context) {
 function Stat({ label, value, detail }: { label: string; value: string; detail?: string | undefined }) {
   return (
     <Card className="space-y-1 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className="text-lg font-semibold tabular-nums">{value}</div>
-      {detail && <div className="text-xs text-neutral-500">{detail}</div>}
+      {detail && <div className="text-xs text-muted">{detail}</div>}
     </Card>
   )
 }
@@ -253,7 +257,7 @@ async function Financials({ project }: Context) {
         return (
           <div key={figures.currency} className="space-y-4">
             {report.currencies.length > 1 && (
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{figures.currency}</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{figures.currency}</h2>
             )}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Stat label="Billed" value={money_(figures.billedMinor)} detail={`${money_(figures.collectedMinor)} collected`} />
@@ -287,12 +291,12 @@ async function Financials({ project }: Context) {
                   <Row label="Billed, excluding tax" value={money_(figures.billedMinor)} />
                   <Row label="Time" value={`-${money_(figures.labourCostMinor)}`} />
                   <Row label="Expenses" value={`-${money_(figures.expenseCostMinor)}`} />
-                  <div className={`flex justify-between gap-4 border-t border-neutral-200 pt-2 text-base font-semibold dark:border-neutral-800 ${negative ? 'text-red-600' : ''}`}>
+                  <div className={`flex justify-between gap-4 border-t border-line pt-2 text-base font-semibold ${negative ? 'text-critical' : ''}`}>
                     <dt>Margin</dt>
                     <dd className="tabular-nums">{money_(figures.marginMinor)}</dd>
                   </div>
                   {figures.rebilledCostMinor > 0 && (
-                    <p className="pt-2 text-xs text-neutral-500">
+                    <p className="pt-2 text-xs text-muted">
                       {money_(figures.rebilledCostMinor)} of those expenses was rebilled to the client, so it appears in both lines above and only
                       the markup reaches the margin.
                     </p>
@@ -324,7 +328,7 @@ async function Financials({ project }: Context) {
         )
       })}
       {report.currencies.length > 1 && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           Nothing above is converted between currencies: an exchange rate is recorded only on a document when it is issued, and tracked time is not
           a document.
         </p>
@@ -336,7 +340,7 @@ async function Financials({ project }: Context) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-neutral-500">{label}</dt>
+      <dt className="text-muted">{label}</dt>
       <dd className="tabular-nums">{value}</dd>
     </div>
   )
@@ -384,13 +388,13 @@ async function Time({ project, can, selfId, timezone }: Context) {
                   <thead><tr><Th>Person</Th><Th className="text-right">Tracked</Th><Th className="text-right">Billable</Th>{financial && <Th className="text-right">Value</Th>}{financial && <Th className="text-right">Cost</Th>}</tr></thead>
                   <tbody>
                     {summary.byPerson.map((row) => (
-                      <tr key={row.userId}>
+                      <Tr key={row.userId}>
                         <Td>{row.name}</Td>
                         <Td className="text-right tabular-nums">{formatDuration(row.seconds)}</Td>
                         <Td className="text-right tabular-nums">{formatDuration(row.billableSeconds)}</Td>
                         {financial && <Td className="text-right tabular-nums">{value(row.billableValueMinor)}</Td>}
                         {financial && <Td className="text-right tabular-nums">{value(row.costMinor)}</Td>}
-                      </tr>
+                      </Tr>
                     ))}
                   </tbody>
                 </Table>
@@ -403,17 +407,17 @@ async function Time({ project, can, selfId, timezone }: Context) {
                     {summary.byTask.map((row) => {
                       const over = row.estimateMinutes !== null && row.seconds > row.estimateMinutes * 60
                       return (
-                        <tr key={row.taskId ?? 'project'}>
+                        <Tr key={row.taskId ?? 'project'}>
                           <Td>
                             {row.taskId ? (
                               <Link href={`/projects/${project.id}/tasks/${row.taskId}`} className="hover:underline">{row.title}</Link>
                             ) : (
-                              <span className="text-neutral-500">No task</span>
+                              <span className="text-muted">No task</span>
                             )}
                           </Td>
-                          <Td className="text-right tabular-nums text-neutral-500">{row.estimateMinutes === null ? '—' : formatDuration(row.estimateMinutes * 60)}</Td>
-                          <Td className={`text-right tabular-nums ${over ? 'font-medium text-red-600' : ''}`}>{formatDuration(row.seconds)}</Td>
-                        </tr>
+                          <Td className="text-right tabular-nums text-muted">{row.estimateMinutes === null ? '—' : formatDuration(row.estimateMinutes * 60)}</Td>
+                          <Td className={`text-right tabular-nums ${over ? 'font-medium text-critical' : ''}`}>{formatDuration(row.seconds)}</Td>
+                        </Tr>
                       )
                     })}
                   </tbody>
@@ -445,15 +449,15 @@ async function Time({ project, can, selfId, timezone }: Context) {
             <thead><tr><Th>Date</Th>{everyone && <Th>Person</Th>}<Th>Work</Th><Th className="text-right">Time</Th><Th /></tr></thead>
             <tbody>
               {entries.map((e) => (
-                <tr key={e.id}>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(e.spentOn)}</Td>
+                <Tr key={e.id}>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(e.spentOn)}</Td>
                   {everyone && <Td>{e.userName}</Td>}
                   <Td>
-                    <div>{e.taskId ? <Link href={`/projects/${project.id}/tasks/${e.taskId}`} className="hover:underline">{e.taskTitle}</Link> : <span className="text-neutral-500">No task</span>}</div>
-                    {e.description && <div className="text-xs text-neutral-500">{e.description}</div>}
+                    <div>{e.taskId ? <Link href={`/projects/${project.id}/tasks/${e.taskId}`} className="hover:underline">{e.taskTitle}</Link> : <span className="text-muted">No task</span>}</div>
+                    {e.description && <div className="text-xs text-muted">{e.description}</div>}
                     {!e.billable && <Badge>Not billable</Badge>}
                   </Td>
-                  <Td className="text-right tabular-nums">{e.running ? <Badge tone="green">Running</Badge> : formatDuration(e.durationSeconds!)}</Td>
+                  <Td className="text-right tabular-nums">{e.running ? <Badge tone="positive">Running</Badge> : formatDuration(e.durationSeconds!)}</Td>
                   <Td>
                     {live && (e.userId === selfId ? can('timeEntry:update') : can('timeEntryAll:manage')) && (
                       <EntryControls
@@ -461,7 +465,7 @@ async function Time({ project, can, selfId, timezone }: Context) {
                       />
                     )}
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>
@@ -492,14 +496,14 @@ async function Team({ project, can, members }: Context) {
             <thead><tr><Th>Person</Th><Th>Role</Th>{financial && <Th>Rates</Th>}<Th /></tr></thead>
             <tbody>
               {team.map((m) => (
-                <tr key={m.id}>
+                <Tr key={m.id}>
                   <Td>
                     <div className="font-medium">{m.name}</div>
-                    <div className="text-xs text-neutral-500">{m.email}</div>
+                    <div className="text-xs text-muted">{m.email}</div>
                   </Td>
-                  <Td className="text-neutral-600">{m.role === 'manager' ? 'Manager' : 'Member'}</Td>
+                  <Td className="text-muted">{m.role === 'manager' ? 'Manager' : 'Member'}</Td>
                   {financial && (
-                    <Td className="whitespace-nowrap text-xs text-neutral-600">
+                    <Td className="whitespace-nowrap text-xs text-muted">
                       {m.billableRateMinor !== null ? `Bill ${money(m.billableRateMinor, project.currency)}/h` : 'Default bill rate'}
                       <br />
                       {m.costRateMinor !== null ? `Cost ${money(m.costRateMinor, project.currency)}/h` : 'Default cost rate'}
@@ -514,7 +518,7 @@ async function Team({ project, can, members }: Context) {
                       canEdit={canEdit}
                     />
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>
@@ -539,7 +543,7 @@ async function Updates({ project, can, timezone }: Context) {
     <Card>
       <CardHeader title="Updates" description="Notes on the project as a whole. Mark one client-visible to share it once the client portal exists." />
       {can('comment:create') && !project.archivedAt && (
-        <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+        <div className="border-b border-line p-5">
           <CommentForm projectId={project.id} returnTo={returnTo} canPublish={can('project:update')} placeholder="Post an update…" />
         </div>
       )}
@@ -559,7 +563,7 @@ async function Files({ project, can, timezone }: Context) {
     <Card>
       <CardHeader title="Files" description="Files for the project as a whole. Task files live on their tasks." />
       {can('project:update') && !project.archivedAt && (
-        <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+        <div className="border-b border-line p-5">
           <UploadForm projectId={project.id} returnTo={returnTo} canPublish maxLabel={formatBytes(ATTACHMENT_MAX_BYTES)} />
         </div>
       )}

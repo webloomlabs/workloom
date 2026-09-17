@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Input, Select } from '@workloom/ui'
+import { Button, Checkbox, Input, Select } from '@workloom/ui'
 import { useActionState, useState } from 'react'
 import {
   addMemberAction,
@@ -218,7 +218,7 @@ export function MemberControls({ member, projectId, currency, financial, canEdit
           </>
         )}
         <SubmitButton size="sm" variant="secondary" pendingLabel="…">Save</SubmitButton>
-        {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? state.message}</span>}
+        {state.status === 'error' && <span role="alert" className="text-xs text-critical">{fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? state.message}</span>}
       </form>
       <form action={removeMemberAction}>
         <input type="hidden" name="id" value={member.id} />
@@ -243,7 +243,7 @@ export function CreateMilestoneForm({ projectId, canPublish }: { projectId: stri
       </div>
       {canPublish && (
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="clientVisible" /> Visible to the client
+          <Checkbox name="clientVisible" /> Visible to the client
         </label>
       )}
       <SubmitButton size="sm" pendingLabel="Adding…">Add milestone</SubmitButton>

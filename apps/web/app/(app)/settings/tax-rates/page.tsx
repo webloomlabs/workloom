@@ -1,5 +1,5 @@
 import { taxRateList } from '@workloom/core/modules'
-import { Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { FilterTabs, param } from '@/components/crm/list-controls'
 import { CreateTaxRateForm, TaxRateControls } from '@/components/finance/finance-forms'
@@ -36,10 +36,10 @@ export default async function TaxRatesPage({ searchParams }: PageProps<'/setting
             <thead><tr><Th>Name</Th><Th className="text-right">Rate</Th><Th>Description</Th><Th /></tr></thead>
             <tbody>
               {rates.map((t) => (
-                <tr key={t.id}>
-                  <Td><span className="font-medium">{t.name}</span> {t.archivedAt && <Badge tone="amber">Archived</Badge>}</Td>
+                <Tr key={t.id}>
+                  <Td><span className="font-medium">{t.name}</span> {t.archivedAt && <Badge tone="caution">Archived</Badge>}</Td>
                   <Td className="text-right tabular-nums">{t.rate}%</Td>
-                  <Td className="text-neutral-600">{t.description}</Td>
+                  <Td className="text-muted">{t.description}</Td>
                   <Td>
                     <TaxRateControls
                       taxRate={{ id: t.id, name: t.name, rate: t.rate, description: t.description, archived: Boolean(t.archivedAt) }}
@@ -47,7 +47,7 @@ export default async function TaxRatesPage({ searchParams }: PageProps<'/setting
                       canArchive={can('taxRate:archive')}
                     />
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>

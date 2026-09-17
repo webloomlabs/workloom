@@ -1,5 +1,5 @@
 import { activityList, companyList, contactGet, dealList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LogActivityForm, Timeline } from '@/components/crm/activity'
@@ -33,21 +33,21 @@ export default async function ContactPage({ params }: PageProps<'/contacts/[id]'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/contacts" className="text-sm text-neutral-500 hover:underline">← Contacts</Link>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">{contact.fullName}</h1>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+      <PageHeader
+        breadcrumb={<Link href="/contacts" className="text-sm text-muted hover:text-ink">← Contacts</Link>}
+        title={contact.fullName}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             {contact.archivedAt && <ArchivedBadge />}
             {contact.jobTitle && <span>{contact.jobTitle}</span>}
             {contact.companyId && (
-              <Link href={`/companies/${contact.companyId}`} className="hover:underline">at {contact.companyName}</Link>
+              <Link href={`/companies/${contact.companyId}`} className="hover:text-ink">at {contact.companyName}</Link>
             )}
-            {contact.email && <a href={`mailto:${contact.email}`} className="hover:underline">{contact.email}</a>}
-          </p>
-        </div>
-        {can('contact:archive') && <ArchiveControl entity="contact" id={contact.id} archived={!live} label="contact" />}
-      </div>
+            {contact.email && <a href={`mailto:${contact.email}`} className="hover:text-ink">{contact.email}</a>}
+          </span>
+        }
+        actions={can('contact:archive') && <ArchiveControl entity="contact" id={contact.id} archived={!live} label="contact" />}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
@@ -60,11 +60,11 @@ export default async function ContactPage({ params }: PageProps<'/contacts/[id]'
                 <Table>
                   <tbody>
                     {deals.data.map((d) => (
-                      <tr key={d.id}>
+                      <Tr key={d.id}>
                         <Td><Link href={`/deals/${d.id}`} className="font-medium hover:underline">{d.name}</Link></Td>
                         <Td><DealStageBadge stage={d.stage} /></Td>
                         <Td className="whitespace-nowrap text-right tabular-nums">{money(d.valueMinor, d.currency)}</Td>
-                      </tr>
+                      </Tr>
                     ))}
                   </tbody>
                 </Table>
@@ -78,8 +78,8 @@ export default async function ContactPage({ params }: PageProps<'/contacts/[id]'
                 <EditContactForm contact={contact} members={members.choices} companies={companyChoices} />
               ) : (
                 <dl className="grid grid-cols-[8rem_1fr] gap-2 text-sm">
-                  <dt className="text-neutral-500">Phone</dt><dd>{contact.phone ?? '—'}</dd>
-                  <dt className="text-neutral-500">Owner</dt><dd>{members.nameOf(contact.ownerId)}</dd>
+                  <dt className="text-muted">Phone</dt><dd>{contact.phone ?? '—'}</dd>
+                  <dt className="text-muted">Owner</dt><dd>{members.nameOf(contact.ownerId)}</dd>
                 </dl>
               )}
             </div>
@@ -90,7 +90,7 @@ export default async function ContactPage({ params }: PageProps<'/contacts/[id]'
           <Card className="self-start">
             <CardHeader title="Activity" />
             {live && can('activity:create') && (
-              <div className="border-b border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-b border-line p-5">
                 <LogActivityForm target="contactId" targetId={contact.id} returnTo={returnTo} />
               </div>
             )}

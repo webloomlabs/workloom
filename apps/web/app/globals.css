@@ -1,12 +1,33 @@
 @import 'tailwindcss';
+/* The design system: tokens, and the Tailwind colour scale built from them. */
+@import '../../../packages/ui/src/theme.css';
 
 /* Tailwind only scans this app by default; the shared components live elsewhere. */
 @source '../../../packages/ui/src';
 
-@theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-:root {
-  color-scheme: light dark;
+  body {
+    background-color: var(--wl-canvas);
+    color: var(--wl-ink);
+  }
+
+  /* One focus treatment everywhere, including links and native controls. */
+  :focus-visible {
+    outline: 2px solid var(--wl-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--wl-accent);
+    color: var(--wl-accent-ink);
+  }
+
+  /* The date and time pickers ship a black glyph that vanishes on dark. */
+  :root[data-theme='dark'] ::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.6);
+  }
 }

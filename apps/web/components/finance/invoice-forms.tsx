@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Field, Select } from '@workloom/ui'
+import { Button, Checkbox, Field, Select } from '@workloom/ui'
 import { useActionState, useState } from 'react'
 import {
   billTimeAction,
@@ -84,7 +84,7 @@ export function SendInvoiceForm({
         <TextField state={state} name="exchangeRate" label={`1 ${currency} in ${baseCurrency}`} hint="Fixed on the invoice when it is issued." placeholder="1.52" />
       )}
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="email" checked={email} onChange={(e) => setEmail(e.currentTarget.checked)} /> Email it to the client
+        <Checkbox name="email" checked={email} onChange={(e) => setEmail(e.currentTarget.checked)} /> Email it to the client
       </label>
       {email && <TextField state={state} name="to" label="To" defaultValue={suggestedEmail} placeholder="accounts@client.example" />}
       <div className="flex flex-wrap items-center gap-3">
@@ -191,7 +191,7 @@ export function CopyLinkButton({ url }: { url: string }) {
           id="public-link"
           readOnly
           value={url}
-          className="h-8 min-w-0 flex-1 rounded-md border border-neutral-300 bg-neutral-50 px-2 text-xs dark:border-neutral-700 dark:bg-neutral-800"
+          className="h-8 min-w-0 flex-1 rounded-md border border-line-strong bg-raised px-2 text-xs"
         />
         <Button
           type="button"

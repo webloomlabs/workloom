@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Field, Input } from '@workloom/ui'
+import { Button, Checkbox, Field, Input } from '@workloom/ui'
 import { useActionState } from 'react'
 import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from '@/lib/actions/settings'
 import { idle, type ActionState } from '@/lib/actions/state'
@@ -32,18 +32,18 @@ export function CreateApiKeyForm({ grantable }: { grantable: Record<string, stri
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium">Scopes</legend>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           Leave everything unticked for a key that can do whatever you can. Either way it never exceeds
           your own role, and it loses access the moment your role changes.
         </p>
         <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           {Object.entries(grantable).map(([resource, actions]) => (
             <div key={resource}>
-              <p className="mb-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">{resource}</p>
+              <p className="mb-1 text-xs font-medium text-muted">{resource}</p>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {actions.map((a) => (
-                  <label key={a} className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
-                    <input type="checkbox" name="scopes" value={`${resource}:${a}`} className="size-3.5" />
+                  <label key={a} className="flex items-center gap-1.5 text-xs text-muted">
+                    <Checkbox name="scopes" value={`${resource}:${a}`} className="size-3.5" />
                     {a}
                   </label>
                 ))}
@@ -51,7 +51,7 @@ export function CreateApiKeyForm({ grantable }: { grantable: Record<string, stri
             </div>
           ))}
         </div>
-        {fieldError(state, 'scopes') && <p role="alert" className="text-xs text-red-600">{fieldError(state, 'scopes')}</p>}
+        {fieldError(state, 'scopes') && <p role="alert" className="text-xs text-critical">{fieldError(state, 'scopes')}</p>}
       </fieldset>
 
       <SubmitButton pendingLabel="Creating…">Create key</SubmitButton>
@@ -71,7 +71,7 @@ function SecretReveal({ created }: { created: CreatedKey }) {
         </>
       }
     >
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted">
         Use it as <code className="font-mono">Authorization: Bearer …</code>. The API is described at{' '}
         <a href="/api/v1/openapi.json" className="underline">/api/v1/openapi.json</a>.
       </p>
@@ -90,7 +90,7 @@ export function RevokeApiKeyForm({ id, name }: { id: string; name: string }) {
       className="flex items-center justify-end gap-2">
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="ghost" size="sm">Revoke</Button>
-      {state.status === 'error' && <span role="alert" className="text-xs text-red-600">{state.message}</span>}
+      {state.status === 'error' && <span role="alert" className="text-xs text-critical">{state.message}</span>}
     </form>
   )
 }

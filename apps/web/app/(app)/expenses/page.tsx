@@ -1,5 +1,5 @@
 import { expenseList } from '@workloom/core/modules'
-import { Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
@@ -28,14 +28,16 @@ export default async function ExpensesPage({ searchParams }: PageProps<'/expense
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">Expenses</h1>
-        {viewer.permissions.has('expense:create') && (
-          <Link href="/expenses/new" className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900">
-            Record an expense
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title="Expenses"
+        actions={
+          viewer.permissions.has('expense:create') && (
+            <Link href="/expenses/new" className={buttonStyles()}>
+              Record an expense
+            </Link>
+          )
+        }
+      />
       <Card>
         <CardHeader
           title={VIEWS[view]?.label ?? 'All'}
@@ -66,33 +68,33 @@ export default async function ExpensesPage({ searchParams }: PageProps<'/expense
             </thead>
             <tbody>
               {expenses.data.map((expense) => (
-                <tr key={expense.id}>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(expense.incurredOn)}</Td>
+                <Tr key={expense.id}>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(expense.incurredOn)}</Td>
                   <Td>
                     <Link href={`/expenses/${expense.id}`} className="font-medium hover:underline">{expense.description}</Link>
-                    {expense.supplier && <div className="text-xs text-neutral-500">{expense.supplier}</div>}
+                    {expense.supplier && <div className="text-xs text-muted">{expense.supplier}</div>}
                   </Td>
-                  <Td className="text-neutral-600">{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</Td>
-                  <Td className="text-neutral-600">
+                  <Td className="text-muted">{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</Td>
+                  <Td className="text-muted">
                     {expense.projectId ? (
                       <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link>
                     ) : expense.companyId ? (
                       <Link href={`/companies/${expense.companyId}?tab=expenses`} className="hover:underline">{expense.companyName}</Link>
                     ) : (
-                      <span className="text-neutral-400">Overhead</span>
+                      <span className="text-faint">Overhead</span>
                     )}
                   </Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{money(expense.amountMinor, expense.currency)}</Td>
                   <Td className="whitespace-nowrap">
                     {expense.invoiceId ? (
-                      <Link href={`/invoices/${expense.invoiceId}`}><Badge tone="green">{expense.invoiceNumber ?? 'Rebilled'}</Badge></Link>
+                      <Link href={`/invoices/${expense.invoiceId}`}><Badge tone="positive">{expense.invoiceNumber ?? 'Rebilled'}</Badge></Link>
                     ) : expense.billable ? (
-                      <Badge tone="amber">To rebill{expense.markupPercent ? ` +${expense.markupPercent}%` : ''}</Badge>
+                      <Badge tone="caution">To rebill{expense.markupPercent ? ` +${expense.markupPercent}%` : ''}</Badge>
                     ) : (
-                      <span className="text-sm text-neutral-400">Absorbed</span>
+                      <span className="text-sm text-faint">Absorbed</span>
                     )}
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>

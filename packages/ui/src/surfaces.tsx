@@ -1,13 +1,12 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { cn } from './cn.ts'
+import { AlertIcon, CheckCircleIcon, InfoIcon } from './icon.tsx'
 
+/** The panel everything sits on: one hairline, one radius, one background. */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        'rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900',
-        className,
-      )}
+      className={cn('overflow-hidden rounded-xl border border-line bg-surface shadow-sm', className)}
       {...props}
     />
   )
@@ -17,101 +16,93 @@ export function CardHeader({
   title,
   description,
   action,
+  icon,
 }: {
-  title: string
+  title: ReactNode
   description?: ReactNode
   action?: ReactNode
+  icon?: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
-      <div>
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {description && <p className="mt-1 text-sm text-neutral-500">{description}</p>}
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-line px-5 py-3.5">
+      <div className="flex min-w-0 items-start gap-2.5">
+        {icon && <span className="mt-0.5 text-muted">{icon}</span>}
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold tracking-tight text-ink">{title}</h2>
+          {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        </div>
       </div>
       {action}
     </div>
   )
 }
 
+/** Padding for card content that is not a table or a list. */
+export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('px-5 py-4', className)} {...props} />
+}
+
+export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('flex flex-wrap items-center gap-3 border-t border-line px-5 py-3', className)}
+      {...props}
+    />
+  )
+}
+
 const alertTones = {
-  error: 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200',
-  success:
-    'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200',
-  info: 'border-neutral-200 bg-neutral-50 text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300',
-  warning:
-    'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  error: { box: 'border-critical/30 bg-critical-soft text-critical', Icon: AlertIcon },
+  success: { box: 'border-positive/30 bg-positive-soft text-positive', Icon: CheckCircleIcon },
+  info: { box: 'border-line bg-raised text-muted', Icon: InfoIcon },
+  warning: { box: 'border-caution/30 bg-caution-soft text-caution', Icon: AlertIcon },
 } as const
+
+export type AlertTone = keyof typeof alertTones
 
 export function Alert({
   tone = 'info',
   children,
   className,
 }: {
-  tone?: keyof typeof alertTones
+  tone?: AlertTone
   children: ReactNode
   className?: string
 }) {
+  const { box, Icon } = alertTones[tone]
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={cn('rounded-md border px-3 py-2 text-sm', alertTones[tone], className)}
+      className={cn('flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm', box, className)}
     >
-      {children}
+      <Icon className="mt-0.5" />
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }
 
-const badgeTones = {
-  neutral: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
-  green: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  amber: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300',
-  red: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-} as const
-
-export function Badge({ tone = 'neutral', children }: { tone?: keyof typeof badgeTones; children: ReactNode }) {
+export function EmptyState({
+  children,
+  icon,
+  action,
+}: {
+  children: ReactNode
+  icon?: ReactNode
+  action?: ReactNode
+}) {
   return (
-    <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium', badgeTones[tone])}>
-      {children}
-    </span>
-  )
-}
-
-/**
- * A table that scrolls inside its own container instead of widening the page.
- *
- * `relative` matters: without a positioned container, absolutely positioned
- * cells' contents -- screen-reader-only labels -- escape the scroll area and
- * widen the page anyway.
- */
-export function Table({ children }: { children: ReactNode }) {
-  return (
-    <div className="relative overflow-x-auto">
-      <table className="w-full text-left text-sm">{children}</table>
-    </div>
-  )
-}
-
-export function Th({ children, className }: { children?: ReactNode; className?: string }) {
-  return (
-    <th
-      className={cn(
-        'border-b border-neutral-200 px-5 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:border-neutral-800',
-        className,
+    <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
+      {icon && (
+        <span className="flex size-10 items-center justify-center rounded-full bg-raised text-faint">
+          {icon}
+        </span>
       )}
-    >
-      {children}
-    </th>
+      <p className="text-sm text-muted">{children}</p>
+      {action}
+    </div>
   )
 }
 
-export function Td({ children, className }: { children?: ReactNode; className?: string }) {
-  return (
-    <td className={cn('border-b border-neutral-100 px-5 py-3 align-middle dark:border-neutral-800', className)}>
-      {children}
-    </td>
-  )
-}
-
-export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="px-5 py-8 text-center text-sm text-neutral-500">{children}</p>
+export function Separator({ className }: { className?: string }) {
+  return <hr className={cn('border-0 border-t border-line', className)} />
 }

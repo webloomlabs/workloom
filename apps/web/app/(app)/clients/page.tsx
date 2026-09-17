@@ -1,5 +1,5 @@
 import { clientList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
@@ -40,17 +40,19 @@ export default async function ClientsPage({ searchParams }: PageProps<'/clients'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Clients</h1>
-        <SearchBox action="/clients" q={q} hidden={show ? { show } : {}} placeholder="Name or website" />
-      </div>
+      <PageHeader
+        title="Clients"
+        actions={
+          <SearchBox action="/clients" q={q} hidden={show ? { show } : {}} placeholder="Name or website" />
+        }
+      />
 
       {viewer.permissions.has('company:create') && (
         <Card>
           <details>
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">Add a client</summary>
-            <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
-              <p className="mb-4 text-sm text-neutral-500">
+            <div className="border-t border-line p-5">
+              <p className="mb-4 text-sm text-muted">
                 Usually clients arrive by converting a lead or winning a deal. Add one directly for existing relationships.
               </p>
               <CreateCompanyForm
@@ -84,28 +86,28 @@ export default async function ClientsPage({ searchParams }: PageProps<'/clients'
             </thead>
             <tbody>
               {clients.map((client) => (
-                <tr key={client.id}>
+                <Tr key={client.id}>
                   <Td>
                     <Link href={`/companies/${client.id}`} className="font-medium hover:underline">{client.name}</Link>
-                    <div className="text-xs text-neutral-500">
+                    <div className="text-xs text-muted">
                       {client.lifecycleStage === 'former_client' ? 'Former client' : client.website?.replace(/^https?:\/\//, '')}
                     </div>
                   </Td>
-                  <Td className="whitespace-nowrap text-neutral-600">{formatDate(client.becameClientAt, settings.timezone)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(client.becameClientAt, settings.timezone)}</Td>
                   {showDeals && (
                     <Td className="whitespace-nowrap text-right tabular-nums">
                       {client.openDeals && client.openDeals.count > 0
                         ? client.openDeals.value.map((v) => money(v.valueMinor, v.currency)).join(' + ')
                         : '—'}
                       {client.openDeals && client.openDeals.count > 0 && (
-                        <div className="text-xs text-neutral-500">{client.openDeals.count} open</div>
+                        <div className="text-xs text-muted">{client.openDeals.count} open</div>
                       )}
                     </Td>
                   )}
                   {showContacts && <Td className="text-right tabular-nums">{client.contactCount ?? '—'}</Td>}
-                  <Td className="text-neutral-600">{members.nameOf(client.ownerId)}</Td>
-                  <Td className="whitespace-nowrap text-neutral-500">{formatDate(client.lastActivityAt, settings.timezone)}</Td>
-                </tr>
+                  <Td className="text-muted">{members.nameOf(client.ownerId)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{formatDate(client.lastActivityAt, settings.timezone)}</Td>
+                </Tr>
               ))}
             </tbody>
           </Table>

@@ -1,5 +1,5 @@
 import { companyList } from '@workloom/core/modules'
-import { Card, CardHeader } from '@workloom/ui'
+import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -24,10 +24,12 @@ export default async function NewProjectPage({ searchParams }: PageProps<'/proje
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href={dealId ? `/deals/${dealId}` : '/projects'} className="text-sm text-neutral-500 hover:underline">← Back</Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">New project</h1>
-      </div>
+      <PageHeader
+        breadcrumb={
+          <Link href={dealId ? `/deals/${dealId}` : '/projects'} className="text-sm text-muted hover:text-ink">← Back</Link>
+        }
+        title="New project"
+      />
       <Card>
         <CardHeader
           title="Project"

@@ -40,7 +40,7 @@ export function LogActivityForm({ target, targetId, returnTo }: Target & { retur
         defaultValue={state.status === 'error' ? state.values?.body : ''}
         aria-invalid={fieldError(state, 'body') ? true : undefined}
       />
-      {fieldError(state, 'body') && <p role="alert" className="text-xs text-red-600">{fieldError(state, 'body')}</p>}
+      {fieldError(state, 'body') && <p role="alert" className="text-xs text-critical">{fieldError(state, 'body')}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor={`type-${targetId}`}>Type</label>
         {/* Sized by its wrapper: the shared control is full-width. */}
@@ -51,13 +51,13 @@ export function LogActivityForm({ target, targetId, returnTo }: Target & { retur
             ))}
           </Select>
         </div>
-        <label className="flex items-center gap-2 text-xs text-neutral-500">
+        <label className="flex items-center gap-2 text-xs text-muted">
           When
           <input
             type="datetime-local"
             value={when}
             onChange={(e) => setWhen(e.target.value)}
-            className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+            className="h-8 rounded-md border border-line-strong bg-inset px-2 text-xs text-ink"
           />
         </label>
         <SubmitButton size="sm" pendingLabel="Saving…">Log</SubmitButton>
@@ -69,15 +69,15 @@ export function LogActivityForm({ target, targetId, returnTo }: Target & { retur
 
 export function Timeline({ entries, canDelete, returnTo }: { entries: TimelineEntry[]; canDelete: boolean; returnTo: string }) {
   if (entries.length === 0) {
-    return <p className="px-5 py-6 text-center text-sm text-neutral-500">Nothing logged yet.</p>
+    return <p className="px-5 py-6 text-center text-sm text-muted">Nothing logged yet.</p>
   }
   return (
-    <ol className="divide-y divide-neutral-100 dark:divide-neutral-800">
+    <ol className="divide-y divide-line">
       {entries.map((entry) => (
         <li key={entry.id} className="px-5 py-3">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-xs text-neutral-500">
-              <span className="font-medium text-neutral-700 dark:text-neutral-300">{ACTIVITY_TYPE_LABELS[entry.type] ?? entry.type}</span>
+            <div className="text-xs text-muted">
+              <span className="font-medium text-ink">{ACTIVITY_TYPE_LABELS[entry.type] ?? entry.type}</span>
               {' · '}
               {entry.when}
               {entry.authorName && ` · ${entry.authorName}`}

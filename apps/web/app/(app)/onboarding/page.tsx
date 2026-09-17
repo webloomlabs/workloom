@@ -19,7 +19,7 @@ export default async function OnboardingPage() {
           <CardHeader title="Your organizations" description="Pick one to continue." />
           <ul>
             {organizations.map((o) => (
-              <li key={o.id} className="flex items-center justify-between border-b border-neutral-100 px-5 py-3 last:border-0 dark:border-neutral-800">
+              <li key={o.id} className="flex items-center justify-between border-b border-line px-5 py-3 last:border-0">
                 <span className="text-sm font-medium">{o.name}</span>
                 <form action={switchOrganizationAction}>
                   <input type="hidden" name="organizationId" value={o.id} />

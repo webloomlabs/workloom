@@ -13,8 +13,8 @@ export default async function SignInPage({ searchParams }: PageProps<'/sign-in'>
   if (await getSession()) redirect(next ?? '/')
 
   return (
-    <Card className="p-6">
-      <h1 className="mb-5 text-lg font-semibold">Sign in</h1>
+    <Card className="p-6 sm:p-7">
+      <h1 className="mb-5 text-lg font-semibold tracking-tight text-ink">Sign in</h1>
       <SignInForm
         canSignUp={isMultiTenant()}
         {...(next ? { next } : {})}

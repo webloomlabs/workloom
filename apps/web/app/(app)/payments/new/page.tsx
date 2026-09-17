@@ -1,5 +1,5 @@
 import { companyList, organizationGet } from '@workloom/core/modules'
-import { Card, CardHeader } from '@workloom/ui'
+import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -18,10 +18,14 @@ export default async function NewPaymentPage({ searchParams }: PageProps<'/payme
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href={companyId ? `/companies/${companyId}?tab=payments` : '/payments'} className="text-sm text-neutral-500 hover:underline">← Back</Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">Record a payment</h1>
-      </div>
+      <PageHeader
+        breadcrumb={
+          <Link href={companyId ? `/companies/${companyId}?tab=payments` : '/payments'} className="text-sm text-muted hover:text-ink">
+            ← Back
+          </Link>
+        }
+        title="Record a payment"
+      />
       <Card>
         <CardHeader
           title="Payment"

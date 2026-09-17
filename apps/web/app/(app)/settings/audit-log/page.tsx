@@ -1,5 +1,5 @@
 import { auditLogList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { call } from '@/lib/server/procedures'
@@ -31,13 +31,13 @@ export default async function AuditLogPage({ searchParams }: PageProps<'/setting
           <thead><tr><Th>When</Th><Th>Who</Th><Th>Action</Th><Th>Subject</Th><Th>Changes</Th></tr></thead>
           <tbody>
             {data.map((entry) => (
-              <tr key={entry.id}>
-                <Td className="whitespace-nowrap text-neutral-500">{entry.createdAt.toLocaleString()}</Td>
+              <Tr key={entry.id}>
+                <Td className="whitespace-nowrap text-muted">{entry.createdAt.toLocaleString()}</Td>
                 <Td>{entry.actorLabel ?? entry.actorType}</Td>
                 <Td><code className="font-mono text-xs">{entry.action}</code></Td>
                 <Td>{entry.entityLabel ?? entry.entityType}</Td>
-                <Td className="text-xs text-neutral-600">{describeChanges(entry.changes)}</Td>
-              </tr>
+                <Td className="text-xs text-muted">{describeChanges(entry.changes)}</Td>
+              </Tr>
             ))}
           </tbody>
         </Table>

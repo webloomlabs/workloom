@@ -1,5 +1,5 @@
 import { dealList, dealPipeline } from '@workloom/core/modules'
-import { Card } from '@workloom/ui'
+import { Card, PageHeader, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DealStageControl } from '@/components/crm/record-forms'
@@ -31,20 +31,20 @@ export default async function PipelinePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Pipeline</h1>
-          <p className="text-sm text-neutral-500">Open deals by stage. Won and lost show the last {CLOSED_WITHIN_DAYS} days.</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/deals" className="text-sm font-medium hover:underline">All deals</Link>
-          {viewer.permissions.has('deal:create') && (
-            <Link href="/deals/new" className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
-              New deal
-            </Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Pipeline"
+        description={`Open deals by stage. Won and lost show the last ${CLOSED_WITHIN_DAYS} days.`}
+        actions={
+          <div className="flex items-center gap-4">
+            <Link href="/deals" className="text-sm font-medium hover:underline">All deals</Link>
+            {viewer.permissions.has('deal:create') && (
+              <Link href="/deals/new" className={buttonStyles()}>
+                New deal
+              </Link>
+            )}
+          </div>
+        }
+      />
 
       <div className="overflow-x-auto pb-2">
         <div className="grid min-w-[64rem] grid-cols-5 gap-3">
@@ -54,33 +54,33 @@ export default async function PipelinePage() {
               <section key={summary.stage} aria-labelledby={`col-${summary.stage}`} className="space-y-2">
                 <header className="px-1">
                   <h2 id={`col-${summary.stage}`} className="text-sm font-semibold">
-                    {DEAL_STAGE_LABELS[summary.stage]} <span className="font-normal text-neutral-500">{summary.count}</span>
+                    {DEAL_STAGE_LABELS[summary.stage]} <span className="font-normal text-muted">{summary.count}</span>
                   </h2>
-                  <p className="text-xs tabular-nums text-neutral-500">
+                  <p className="text-xs tabular-nums text-muted">
                     {summary.totals.length === 0 ? '—' : summary.totals.map((t) => money(t.valueMinor, t.currency)).join(' + ')}
                   </p>
                 </header>
                 {deals.length === 0 && (
-                  <p className="rounded-md border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-400 dark:border-neutral-700">No deals</p>
+                  <p className="rounded-md border border-dashed border-line-strong p-4 text-center text-xs text-faint">No deals</p>
                 )}
                 {deals.map((deal) => (
                   <Card key={deal.id} className="space-y-2 p-3">
                     <div>
                       <Link href={`/deals/${deal.id}`} className="text-sm font-medium hover:underline">{deal.name}</Link>
-                      <div className="text-xs text-neutral-500">{deal.companyName}</div>
+                      <div className="text-xs text-muted">{deal.companyName}</div>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 text-xs">
                       <span className="font-medium tabular-nums">{money(deal.valueMinor, deal.currency)}</span>
-                      <span className="text-neutral-500">
+                      <span className="text-muted">
                         {deal.closedAt ? formatDate(deal.closedAt) : deal.expectedCloseDate ? `Close ${formatDate(deal.expectedCloseDate)}` : ''}
                       </span>
                     </div>
-                    <div className="text-xs text-neutral-500">{members.nameOf(deal.ownerId)}</div>
+                    <div className="text-xs text-muted">{members.nameOf(deal.ownerId)}</div>
                     {canMove && <DealStageControl id={deal.id} stage={deal.stage} compact />}
                   </Card>
                 ))}
                 {columns[i]!.nextCursor && (
-                  <Link href={`/deals?stage=${summary.stage}`} className="block px-1 text-xs text-neutral-500 hover:underline">
+                  <Link href={`/deals?stage=${summary.stage}`} className="block px-1 text-xs text-muted hover:underline">
                     All {DEAL_STAGE_LABELS[summary.stage]?.toLowerCase()} deals →
                   </Link>
                 )}

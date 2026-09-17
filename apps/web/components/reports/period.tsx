@@ -1,4 +1,4 @@
-import { Button, Input } from '@workloom/ui'
+import { Button, Input, pillStyles } from '@workloom/ui'
 import Link from 'next/link'
 
 /**
@@ -11,11 +11,11 @@ export function PeriodPicker({ from, to }: { from: string; to: string }) {
   return (
     <form action="/reports" className="flex flex-wrap items-end gap-2">
       <div>
-        <label htmlFor="from" className="block text-xs font-medium text-neutral-500">From</label>
+        <label htmlFor="from" className="mb-1 block text-xs font-medium text-muted">From</label>
         <Input id="from" name="from" type="date" defaultValue={from} className="h-8" />
       </div>
       <div>
-        <label htmlFor="to" className="block text-xs font-medium text-neutral-500">To</label>
+        <label htmlFor="to" className="mb-1 block text-xs font-medium text-muted">To</label>
         <Input id="to" name="to" type="date" defaultValue={to} className="h-8" />
       </div>
       <Button type="submit" size="sm" variant="secondary">Show</Button>
@@ -31,17 +31,13 @@ export function PeriodTabs({ active }: { active: 'month' | 'quarter' | 'year' })
     { key: 'year', label: 'This year' },
   ] as const
   return (
-    <nav aria-label="Period" className="flex items-center gap-1 rounded-md border border-neutral-200 p-0.5 dark:border-neutral-800">
+    <nav aria-label="Period" className="flex items-center gap-0.5 rounded-full bg-raised p-0.5">
       {options.map((option) => (
         <Link
           key={option.key}
           href={option.key === 'month' ? '/' : `/?period=${option.key}`}
           aria-current={option.key === active ? 'page' : undefined}
-          className={`rounded px-2.5 py-1 text-xs font-medium ${
-            option.key === active
-              ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
-              : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'
-          }`}
+          className={pillStyles(option.key === active, 'text-xs')}
         >
           {option.label}
         </Link>

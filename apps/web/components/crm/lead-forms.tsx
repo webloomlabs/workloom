@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Field, Input, Select } from '@workloom/ui'
+import { Button, Checkbox, Field, Input, Select } from '@workloom/ui'
 import { useActionState, useState } from 'react'
 import {
   changeLeadStatusAction,
@@ -146,17 +146,17 @@ export function ConvertLeadForm({
       </div>
 
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="createContact" defaultChecked={Boolean(lead.contactName || lead.email)} />
+        <Checkbox name="createContact" defaultChecked={Boolean(lead.contactName || lead.email)} />
         Add {lead.contactName ?? lead.email ?? 'the lead'} as a contact
-        <span className="text-neutral-500">(an existing contact with the same email is reused)</span>
+        <span className="text-muted">(an existing contact with the same email is reused)</span>
       </label>
 
-      <fieldset className="space-y-4 rounded-md border border-neutral-200 p-4 dark:border-neutral-800">
+      <fieldset className="space-y-4 rounded-md border border-line p-4">
         <label className="flex items-center gap-2 text-sm font-medium">
-          <input type="checkbox" name="createDeal" checked={withDeal} onChange={(e) => setWithDeal(e.target.checked)} />
+          <Checkbox name="createDeal" checked={withDeal} onChange={(e) => setWithDeal(e.target.checked)} />
           Open a deal
         </label>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           {withDeal
             ? 'The company stays a prospect until the deal is won.'
             : 'Without a deal, the company becomes a client straight away.'}
@@ -171,7 +171,7 @@ export function ConvertLeadForm({
             <TextField state={state} name="expectedCloseDate" label="Expected close" type="date" />
           </div>
         )}
-        {fieldError(state, 'deal') && <p className="text-xs text-red-600">{fieldError(state, 'deal')}</p>}
+        {fieldError(state, 'deal') && <p className="text-xs text-critical">{fieldError(state, 'deal')}</p>}
       </fieldset>
 
       <SubmitButton pendingLabel="Converting…">Convert lead</SubmitButton>

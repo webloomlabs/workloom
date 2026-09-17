@@ -54,7 +54,7 @@ export function OrganizationForm({
           <Input id="dateFormat" name="dateFormat" defaultValue={organization.dateFormat} />
         </Field>
       </fieldset>
-      <fieldset disabled={!canEdit} className="space-y-5 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+      <fieldset disabled={!canEdit} className="space-y-5 border-t border-line pt-5">
         <legend className="text-sm font-semibold">On quotes and invoices</legend>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="legalName" label="Legal name" hint="The name documents are issued under, if it differs." error={fieldError(state, 'legalName')}>
@@ -82,7 +82,7 @@ export function OrganizationForm({
       {canEdit ? (
         <SubmitButton pendingLabel="Saving…">Save changes</SubmitButton>
       ) : (
-        <p className="text-sm text-neutral-500">Only owners and admins can change these settings.</p>
+        <p className="text-sm text-muted">Only owners and admins can change these settings.</p>
       )}
     </form>
   )

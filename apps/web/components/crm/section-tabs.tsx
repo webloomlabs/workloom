@@ -1,4 +1,4 @@
-import { cn } from '@workloom/ui'
+import { tabStyles } from '@workloom/ui'
 import Link from 'next/link'
 
 export type SectionTab = {
@@ -21,8 +21,8 @@ export function SectionTabs({ tabs, active, label }: { tabs: SectionTab[]; activ
   const unavailable = tabs.filter((t) => t.status !== 'available')
 
   return (
-    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-neutral-200 dark:border-neutral-800">
-      <nav aria-label={label} className="-mb-px flex gap-1 overflow-x-auto">
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-line">
+      <nav aria-label={label} className="wl-scroll -mb-px flex gap-1 overflow-x-auto">
         {available.map((tab) => {
           const current = tab.key === active
           return (
@@ -30,25 +30,20 @@ export function SectionTabs({ tabs, active, label }: { tabs: SectionTab[]; activ
               key={tab.key}
               href={tab.href}
               aria-current={current ? 'page' : undefined}
-              className={cn(
-                'whitespace-nowrap border-b-2 px-3 py-2 text-sm',
-                current
-                  ? 'border-neutral-900 font-medium text-neutral-900 dark:border-neutral-100 dark:text-neutral-100'
-                  : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200',
-              )}
+              className={tabStyles(current)}
             >
               {tab.label}
-              {typeof tab.count === 'number' && <span className="ml-1.5 text-xs tabular-nums text-neutral-400">{tab.count}</span>}
+              {typeof tab.count === 'number' && <span className="rounded-full bg-raised px-1.5 py-0.5 text-[11px] tabular-nums text-muted">{tab.count}</span>}
             </Link>
           )
         })}
       </nav>
       {unavailable.length > 0 && (
-        <ul aria-label="Not yet available" className="hidden flex-wrap sm:flex gap-x-3 gap-y-1 pb-2 text-xs text-neutral-400">
+        <ul aria-label="Not yet available" className="hidden flex-wrap sm:flex gap-x-3 gap-y-1 pb-2 text-xs text-faint">
           {unavailable.map((tab) => (
             <li key={tab.key} aria-disabled="true" title={unavailableNote[tab.status as 'upcoming' | 'planned']}>
               {tab.label}
-              <span className="ml-1 rounded bg-neutral-100 px-1 py-px text-[10px] uppercase tracking-wide dark:bg-neutral-800">
+              <span className="ml-1 rounded bg-raised px-1 py-px text-[10px] uppercase tracking-wide text-faint">
                 {tab.status === 'upcoming' ? 'Soon' : 'Planned'}
               </span>
             </li>

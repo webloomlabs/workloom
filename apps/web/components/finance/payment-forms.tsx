@@ -103,7 +103,7 @@ export function AllocateForm({
   invoices: Array<{ id: string; label: string }>
 }) {
   const [state, action] = useActionState(allocatePaymentAction, idle)
-  if (invoices.length === 0) return <p className="text-sm text-neutral-500">Nothing outstanding to put this against.</p>
+  if (invoices.length === 0) return <p className="text-sm text-muted">Nothing outstanding to put this against.</p>
   return (
     <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={paymentId} />

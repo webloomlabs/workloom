@@ -1,7 +1,7 @@
 import type { Permission } from '@workloom/core'
 import { timeEntryList } from '@workloom/core/modules'
 import { addDays, formatDuration, weekDays } from '@workloom/core/time'
-import { Badge, Button, Card, CardHeader, EmptyState, Select, Table, Td, Th } from '@workloom/ui'
+import { Badge, Button, Card, CardHeader, EmptyState, PageHeader, Select, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
@@ -63,47 +63,52 @@ export default async function TimesheetPage({ searchParams }: PageProps<'/time'>
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">{own ? 'My timesheet' : `${personName}'s timesheet`}</h1>
-          <p className="text-sm text-neutral-500">
-            Week of {dayLabel(days[0]!, 'long')} · <span aria-label="Week total">{formatDuration(weekTotal)}</span> tracked, {formatDuration(billableTotal)} billable
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {people && (
-            <form action="/time" className="flex items-center gap-2">
-              <input type="hidden" name="week" value={days[0]} />
-              <label htmlFor="timesheet-person" className="sr-only">Person</label>
-              <Select id="timesheet-person" name="user" defaultValue={person ?? ''} className="h-8 text-xs">
-                {people.choices.map((p) => (
-                  <option key={p.id} value={p.id}>{p.id === self ? `${p.name} (you)` : p.name}</option>
-                ))}
-              </Select>
-              <Button type="submit" size="sm" variant="secondary">Show</Button>
-            </form>
-          )}
-          <nav aria-label="Weeks" className="flex items-center gap-1 text-sm">
-            <Link href={link(addDays(days[0]!, -7))} className="rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">← Previous</Link>
-            {!days.includes(today) && <Link href={link(today)} className="rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">This week</Link>}
-            <Link href={link(addDays(days[0]!, 7))} className="rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">Next →</Link>
-          </nav>
-        </div>
-      </div>
+      <PageHeader
+        title={own ? 'My timesheet' : `${personName}'s timesheet`}
+        description={
+          <>
+            Week of {dayLabel(days[0]!, 'long')} · <span aria-label="Week total">{formatDuration(weekTotal)}</span> tracked,{' '}
+            {formatDuration(billableTotal)} billable
+          </>
+        }
+        actions={
+          <>
+            {people && (
+              <form action="/time" className="flex items-center gap-2">
+                <input type="hidden" name="week" value={days[0]} />
+                <label htmlFor="timesheet-person" className="sr-only">Person</label>
+                <Select id="timesheet-person" name="user" defaultValue={person ?? ''} className="h-8 text-xs">
+                  {people.choices.map((p) => (
+                    <option key={p.id} value={p.id}>{p.id === self ? `${p.name} (you)` : p.name}</option>
+                  ))}
+                </Select>
+                <Button type="submit" size="sm" variant="secondary">Show</Button>
+              </form>
+            )}
+            <nav aria-label="Weeks" className="flex items-center gap-1 text-sm">
+              <Link href={link(addDays(days[0]!, -7))} className="rounded-md px-2 py-1 text-muted hover:bg-hover hover:text-ink">← Previous</Link>
+              {!days.includes(today) && (
+                <Link href={link(today)} className="rounded-md px-2 py-1 text-muted hover:bg-hover hover:text-ink">This week</Link>
+              )}
+              <Link href={link(addDays(days[0]!, 7))} className="rounded-md px-2 py-1 text-muted hover:bg-hover hover:text-ink">Next →</Link>
+            </nav>
+          </>
+        }
+      />
 
       {own && can('timeEntry:create') && (
         <div className="grid gap-6 md:grid-cols-2">
           <Card>
             <CardHeader title="Start a timer" description="Starting one stops any timer already running." />
             <div className="p-5">
-              {groups.length === 0 ? <p className="text-sm text-neutral-500">No active projects to track time on.</p> : <StartTimerForm groups={groups} />}
+              {groups.length === 0 ? <p className="text-sm text-muted">No active projects to track time on.</p> : <StartTimerForm groups={groups} />}
             </div>
           </Card>
           <Card>
             <CardHeader title="Log time" description="For work you didn't time." />
             <div className="p-5">
               {groups.length === 0 ? (
-                <p className="text-sm text-neutral-500">No active projects to log time on.</p>
+                <p className="text-sm text-muted">No active projects to log time on.</p>
               ) : (
                 <LogTimeForm groups={groups} defaultDate={days.includes(today) ? today : days[0]!} />
               )}
@@ -122,28 +127,28 @@ export default async function TimesheetPage({ searchParams }: PageProps<'/time'>
               <tr>
                 <Th>Work</Th>
                 {days.map((d) => (
-                  <Th key={d} className={`text-right ${d === today ? 'text-neutral-900 dark:text-neutral-100' : ''}`}>{dayLabel(d)}</Th>
+                  <Th key={d} className={`text-right ${d === today ? 'text-ink' : ''}`}>{dayLabel(d)}</Th>
                 ))}
                 <Th className="text-right">Total</Th>
               </tr>
             </thead>
             <tbody>
               {[...rows.values()].sort((a, b) => a.label.localeCompare(b.label)).map((row) => (
-                <tr key={row.href}>
+                <Tr key={row.href}>
                   <Td><Link href={row.href} className="hover:underline">{row.label}</Link></Td>
                   {days.map((d) => (
-                    <Td key={d} className="text-right tabular-nums text-neutral-600">{row.byDay.has(d) ? formatDuration(row.byDay.get(d)!) : ''}</Td>
+                    <Td key={d} className="text-right tabular-nums text-muted">{row.byDay.has(d) ? formatDuration(row.byDay.get(d)!) : ''}</Td>
                   ))}
                   <Td className="text-right font-medium tabular-nums">{formatDuration(row.total)}</Td>
-                </tr>
+                </Tr>
               ))}
-              <tr className="bg-neutral-50 dark:bg-neutral-900">
+              <Tr className="bg-raised">
                 <Td className="font-medium">Total</Td>
                 {days.map((d) => (
                   <Td key={d} className="text-right font-medium tabular-nums">{dayTotal(d) > 0 ? formatDuration(dayTotal(d)) : ''}</Td>
                 ))}
                 <Td className="text-right font-semibold tabular-nums">{formatDuration(weekTotal)}</Td>
-              </tr>
+              </Tr>
             </tbody>
           </Table>
         )}
@@ -154,7 +159,7 @@ export default async function TimesheetPage({ searchParams }: PageProps<'/time'>
         {entries.length === 0 ? (
           <EmptyState>Nothing yet.</EmptyState>
         ) : (
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <div className="divide-y divide-line">
             {days
               .filter((d) => entries.some((e) => e.spentOn === d))
               .map((d) => (
@@ -173,11 +178,11 @@ export default async function TimesheetPage({ searchParams }: PageProps<'/time'>
                               <Link href={e.taskId ? `/projects/${e.projectId}/tasks/${e.taskId}` : `/projects/${e.projectId}`} className="font-medium hover:underline">
                                 {e.taskTitle ?? e.projectName}
                               </Link>
-                              {e.taskTitle && <span className="text-xs text-neutral-500">{e.projectName}</span>}
-                              {e.running ? <Badge tone="green">Running</Badge> : null}
+                              {e.taskTitle && <span className="text-xs text-muted">{e.projectName}</span>}
+                              {e.running ? <Badge tone="positive">Running</Badge> : null}
                               {!e.billable && <Badge>Not billable</Badge>}
                             </div>
-                            {e.description && <p className="text-neutral-600 dark:text-neutral-400">{e.description}</p>}
+                            {e.description && <p className="text-muted">{e.description}</p>}
                           </div>
                           <div className="flex items-start gap-3">
                             <span className="pt-1 font-medium tabular-nums">{e.running ? '—' : formatDuration(e.durationSeconds!)}</span>

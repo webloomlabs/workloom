@@ -1,6 +1,6 @@
 import { minorToDecimalString } from '@workloom/core'
 import { serviceList, taxRateList } from '@workloom/core/modules'
-import { Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { FilterTabs, param } from '@/components/crm/list-controls'
 import { CreateServiceForm, ServiceControls } from '@/components/finance/finance-forms'
@@ -45,16 +45,16 @@ export default async function ServicesPage({ searchParams }: PageProps<'/setting
             <thead><tr><Th>Service</Th><Th>Pricing</Th><Th className="text-right">Standard price</Th><Th>Default tax</Th><Th /></tr></thead>
             <tbody>
               {services.map((s) => (
-                <tr key={s.id}>
+                <Tr key={s.id}>
                   <Td>
-                    <div className="font-medium">{s.name} {s.archivedAt && <Badge tone="amber">Archived</Badge>}</div>
-                    {s.description && <div className="text-xs text-neutral-500">{s.description}</div>}
+                    <div className="font-medium">{s.name} {s.archivedAt && <Badge tone="caution">Archived</Badge>}</div>
+                    {s.description && <div className="text-xs text-muted">{s.description}</div>}
                   </Td>
-                  <Td className="text-neutral-600">{label(PRICING_MODEL_LABELS, s.pricingModel)} · {label(BILLING_TYPE_LABELS, s.billingType)}</Td>
+                  <Td className="text-muted">{label(PRICING_MODEL_LABELS, s.pricingModel)} · {label(BILLING_TYPE_LABELS, s.billingType)}</Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">
                     {s.defaultPriceMinor === null ? '—' : `${money(s.defaultPriceMinor, s.currency)}${s.unit ? ` / ${s.unit}` : ''}`}
                   </Td>
-                  <Td className="text-neutral-600">{s.defaultTaxRateName ?? '—'}</Td>
+                  <Td className="text-muted">{s.defaultTaxRateName ?? '—'}</Td>
                   <Td>
                     <ServiceControls
                       service={{ ...s, defaultPrice: s.defaultPriceMinor === null ? '' : minorToDecimalString(s.defaultPriceMinor, s.currency) }}
@@ -64,7 +64,7 @@ export default async function ServicesPage({ searchParams }: PageProps<'/setting
                       archived={Boolean(s.archivedAt)}
                     />
                   </Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>

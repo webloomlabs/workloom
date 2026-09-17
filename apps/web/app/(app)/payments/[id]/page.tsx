@@ -1,6 +1,6 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
 import { invoiceList, paymentGet } from '@workloom/core/modules'
-import { Alert, Badge, Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { AllocateForm, DeletePaymentButton, EditPaymentForm, UnallocateButton } from '@/components/finance/payment-forms'
@@ -31,22 +31,22 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <Link href="/payments" className="text-sm text-neutral-500 hover:underline">← Payments</Link>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {money(payment.amountMinor, payment.currency)} {refund ? 'refunded' : 'received'}
-          </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-500">
-            {refund && <Badge tone="amber">Refund</Badge>}
+      <PageHeader
+        breadcrumb={<Link href="/payments" className="text-sm text-muted hover:underline">← Payments</Link>}
+        title={`${money(payment.amountMinor, payment.currency)} ${refund ? 'refunded' : 'received'}`}
+        description={
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {refund && <Badge tone="caution">Refund</Badge>}
             <Link href={`/companies/${payment.companyId}?tab=payments`} className="hover:underline">{payment.companyName}</Link>
             <span>{formatDate(payment.receivedOn)}</span>
             <span>{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</span>
-            {payment.reference && <span className="text-neutral-800 dark:text-neutral-200">{payment.reference}</span>}
+            {payment.reference && <span className="text-ink">{payment.reference}</span>}
           </div>
-        </div>
-        {can('payment:delete') && <DeletePaymentButton paymentId={payment.id} />}
-      </div>
+        }
+        actions={
+          can('payment:delete') && <DeletePaymentButton paymentId={payment.id} />
+        }
+      />
 
       {payment.unallocatedMinor > 0 && (
         <Alert tone="info">
@@ -67,10 +67,10 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
                 </thead>
                 <tbody>
                   {payment.allocations.map((allocation) => (
-                    <tr key={allocation.id}>
+                    <Tr key={allocation.id}>
                       <Td>
                         <Link href={`/invoices/${allocation.invoiceId}`} className="font-medium hover:underline">{allocation.invoiceTitle}</Link>
-                        <div className="text-xs text-neutral-500">{allocation.invoiceNumber}</div>
+                        <div className="text-xs text-muted">{allocation.invoiceNumber}</div>
                       </Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(allocation.amountMinor, payment.currency)}</Td>
                       {can('payment:update') && (
@@ -82,13 +82,13 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
                           />
                         </Td>
                       )}
-                    </tr>
+                    </Tr>
                   ))}
                 </tbody>
               </Table>
             )}
             {payment.unallocatedMinor > 0 && can('payment:update') && (
-              <div className="border-t border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="border-t border-line p-5">
                 <AllocateForm
                   paymentId={payment.id}
                   currency={payment.currency}
@@ -126,7 +126,7 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
           <dl className="space-y-2 p-5 text-sm" aria-label="Payment summary">
             <Row label={refund ? 'Refunded' : 'Received'} value={money(payment.amountMinor, payment.currency)} />
             <Row label="Allocated" value={money(payment.allocatedMinor, payment.currency)} />
-            <div className="flex justify-between gap-4 border-t border-neutral-200 pt-2 font-semibold dark:border-neutral-800">
+            <div className="flex justify-between gap-4 border-t border-line pt-2 font-semibold">
               <dt>On account</dt>
               <dd className="tabular-nums">{money(payment.unallocatedMinor, payment.currency)}</dd>
             </div>
@@ -134,7 +134,7 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
               <Row label={`In ${payment.baseCurrency} at ${payment.exchangeRateToBase}`} value={money(payment.amountBaseMinor, payment.baseCurrency)} />
             )}
           </dl>
-          {payment.notes && <p className="whitespace-pre-wrap border-t border-neutral-200 p-5 text-sm dark:border-neutral-800">{payment.notes}</p>}
+          {payment.notes && <p className="whitespace-pre-wrap border-t border-line p-5 text-sm">{payment.notes}</p>}
         </Card>
       </div>
     </div>
@@ -144,7 +144,7 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-neutral-500">{label}</dt>
+      <dt className="text-muted">{label}</dt>
       <dd className="tabular-nums">{value}</dd>
     </div>
   )

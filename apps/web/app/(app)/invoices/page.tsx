@@ -1,5 +1,5 @@
 import { invoiceList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
@@ -35,14 +35,16 @@ export default async function InvoicesPage({ searchParams }: PageProps<'/invoice
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">Invoices</h1>
-        {viewer.permissions.has('invoice:create') && (
-          <Link href="/invoices/new" className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900">
-            New invoice
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title="Invoices"
+        actions={
+          viewer.permissions.has('invoice:create') && (
+            <Link href="/invoices/new" className={buttonStyles()}>
+              New invoice
+            </Link>
+          )
+        }
+      />
       <Card>
         <CardHeader
           title={VIEWS[view]?.label ?? 'All'}
@@ -74,17 +76,17 @@ export default async function InvoicesPage({ searchParams }: PageProps<'/invoice
               {invoices.data.map((invoice) => {
                 const overdue = invoice.dueDate && invoice.dueDate < today && invoice.amountDueMinor > 0 && !['draft', 'cancelled', 'paid'].includes(invoice.status)
                 return (
-                  <tr key={invoice.id}>
+                  <Tr key={invoice.id}>
                     <Td>
                       <Link href={`/invoices/${invoice.id}`} className="font-medium hover:underline">{invoice.title}</Link>
-                      <div className="text-xs text-neutral-500">{invoice.number ?? 'Draft'}</div>
+                      <div className="text-xs text-muted">{invoice.number ?? 'Draft'}</div>
                     </Td>
-                    <Td><Link href={`/companies/${invoice.companyId}?tab=invoices`} className="text-neutral-600 hover:underline">{invoice.companyName}</Link></Td>
+                    <Td><Link href={`/companies/${invoice.companyId}?tab=invoices`} className="text-muted hover:underline">{invoice.companyName}</Link></Td>
                     <Td><InvoiceStatusBadge status={invoice.status} overdue={Boolean(overdue)} /></Td>
                     <Td className="whitespace-nowrap text-right tabular-nums">{money(invoice.totalMinor, invoice.currency)}</Td>
                     <Td className="whitespace-nowrap text-right tabular-nums">{invoice.amountDueMinor === 0 ? '—' : money(invoice.amountDueMinor, invoice.currency)}</Td>
-                    <Td className={`whitespace-nowrap ${overdue ? 'font-medium text-red-600' : 'text-neutral-500'}`}>{formatDate(invoice.dueDate)}</Td>
-                  </tr>
+                    <Td className={`whitespace-nowrap ${overdue ? 'font-medium text-critical' : 'text-muted'}`}>{formatDate(invoice.dueDate)}</Td>
+                  </Tr>
                 )
               })}
             </tbody>

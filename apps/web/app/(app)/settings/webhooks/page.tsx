@@ -1,5 +1,5 @@
 import { webhookList } from '@workloom/core/modules'
-import { Card, CardHeader, EmptyState, Table, Td, Th } from '@workloom/ui'
+import { Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { EndpointStatus } from '@/components/endpoint-status'
@@ -35,16 +35,16 @@ export default async function WebhooksPage() {
             <thead><tr><Th>Endpoint</Th><Th>Events</Th><Th>Status</Th></tr></thead>
             <tbody>
               {endpoints.map((e) => (
-                <tr key={e.id}>
+                <Tr key={e.id}>
                   <Td>
                     <Link href={`/settings/webhooks/${e.id}`} className="font-medium hover:underline">
                       {e.description || e.url}
                     </Link>
-                    {e.description && <div className="font-mono text-xs text-neutral-500">{e.url}</div>}
+                    {e.description && <div className="font-mono text-xs text-muted">{e.url}</div>}
                   </Td>
-                  <Td className="text-xs text-neutral-600">{e.eventTypes.join(', ')}</Td>
+                  <Td className="text-xs text-muted">{e.eventTypes.join(', ')}</Td>
                   <Td><EndpointStatus enabled={e.enabled} disabledReason={e.disabledReason} /></Td>
-                </tr>
+                </Tr>
               ))}
             </tbody>
           </Table>
