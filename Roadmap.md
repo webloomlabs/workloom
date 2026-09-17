@@ -85,7 +85,7 @@ Entities: `Lead`, `Company`, `Contact`, `Deal`, `Activity`, `Note`.
 
 The unified relationship view. In MVP a client page shows: company info, contacts, projects, quotes, invoices, payments, expenses, activity history.
 
-Tabs for support tickets, maintenance, infrastructure, and documents are Phase 2 — the client record is designed to accommodate them, but they are not built yet.
+Tabs for support tickets, maintenance, infrastructure, and documents were Phase 2; they shipped in S11 and now count what they hold.
 
 ## 1.4 Projects, Milestones & Tasks
 
@@ -191,22 +191,27 @@ Phase 2 items are independent of one another and can be reordered based on what 
 | --- | --- |
 | Client portal | Clients view projects, progress, milestones, client-visible tasks, proposals, contracts, invoices, payment status, documents, tickets. Strictly honours the client-visible flag built in MVP. |
 | Contracts | Contract records, templates, versioning, e-signature integration |
-| Documents | Document storage against clients and projects |
-| Recurring invoices | Schedules, generation, and automated sending |
-| Recurring tasks | For maintenance plans and internal routines |
+| Documents | **Shipped (S11).** Filed against a client, optionally a project; object storage, signed downloads, client-visible flag |
+| Recurring invoices | **Shipped (S11)**, except automated sending: a schedule raises a *draft* each period and a person issues it |
+| Recurring tasks | For maintenance plans and internal routines. Belongs with project templates |
 | Email integration | Outbound transactional email, inbound email-to-ticket, email logging on client records |
 | Notifications | In-app and email notifications; per-user preferences |
-| Support & maintenance | Tickets, bug reports, feature requests, SLA tracking, maintenance plans, maintenance history |
+| Support & maintenance | **Shipped (S11).** Tickets with two SLA clocks, internal and client-visible replies, maintenance plans, inclusions, and visit history |
 
 ## 2.2 Infrastructure Management
 
 The main agency-specific differentiator (§12).
 
-- Domains (with expiry tracking), hosting, servers, applications
-- Environments and deployments
-- SSL, backups, monitoring status
-- Integrations: Cloudflare, Vercel, Coolify, GitHub/GitLab, VPS providers, uptime monitoring
-- **Hard requirement:** credentials never stored as plain text; strong encryption and restricted role access
+- **Shipped (S11):** domains, hosting, servers, applications, certificates and
+  SaaS, each with an environment, a renewal date, a renewal cost, and an hourly
+  sweep that announces what is approaching and marks what has passed.
+- Still to come: deployments, backup and monitoring status.
+- Still to come: integrations with Cloudflare, Vercel, Coolify, GitHub/GitLab,
+  VPS providers, and uptime monitoring.
+- **Hard requirement, deliberately deferred:** credentials are not stored at all
+  until they can be stored properly — envelope encryption, a restricted role,
+  and an audit entry on every read. A `password` column added in the meantime is
+  how secrets end up in a backup in plain text.
 
 ## 2.3 Automation
 
@@ -266,10 +271,10 @@ and the generalization rule from §27:
 | --- | --- | --- |
 | **Outcome** | The agency lifecycle works, self-hosted, end-to-end | The lifecycle is exposed, automated, and extensible |
 | **CRM** | Leads, companies, contacts, deals, pipeline, activities | — |
-| **Clients** | Profiles, contacts, activity history | Portal, documents, tickets, maintenance |
+| **Clients** | Profiles, contacts, activity history, and (S11) documents, tickets, maintenance | Portal |
 | **Projects** | Projects, milestones, tasks, dependencies, progress, time tracking, profitability | Recurring tasks, Gantt views |
-| **Finance** | Quotes, invoices, payments, expenses, services, tax, PDF | Contracts, recurring invoices, gateways, accounting |
-| **Infrastructure** | — | Domains, hosting, servers, deployments, monitoring |
+| **Finance** | Quotes, invoices, payments, expenses, services, tax, PDF, and (S11) recurring billing | Contracts, gateways, accounting |
+| **Infrastructure** | (S11) Domains, hosting, servers, applications, renewals | Deployments, monitoring, provider integrations |
 | **Automation** | Events defined, webhooks, API keys | Event engine, triggers, scheduling, n8n |
 | **AI** | — | Assistant, summaries, generation, agents |
 | **Platform** | REST API, RBAC, audit log, Docker Compose | Plugins, SDK, GraphQL, SSO, hosted version |

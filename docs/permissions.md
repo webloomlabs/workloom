@@ -33,6 +33,15 @@ was a decision.
   rewrite what people recorded working.
 - An **account manager** can quote and can choose the tax on a line, but cannot
   configure tax rates, and cannot record money received.
+- A developer answers **tickets** but does not raise or delete them: what a
+  client is owed, and when it is finished with, is not theirs to decide.
+- **Finance** does not read support tickets — a client's problems are not
+  billing information — but does read maintenance plans and infrastructure,
+  because both are what the money is for.
+- An **account manager** sets up a recurring schedule but cannot delete one:
+  ending it leaves the record of what was agreed, deleting it does not.
+- Only owners, admins, and managers touch **infrastructure**. A lapsed domain
+  is an outage, and the list of who can change one stays short.
 - Everyone can see the organization they belong to.
 
 ## The matrix
@@ -237,6 +246,51 @@ was a decision.
 | `expense:create` | ● | ● | ● | · | · | ● |
 | `expense:update` | ● | ● | · | · | · | ● |
 | `expense:delete` | ● | ● | · | · | · | ● |
+
+**ticket**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ticket:read` | ● | ● | ● | ● | ● | · |
+| `ticket:create` | ● | ● | ● | · | ● | · |
+| `ticket:update` | ● | ● | ● | ● | ● | · |
+| `ticket:delete` | ● | ● | ● | · | ● | · |
+
+**maintenancePlan**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `maintenancePlan:read` | ● | ● | ● | ● | ● | ● |
+| `maintenancePlan:create` | ● | ● | ● | · | ● | · |
+| `maintenancePlan:update` | ● | ● | ● | · | ● | · |
+| `maintenancePlan:delete` | ● | ● | ● | · | ● | · |
+
+**infrastructure**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `infrastructure:read` | ● | ● | ● | ● | ● | ● |
+| `infrastructure:create` | ● | ● | ● | · | · | · |
+| `infrastructure:update` | ● | ● | ● | · | · | · |
+| `infrastructure:delete` | ● | ● | ● | · | · | · |
+
+**document**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `document:read` | ● | ● | ● | ● | ● | ● |
+| `document:create` | ● | ● | ● | · | ● | · |
+| `document:update` | ● | ● | ● | · | ● | · |
+| `document:delete` | ● | ● | ● | · | ● | · |
+
+**billingSchedule**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `billingSchedule:read` | ● | ● | ● | · | ● | ● |
+| `billingSchedule:create` | ● | ● | · | · | ● | ● |
+| `billingSchedule:update` | ● | ● | · | · | ● | ● |
+| `billingSchedule:delete` | ● | ● | · | · | · | ● |
 
 **report**
 

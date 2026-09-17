@@ -59,6 +59,11 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
             <Link href={`/companies/${invoice.companyId}?tab=invoices`} className="hover:underline">{invoice.companyName}</Link>
             {invoice.contactName && <span>{invoice.contactName}</span>}
             {invoice.quoteId && <Link href={`/quotes/${invoice.quoteId}`} className="hover:underline">From a quote</Link>}
+            {invoice.recurring && (
+              <Link href={`/recurring/${invoice.recurring.scheduleId}`} className="hover:underline">
+                {formatDate(invoice.recurring.periodStart)} — {formatDate(invoice.recurring.periodEnd)}, from {invoice.recurring.scheduleName}
+              </Link>
+            )}
             <span>{TAX_MODE_LABELS[invoice.taxMode]}</span>
           </div>
         }

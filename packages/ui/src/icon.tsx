@@ -367,3 +367,39 @@ export const WebhookIcon = icon(
   </>,
   'WebhookIcon',
 )
+
+export const LifebuoyIcon = icon(
+  <>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="m6 6 3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5" />
+  </>,
+  'LifebuoyIcon',
+)
+
+export const ShieldIcon = icon(
+  <>
+    <path d="M12 3.5 5 6v6c0 4 2.9 7.3 7 8.5 4.1-1.2 7-4.5 7-8.5V6l-7-2.5Z" />
+    <path d="m9 12 2.2 2.2L15.5 10" />
+  </>,
+  'ShieldIcon',
+)
+
+export const ServerIcon = icon(
+  <>
+    <rect x="3" y="4" width="18" height="7" rx="2" />
+    <rect x="3" y="13" width="18" height="7" rx="2" />
+    <path d="M7 7.5h.01M7 16.5h.01" />
+  </>,
+  'ServerIcon',
+)
+
+export const RepeatIcon = icon(
+  <>
+    <path d="M4 10V9a3 3 0 0 1 3-3h10.5" />
+    <path d="m15 3.5 3 2.5-3 2.5" />
+    <path d="M20 14v1a3 3 0 0 1-3 3H6.5" />
+    <path d="m9 20.5-3-2.5 3-2.5" />
+  </>,
+  'RepeatIcon',
+)

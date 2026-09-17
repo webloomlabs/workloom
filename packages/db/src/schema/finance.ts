@@ -45,7 +45,12 @@ export const INVOICE_STATUSES = ['draft', 'sent', 'viewed', 'partially_paid', 'p
 export const TAX_MODES = ['exclusive', 'inclusive'] as const
 export const SERVICE_PRICING_MODELS = ['fixed', 'hourly', 'per_unit'] as const
 export const SERVICE_BILLING_TYPES = ['one_off', 'recurring'] as const
-export const DOCUMENT_KINDS = ['quote', 'invoice'] as const
+/**
+ * What the per-organization numbering sequences hand out numbers for. Tickets
+ * share the mechanism because they need the same thing: a per-tenant counter
+ * that does not skip and does not collide.
+ */
+export const DOCUMENT_KINDS = ['quote', 'invoice', 'ticket'] as const
 
 function oneOf(values: readonly string[]) {
   return sql.raw(`(${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`)

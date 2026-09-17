@@ -470,7 +470,7 @@ describe('the client view', () => {
   }
   const section = (summary: Summary, key: string) => summary.sections.find((s) => s.key === key)
 
-  it('counts what each section holds, and reports what is still to come', async () => {
+  it('counts what each section holds', async () => {
     const company = await run('company.create', asA(), { name: `Summary ${unique()}`, lifecycleStage: 'client' })
     await run('contact.create', asA(), { firstName: 'One', companyId: company.id })
     const archived = await run('contact.create', asA(), { firstName: 'Gone', companyId: company.id })
@@ -493,7 +493,12 @@ describe('the client view', () => {
     expect(section(summary, 'projects')).toMatchObject({ status: 'available', count: 0 })
     expect(section(summary, 'quotes')).toMatchObject({ status: 'available', count: 0 })
     expect(section(summary, 'invoices')).toMatchObject({ status: 'available', count: 0 })
-    expect(section(summary, 'support')).toMatchObject({ status: 'planned', count: null })
+    // Every section the specification puts on a client is now built; the
+    // "upcoming" and "planned" states remain for whatever is declared next.
+    expect(section(summary, 'support')).toMatchObject({ status: 'available', count: 0 })
+    expect(section(summary, 'maintenance')).toMatchObject({ status: 'available', count: 0 })
+    expect(section(summary, 'infrastructure')).toMatchObject({ status: 'available', count: 0 })
+    expect(section(summary, 'documents')).toMatchObject({ status: 'available', count: 0 })
 
     expect(summary.deals).toEqual({
       openCount: 2,

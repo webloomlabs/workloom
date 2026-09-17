@@ -47,6 +47,20 @@ export const STATEMENTS = {
   payment: ['read', 'create', 'update', 'delete'],
   expense: ['read', 'create', 'update', 'delete'],
 
+  /**
+   * Support tickets. `update` covers replying: a reply is a change to the
+   * ticket's state -- it is what stops its response clock.
+   */
+  ticket: ['read', 'create', 'update', 'delete'],
+  /** Maintenance plans, what they include, and the visits performed under them. */
+  maintenancePlan: ['read', 'create', 'update', 'delete'],
+  /** Domains, hosting, servers, and everything else with a renewal date. */
+  infrastructure: ['read', 'create', 'update', 'delete'],
+  /** Documents filed against a client. */
+  document: ['read', 'create', 'update', 'delete'],
+  /** Recurring billing: the schedules that raise invoices on their own. */
+  billingSchedule: ['read', 'create', 'update', 'delete'],
+
   /** Financial reporting, including project profitability and margins. */
   report: ['read', 'readFinancial'],
 } as const satisfies Record<string, readonly string[]>

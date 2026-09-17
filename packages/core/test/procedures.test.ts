@@ -255,6 +255,69 @@ async function archived(procedure: string, id: string): Promise<{ id: string }> 
   return { id }
 }
 
+async function createTicket(input: Record<string, unknown> = {}): Promise<string> {
+  const ticket = (await run('ticket.create', ownerOfA(), {
+    companyId: await createCompany(),
+    title: `Ticket ${unique()}`,
+    body: 'The contact form stopped sending.',
+    ...input,
+  })) as { id: string }
+  return ticket.id
+}
+
+async function createPlan(input: Record<string, unknown> = {}): Promise<string> {
+  const plan = (await run('maintenancePlan.create', ownerOfA(), {
+    companyId: await createCompany(),
+    name: `Care plan ${unique()}`,
+    items: ['Security updates', 'Weekly backups'],
+    ...input,
+  })) as { id: string }
+  return plan.id
+}
+
+async function createVisit(): Promise<string> {
+  const visit = (await run('maintenanceVisit.create', ownerOfA(), {
+    planId: await createPlan(),
+    summary: `Applied updates ${unique()}`,
+    kind: 'security_update',
+  })) as { id: string }
+  return visit.id
+}
+
+async function createAsset(input: Record<string, unknown> = {}): Promise<string> {
+  const asset = (await run('infrastructureAsset.create', ownerOfA(), {
+    name: `example-${unique()}.test`,
+    kind: 'domain',
+    provider: 'Registrar',
+    expiresOn: '2030-01-31',
+    ...input,
+  })) as { id: string }
+  return asset.id
+}
+
+async function createDocument(input: Record<string, unknown> = {}): Promise<string> {
+  const document = (await run('document.upload', ownerOfA(), {
+    companyId: await createCompany(),
+    file: aFile(),
+    title: `Contract ${unique()}`,
+    category: 'contract',
+    ...input,
+  })) as { id: string }
+  return document.id
+}
+
+/** A monthly schedule with one line, starting today, so a period is due now. */
+async function createSchedule(input: Record<string, unknown> = {}): Promise<{ id: string; companyId: string }> {
+  const companyId = (input.companyId as string | undefined) ?? (await createCompany())
+  const schedule = (await run('billingSchedule.create', ownerOfA(), {
+    companyId,
+    name: `Retainer ${unique()}`,
+    lines: [{ description: 'Monthly care plan', unitAmountMinor: 500_00 }],
+    ...input,
+  })) as { id: string }
+  return { id: schedule.id, companyId }
+}
+
 type Fixture = () => Promise<unknown>
 
 /**
@@ -613,6 +676,69 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'expense.delete': async () => ({ id: await createExpense() }),
 
 
+  'ticket.create': async () => ({ companyId: await createCompany(), title: `Contact form broken ${unique()}`, body: 'Nothing arrives.', priority: 'high', type: 'bug' }),
+  'ticket.update': async () => ({ id: await createTicket(), priority: 'urgent', assigneeId: ownerA }),
+  'ticket.changeStatus': [
+    async () => ({ id: await createTicket(), status: 'in_progress' }),
+    async () => ({ id: await createTicket(), status: 'resolved' }),
+    async () => ({ id: await createTicket(), status: 'closed' }),
+    // Reopening: the ticket has to have been resolved for the event to fire.
+    async () => {
+      const id = await createTicket()
+      await run('ticket.changeStatus', ownerOfA(), { id, status: 'resolved' })
+      return { id, status: 'open' }
+    },
+  ],
+  'ticket.delete': async () => ({ id: await createTicket() }),
+  'ticketMessage.create': [
+    async () => ({ ticketId: await createTicket(), body: 'Looking into it now.' }),
+    async () => ({ ticketId: await createTicket(), body: 'Fixed, please check.', status: 'resolved' }),
+    // An internal note announces nothing, which is the point of it.
+    async () => ({ ticketId: await createTicket(), body: 'Caused by the SMTP change.', internal: true }),
+  ],
+
+  'maintenancePlan.create': async () => ({ companyId: await createCompany(), name: `Care plan ${unique()}`, responseHours: 4, items: ['Security updates'] }),
+  'maintenancePlan.update': async () => ({ id: await createPlan(), notes: `Renegotiated ${unique()}`, items: ['Security updates', 'Uptime monitoring'] }),
+  'maintenancePlan.changeStatus': [
+    async () => ({ id: await createPlan(), status: 'paused' }),
+    async () => ({ id: await createPlan(), status: 'ended' }),
+  ],
+  'maintenancePlan.delete': async () => ({ id: await createPlan() }),
+  'maintenanceVisit.create': async () => ({ planId: await createPlan(), summary: `Applied core updates ${unique()}`, kind: 'security_update', minutesSpent: 45 }),
+  'maintenanceVisit.delete': async () => ({ id: await createVisit() }),
+
+  'infrastructureAsset.create': async () => ({ name: `example-${unique()}.test`, kind: 'domain', expiresOn: '2030-06-30', renewalCostMinor: 25_00, currency: 'AUD' }),
+  'infrastructureAsset.update': async () => ({ id: await createAsset(), provider: `Registrar ${unique()}`, autoRenew: true }),
+  'infrastructureAsset.delete': async () => ({ id: await createAsset() }),
+
+  'document.upload': async () => ({ companyId: await createCompany(), file: aFile(), title: `Signed contract ${unique()}`, category: 'contract' }),
+  'document.update': async () => ({ id: await createDocument(), notes: `Countersigned ${unique()}`, clientVisible: true }),
+  'document.delete': async () => ({ id: await createDocument() }),
+
+  'billingSchedule.create': async () => ({
+    companyId: await createCompany(),
+    name: `Retainer ${unique()}`,
+    intervalUnit: 'month',
+    lines: [{ description: 'Care plan', unitAmountMinor: 500_00 }],
+  }),
+  'billingSchedule.update': async () => ({ id: (await createSchedule()).id, name: `Retainer ${unique()}` }),
+  'billingSchedule.changeStatus': [
+    async () => ({ id: (await createSchedule()).id, status: 'paused' }),
+    async () => ({ id: (await createSchedule()).id, status: 'ended' }),
+  ],
+  'billingSchedule.delete': async () => ({ id: (await createSchedule()).id }),
+  'billingScheduleLine.add': async () => ({ scheduleId: (await createSchedule()).id, description: `Extra hours ${unique()}`, unitAmountMinor: 150_00 }),
+  'billingScheduleLine.remove': async () => {
+    const schedule = (await run('billingSchedule.create', ownerOfA(), {
+      companyId: await createCompany(),
+      name: `Retainer ${unique()}`,
+      lines: [{ description: 'Care plan', unitAmountMinor: 500_00 }, { description: 'Hosting', unitAmountMinor: 50_00 }],
+    })) as { id: string; lines: Array<{ id: string }> }
+    return { scheduleId: schedule.id, lineId: schedule.lines[1]!.id }
+  },
+  // One occurrence, so the same call raises the invoice and ends the schedule.
+  'billingSchedule.generate': async () => ({ id: (await createSchedule({ maxOccurrences: 1 })).id }),
+
   'attachment.upload': async () => ({ projectId: await createProject(), file: aFile() }),
   'attachment.delete': async () => {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
@@ -661,6 +787,14 @@ const READS: Record<string, Fixture> = {
     const attachment = (await run('attachment.upload', ownerOfA(), { projectId: await createProject(), file: aFile() })) as { id: string }
     return { id: attachment.id }
   },
+  'ticket.get': async () => ({ id: await createTicket() }),
+  'ticketMessage.list': async () => ({ ticketId: await createTicket() }),
+  'maintenancePlan.get': async () => ({ id: await createPlan() }),
+  'infrastructureAsset.get': async () => ({ id: await createAsset() }),
+  'document.get': async () => ({ id: await createDocument() }),
+  'document.download': async () => ({ id: await createDocument() }),
+  'billingSchedule.get': async () => ({ id: (await createSchedule()).id }),
+  'billingSchedule.invoices': async () => ({ id: (await createSchedule()).id }),
 }
 
 describe('audit coverage', () => {
@@ -740,7 +874,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId']
+const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {

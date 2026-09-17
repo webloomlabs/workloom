@@ -54,6 +54,7 @@ const SECTIONS: Array<{ key: string; label: string; items: Entry[] }> = [
       { href: '/invoices', label: 'Invoices', icon: 'invoices', permission: 'invoice:read' },
       { href: '/payments', label: 'Payments', icon: 'payments', permission: 'payment:read' },
       { href: '/expenses', label: 'Expenses', icon: 'expenses', permission: 'expense:read' },
+      { href: '/recurring', label: 'Recurring', icon: 'recurring', permission: 'billingSchedule:read' },
       { href: '/reports', label: 'Reports', icon: 'reports', permission: 'report:readFinancial' },
     ],
   },
@@ -64,6 +65,15 @@ const SECTIONS: Array<{ key: string; label: string; items: Entry[] }> = [
       { href: '/projects', label: 'Projects', icon: 'projects', permission: 'project:read' },
       { href: '/tasks', label: 'My tasks', icon: 'tasks', permission: 'task:read' },
       { href: '/time', label: 'Time', icon: 'time', permission: 'timeEntry:read' },
+    ],
+  },
+  {
+    key: 'service',
+    label: 'Service',
+    items: [
+      { href: '/tickets', label: 'Tickets', icon: 'tickets', permission: 'ticket:read' },
+      { href: '/maintenance', label: 'Maintenance', icon: 'maintenance', permission: 'maintenancePlan:read' },
+      { href: '/infrastructure', label: 'Infrastructure', icon: 'infrastructure', permission: 'infrastructure:read' },
     ],
   },
 ]

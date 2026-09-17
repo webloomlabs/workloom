@@ -17,7 +17,12 @@ so that a project is never separated from the commercial context around it.
 > and the overdue sweep (S7c); project profitability and revenue reporting (S8);
 > a dashboard (S9); and release hardening — containers, exports, published
 > OpenAPI, backup and restore, and a security pass (S10).
-> Phase 2 is in [Roadmap.md](Roadmap.md).
+>
+> Since then, the first of Phase 2: support tickets with service levels,
+> maintenance plans and their visit history, infrastructure with renewal
+> tracking, documents filed against a client, and recurring billing that raises
+> a draft invoice each period (S11).
+> The rest of Phase 2 is in [Roadmap.md](Roadmap.md).
 
 ## Quick start
 

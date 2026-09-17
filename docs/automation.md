@@ -36,6 +36,20 @@ create a task.
 returns the original response instead of recording the money twice, which is
 what makes the job safe to retry.
 
+**Warn someone before a domain lapses.** Subscribe to
+`infrastructure_asset.expiring`, emitted once per approaching renewal by the
+hourly sweep — and again if the date moves, because a renewal re-arms it. The
+payload carries the asset, the client it belongs to, and how many days are left.
+`infrastructure_asset.expired` fires for one that got away.
+
+**Escalate a ticket nobody has answered.** Subscribe to `ticket.created` and
+compare `firstResponseDueAt` against the clock; `ticket.replied` tells you when
+the client got an answer, and internal notes deliberately do not fire it.
+
+**Know when a retainer has billed.** `billing_schedule.invoiced` carries the
+schedule, the draft invoice, and the period it covers — for a reminder to issue
+it, or to post the figure into a dashboard.
+
 **A nightly copy into your warehouse.** `GET /api/v1/exports/invoices` and the
 other resources; see [api.md](api.md).
 

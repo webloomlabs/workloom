@@ -146,11 +146,21 @@ export const invoiceSummaryOutput = z.object({
   updatedAt: z.date(),
 })
 
+/** Where a generated invoice came from. Null for one someone wrote by hand. */
+export const invoiceOriginOutput = z.object({
+  scheduleId: z.uuid(),
+  scheduleName: z.string(),
+  periodStart: z.iso.date(),
+  periodEnd: z.iso.date(),
+})
+
 export const invoiceOutput = invoiceSummaryOutput.extend({
   notes: z.string().nullable(),
   terms: z.string().nullable(),
   lines: z.array(invoiceLineOutput),
   taxes: z.array(documentTaxOutput),
+  /** The schedule and period that raised it, for one that was not written by hand. */
+  recurring: invoiceOriginOutput.nullable(),
   /** The link a client opens to see and pay it. Null while the invoice is a draft. */
   publicUrl: z.url().nullable(),
 })
@@ -229,8 +239,32 @@ export async function getInvoice(ctx: ActorContext, id: string): Promise<Invoice
     terms: row.invoice.terms,
     lines,
     taxes: taxesFromLines(lines),
+    recurring: await originOf(ctx, id),
     publicUrl: row.invoice.status === 'draft' ? null : documentLink('invoice', ctx.organizationId, id),
   }
+}
+
+/**
+ * The schedule and period behind an invoice, where one raised it.
+ *
+ * Read from `billing_schedule_invoices` rather than a column on the invoice:
+ * the same row is what makes billing a period twice impossible, so there is
+ * exactly one place that knows.
+ */
+async function originOf(ctx: ActorContext, invoiceId: string) {
+  const b = schema.billingScheduleInvoices
+  const [row] = await ctx.tx
+    .select({
+      scheduleId: b.scheduleId,
+      scheduleName: schema.billingSchedules.name,
+      periodStart: b.periodStart,
+      periodEnd: b.periodEnd,
+    })
+    .from(b)
+    .innerJoin(schema.billingSchedules, eq(schema.billingSchedules.id, b.scheduleId))
+    .where(eq(b.invoiceId, invoiceId))
+    .limit(1)
+  return row ?? null
 }
 
 export async function loadInvoice(ctx: ActorContext, id: string, options: { lock?: boolean } = {}): Promise<InvoiceRow> {
@@ -249,7 +283,7 @@ function requireDraft(invoice: InvoiceRow): void {
   }
 }
 
-async function recalculate(ctx: ActorContext, invoiceId: string): Promise<void> {
+export async function recalculate(ctx: ActorContext, invoiceId: string): Promise<void> {
   const invoice = await loadInvoice(ctx, invoiceId)
   const lines = await loadLines(ctx, invoiceId)
   const result = priceDocument(invoice, lines)

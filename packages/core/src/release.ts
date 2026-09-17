@@ -7,7 +7,7 @@
  * that check a declaration is honoured key off it. Add a slice here as part of
  * its definition of done.
  */
-export const SHIPPED_SLICES: ReadonlySet<string> = new Set(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7a', 'S7b', 'S7c', 'S8', 'S9', 'S10'])
+export const SHIPPED_SLICES: ReadonlySet<string> = new Set(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7a', 'S7b', 'S7c', 'S8', 'S9', 'S10', 'S11'])
 
 export function isShipped(slice: string): boolean {
   return SHIPPED_SLICES.has(slice)

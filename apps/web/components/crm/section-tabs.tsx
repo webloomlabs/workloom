@@ -22,7 +22,7 @@ export function SectionTabs({ tabs, active, label }: { tabs: SectionTab[]; activ
 
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-line">
-      <nav aria-label={label} className="wl-scroll -mb-px flex gap-1 overflow-x-auto">
+      <nav aria-label={label} className="-mb-px flex flex-wrap gap-x-1">
         {available.map((tab) => {
           const current = tab.key === active
           return (

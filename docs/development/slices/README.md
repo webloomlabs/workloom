@@ -44,3 +44,4 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S8 — Profitability and reporting](S8.md) | Done |
 | [S9 — Dashboard](S9.md) | Done |
 | [S10 — Release hardening](S10.md) | Done |
+| [S11 — Support, maintenance, infrastructure, documents, recurring billing](S11.md) | Done |

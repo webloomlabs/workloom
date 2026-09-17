@@ -119,6 +119,39 @@ const definitions = {
   'expense.created': { description: 'An expense was recorded', since: 'S7c' },
   'expense.updated': { description: 'An expense was edited', since: 'S7c' },
   'expense.deleted': { description: 'An expense was deleted', since: 'S7c' },
+
+  'ticket.created': { description: 'A support ticket was raised', since: 'S11' },
+  'ticket.updated': { description: "A ticket's details changed", since: 'S11' },
+  'ticket.assigned': { description: 'A ticket was assigned to someone', since: 'S11' },
+  'ticket.status_changed': { description: "A ticket's status changed", since: 'S11' },
+  'ticket.replied': { description: 'A reply was posted on a ticket. Internal notes do not emit.', since: 'S11' },
+  'ticket.resolved': { description: 'A ticket was resolved', since: 'S11' },
+  'ticket.reopened': { description: 'A resolved or closed ticket was reopened', since: 'S11' },
+  'ticket.closed': { description: 'A ticket was closed', since: 'S11' },
+  'ticket.deleted': { description: 'A ticket was deleted', since: 'S11' },
+
+  'maintenance_plan.created': { description: 'A maintenance plan was created', since: 'S11' },
+  'maintenance_plan.updated': { description: "A maintenance plan's details or inclusions changed", since: 'S11' },
+  'maintenance_plan.status_changed': { description: 'A maintenance plan was paused, resumed, or ended', since: 'S11' },
+  'maintenance_plan.deleted': { description: 'A maintenance plan was deleted', since: 'S11' },
+  'maintenance_visit.logged': { description: 'Maintenance work was recorded against a plan', since: 'S11' },
+  'maintenance_visit.deleted': { description: 'A recorded maintenance visit was deleted', since: 'S11' },
+
+  'infrastructure_asset.created': { description: 'A domain, host, server, or application was recorded', since: 'S11' },
+  'infrastructure_asset.updated': { description: "An asset's details changed", since: 'S11' },
+  'infrastructure_asset.deleted': { description: 'An asset was deleted', since: 'S11' },
+  'infrastructure_asset.expiring': { description: 'An asset is approaching its renewal date', since: 'S11' },
+  'infrastructure_asset.expired': { description: 'An asset passed its renewal date', since: 'S11' },
+
+  'document.uploaded': { description: 'A document was filed against a client', since: 'S11' },
+  'document.updated': { description: "A document's details changed", since: 'S11' },
+  'document.deleted': { description: 'A document was deleted', since: 'S11' },
+
+  'billing_schedule.created': { description: 'A recurring billing schedule was created', since: 'S11' },
+  'billing_schedule.updated': { description: 'A schedule or its lines changed', since: 'S11' },
+  'billing_schedule.status_changed': { description: 'A schedule was paused, resumed, or ended', since: 'S11' },
+  'billing_schedule.invoiced': { description: 'A schedule raised a draft invoice for a period', since: 'S11' },
+  'billing_schedule.deleted': { description: 'A schedule was deleted', since: 'S11' },
 } as const satisfies Record<string, Definition>
 
 export type EventType = keyof typeof definitions

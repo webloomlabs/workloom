@@ -57,14 +57,26 @@ test('a converted lead becomes a client with a unified page', async ({ page, bas
   await expect(page.getByText('Sent the proposal')).toBeVisible()
   await expect(sections.getByRole('link', { name: /Activity/ })).toContainText('2')
 
-  // Sections still to come are shown, but cannot be opened.
-  const notYet = page.getByRole('list', { name: 'Not yet available' })
-  for (const label of ['Support', 'Maintenance', 'Infrastructure', 'Documents']) {
-    await expect(notYet.getByText(label)).toBeVisible()
-    await expect(page.getByRole('link', { name: new RegExp(`^${label}`) })).toHaveCount(0)
-  }
-  // A section that has not shipped yet falls back to the overview.
-  await page.goto(`${new URL(page.url()).pathname}?tab=support`)
+  // The sections that came with support, maintenance, infrastructure, and
+  // documents open like the rest, and start empty for a new client.
+  await sections.getByRole('link', { name: /^Support/ }).click()
+  await expect(page).toHaveURL(/tab=support/)
+  await expect(page.getByText('Nothing raised yet.')).toBeVisible()
+
+  await sections.getByRole('link', { name: /^Maintenance/ }).click()
+  await expect(page).toHaveURL(/tab=maintenance/)
+  await expect(page.getByText('No maintenance plan.', { exact: false })).toBeVisible()
+
+  await sections.getByRole('link', { name: /^Infrastructure/ }).click()
+  await expect(page).toHaveURL(/tab=infrastructure/)
+  await expect(page.getByText('Nothing recorded.', { exact: false })).toBeVisible()
+
+  await sections.getByRole('link', { name: /^Documents/ }).click()
+  await expect(page).toHaveURL(/tab=documents/)
+  await expect(page.getByText('Nothing filed yet.')).toBeVisible()
+
+  // An unknown section still falls back to the overview rather than erroring.
+  await page.goto(`${new URL(page.url()).pathname}?tab=nonsense`)
   await expect(page.getByRole('link', { name: /Overview/ })).toHaveAttribute('aria-current', 'page')
 
   await sections.getByRole('link', { name: 'Details' }).click()
@@ -85,6 +97,6 @@ test('the API describes the same client view', async ({ page, baseURL }) => {
 
   const summary = await (await page.request.get(`/api/v1/companies/${clients.data[0].id}/summary`)).json()
   const status = Object.fromEntries(summary.sections.map((s: { key: string; status: string }) => [s.key, s.status]))
-  expect(status).toMatchObject({ overview: 'available', contacts: 'available', projects: 'available', quotes: 'available', invoices: 'available', payments: 'available', expenses: 'available', support: 'planned' })
+  expect(status).toMatchObject({ overview: 'available', contacts: 'available', projects: 'available', quotes: 'available', invoices: 'available', payments: 'available', expenses: 'available', support: 'available', maintenance: 'available', infrastructure: 'available', documents: 'available' })
   expect(summary.deals.openValue).toEqual([{ currency: 'AUD', valueMinor: 1_800_000 }])
 })

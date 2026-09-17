@@ -3,7 +3,7 @@ import type { ActorContext } from '../../context.ts'
 
 type DocumentKind = (typeof schema.DOCUMENT_KINDS)[number]
 
-const DEFAULT_PREFIX: Record<DocumentKind, string> = { quote: 'Q-', invoice: 'INV-' }
+const DEFAULT_PREFIX: Record<DocumentKind, string> = { quote: 'Q-', invoice: 'INV-', ticket: 'T-' }
 
 /**
  * The next number for a document, taken inside the caller's transaction.

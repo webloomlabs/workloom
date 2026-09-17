@@ -1,5 +1,5 @@
 import { pruneRateLimits } from '@workloom/core'
-import { expireDueQuotes, markOverdueInvoices } from '@workloom/core/modules'
+import { expireDueQuotes, generateDueInvoices, markOverdueInvoices, sweepExpiringAssets } from '@workloom/core/modules'
 import { buildContext } from '@workloom/core/registry'
 import { db, lt, schema, withTenant } from '@workloom/db'
 
@@ -8,8 +8,9 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /**
  * Periodic cleanup, and the state changes that happen with the passing of time:
- * quotes that have run out of validity, and invoices that have gone past their
- * due date without being paid.
+ * quotes that have run out of validity, invoices that have gone past their due
+ * date without being paid, retainers whose next period has arrived, and
+ * domains and certificates approaching their renewal.
  *
  * Idempotency keys are tenant data, so they are pruned the documented way for
  * cross-organization work: enumerate organizations, then one tenant-scoped
@@ -29,6 +30,9 @@ export async function runMaintenance(now = new Date()): Promise<void> {
     // organization's own time zone, which is what "today" means to it.
     await sweep(id, 'quote expiry', expireDueQuotes, 'expired %n quote(s)', now)
     await sweep(id, 'overdue invoices', markOverdueInvoices, 'swept %n invoice(s) past their due date', now)
+    // Raises drafts only: nothing is issued or sent without a person.
+    await sweep(id, 'recurring billing', generateDueInvoices, 'raised %n draft invoice(s) from schedules', now)
+    await sweep(id, 'expiring infrastructure', sweepExpiringAssets, 'announced %n asset(s) approaching renewal', now)
   }
 
   await pruneRateLimits()

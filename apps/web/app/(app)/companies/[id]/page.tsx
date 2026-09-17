@@ -1,14 +1,20 @@
 import type { Permission } from '@workloom/core'
 import {
   activityList,
+  billingScheduleList,
   companySummary,
   contactList,
   dealList,
+  documentList,
   expenseList,
+  infrastructureAssetList,
   invoiceList,
+  maintenancePlanList,
+  maintenanceVisitList,
   paymentList,
   projectList,
   quoteList,
+  ticketList,
   type ClientSectionKey,
 } from '@workloom/core/modules'
 import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
@@ -21,9 +27,26 @@ import { Pager, param } from '@/components/crm/list-controls'
 import { ArchiveControl, CreateContactForm, EditCompanyForm } from '@/components/crm/record-forms'
 import { SectionTabs, type SectionTab } from '@/components/crm/section-tabs'
 import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
+import {
+  AssetStatusBadge,
+  ExpiryBadge,
+  PlanStatusBadge,
+  ScheduleStatusBadge,
+  SlaBadge,
+  TicketPriorityBadge,
+  TicketStatusBadge,
+} from '@/components/service/badges'
+import { DeleteDocumentButton, DocumentVisibilityToggle, UploadDocumentForm } from '@/components/service/document-forms'
 import { ProgressBar, ProjectStatusBadge } from '@/components/projects/badges'
 import { PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
-import { formatDate } from '@/lib/format'
+import { formatBytes, formatDate } from '@/lib/format'
+import { label as labelOf } from '@/lib/crm-labels'
+import {
+  ASSET_KIND_LABELS,
+  DOCUMENT_CATEGORY_LABELS,
+  MAINTENANCE_VISIT_KIND_LABELS,
+  describeInterval,
+} from '@/lib/service-labels'
 import { memberChoices, money, organizationSettings, timeline } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
@@ -62,10 +85,10 @@ const SECTION_CONTENT: Record<ClientSectionKey, ((ctx: Context) => Promise<React
   invoices: Invoices,
   payments: Payments,
   expenses: Expenses,
-  support: null,
-  maintenance: null,
-  infrastructure: null,
-  documents: null,
+  support: Support,
+  maintenance: Maintenance,
+  infrastructure: Infrastructure,
+  documents: Documents,
 }
 
 /** Not a section of the client record, just the place to edit the company itself. */
@@ -541,6 +564,252 @@ async function Expenses({ id, summary, can, cursor }: Context) {
       )}
       <Pager base={`/companies/${id}`} params={{ tab: 'expenses' }} cursor={cursor} nextCursor={expenses.nextCursor} />
     </Card>
+  )
+}
+
+async function Support({ id, summary, can, cursor }: Context) {
+  const tickets = await call(ticketList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Support"
+        description="What this client has asked for since their work shipped, and what was promised on each."
+        action={
+          live && can('ticket:create') ? (
+            <Link href={`/tickets/new?companyId=${id}`} className="text-sm font-medium hover:underline">Raise a ticket</Link>
+          ) : null
+        }
+      />
+      {tickets.data.length === 0 ? (
+        <EmptyState>Nothing raised yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Ticket</Th><Th>Status</Th><Th>Targets</Th><Th>Assigned</Th><Th>Raised</Th></tr></thead>
+          <tbody>
+            {tickets.data.map((ticket) => (
+              <Tr key={ticket.id}>
+                <Td>
+                  <div className="flex items-center gap-2">
+                    <Link href={`/tickets/${ticket.id}`} className="font-medium hover:underline">{ticket.title}</Link>
+                    <TicketPriorityBadge priority={ticket.priority} />
+                  </div>
+                  <div className="text-xs text-muted">{ticket.number}</div>
+                </Td>
+                <Td><TicketStatusBadge status={ticket.status} /></Td>
+                <Td>
+                  <div className="flex flex-wrap gap-1">
+                    <SlaBadge state={ticket.responseState} what="Response" />
+                    <SlaBadge state={ticket.resolutionState} what="Resolution" />
+                  </div>
+                </Td>
+                <Td className="text-muted">{ticket.assigneeName ?? 'Unassigned'}</Td>
+                <Td className="whitespace-nowrap text-muted">{formatDate(ticket.createdAt)}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'support' }} cursor={cursor} nextCursor={tickets.nextCursor} />
+    </Card>
+  )
+}
+
+async function Maintenance({ id, summary, can }: Context) {
+  const [plans, visits, schedules] = await Promise.all([
+    call(maintenancePlanList, { companyId: id, limit: 20 }),
+    call(maintenanceVisitList, { companyId: id, limit: 20 }),
+    can('billingSchedule:read') ? call(billingScheduleList, { companyId: id, limit: 20 }) : Promise.resolve({ data: [] }),
+  ])
+  const live = !summary.company.archivedAt
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Plans"
+          description="What the agency looks after for this client after delivery."
+          action={
+            live && can('maintenancePlan:create') ? (
+              <Link href="/maintenance/new" className="text-sm font-medium hover:underline">New plan</Link>
+            ) : null
+          }
+        />
+        {plans.data.length === 0 ? (
+          <EmptyState>No maintenance plan. One is worth having the day a project ships.</EmptyState>
+        ) : (
+          <Table>
+            <thead><tr><Th>Plan</Th><Th>Status</Th><Th>Response</Th><Th>Billed</Th><Th className="text-right">Visits</Th></tr></thead>
+            <tbody>
+              {plans.data.map((plan) => (
+                <Tr key={plan.id}>
+                  <Td>
+                    <Link href={`/maintenance/${plan.id}`} className="font-medium hover:underline">{plan.name}</Link>
+                    {plan.items.length > 0 && <div className="text-xs text-muted">{plan.items.map((i) => i.label).join(' · ')}</div>}
+                  </Td>
+                  <Td><PlanStatusBadge status={plan.status} /></Td>
+                  <Td className="whitespace-nowrap text-muted">{plan.responseHours ? `${plan.responseHours}h` : 'By priority'}</Td>
+                  <Td className="text-muted">{plan.nextInvoiceOn ? `Next ${formatDate(plan.nextInvoiceOn)}` : 'Not automatic'}</Td>
+                  <Td className="text-right tabular-nums">{plan.visitCount}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {schedules.data.length > 0 && (
+        <Card>
+          <CardHeader title="Recurring billing" description="What is raised for this client on a calendar." />
+          <Table>
+            <thead><tr><Th>Schedule</Th><Th>Status</Th><Th>Every</Th><Th>Next period</Th><Th className="text-right">Per period</Th></tr></thead>
+            <tbody>
+              {schedules.data.map((schedule) => (
+                <Tr key={schedule.id}>
+                  <Td><Link href={`/recurring/${schedule.id}`} className="font-medium hover:underline">{schedule.name}</Link></Td>
+                  <Td><ScheduleStatusBadge status={schedule.status} /></Td>
+                  <Td className="whitespace-nowrap text-muted">{describeInterval(schedule.intervalUnit, schedule.intervalCount)}</Td>
+                  <Td className="whitespace-nowrap text-muted">{schedule.nextRunOn ? formatDate(schedule.nextRunOn) : '—'}</Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">{money(schedule.periodSubtotalMinor, schedule.currency)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader title="History" description="What has actually been done, and when." />
+        {visits.data.length === 0 ? (
+          <EmptyState>Nothing recorded yet.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-line">
+            {visits.data.map((visit) => (
+              <li key={visit.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-3 text-sm">
+                <span>
+                  <span className="font-medium">{visit.summary}</span>
+                  <span className="text-muted"> · {labelOf(MAINTENANCE_VISIT_KIND_LABELS, visit.kind)}</span>
+                </span>
+                <span className="text-xs text-muted">
+                  {formatDate(visit.performedOn)}
+                  {visit.performedByName ? ` · ${visit.performedByName}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+async function Infrastructure({ id, summary, can, cursor }: Context) {
+  const assets = await call(infrastructureAssetList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) })
+  const live = !summary.company.archivedAt
+  return (
+    <Card>
+      <CardHeader
+        title="Infrastructure"
+        description="What the agency runs for this client, and when each piece next needs paying for."
+        action={
+          live && can('infrastructure:create') ? (
+            <Link href="/infrastructure/new" className="text-sm font-medium hover:underline">Add infrastructure</Link>
+          ) : null
+        }
+      />
+      {assets.data.length === 0 ? (
+        <EmptyState>Nothing recorded. Domains and hosting are what lapse quietly.</EmptyState>
+      ) : (
+        <Table>
+          <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Provider</Th><Th>Status</Th><Th>Renews</Th><Th className="text-right">Cost</Th></tr></thead>
+          <tbody>
+            {assets.data.map((asset) => (
+              <Tr key={asset.id}>
+                <Td>
+                  <Link href={`/infrastructure/${asset.id}`} className="font-medium hover:underline">{asset.name}</Link>
+                  {asset.url && <div className="text-xs text-muted">{asset.url.replace(/^https?:\/\//, '')}</div>}
+                </Td>
+                <Td className="text-muted">{labelOf(ASSET_KIND_LABELS, asset.kind)}</Td>
+                <Td className="text-muted">{asset.provider ?? '—'}</Td>
+                <Td><AssetStatusBadge status={asset.status} /></Td>
+                <Td className="whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted">{asset.expiresOn ? formatDate(asset.expiresOn) : '—'}</span>
+                    <ExpiryBadge days={asset.daysUntilExpiry} />
+                  </div>
+                </Td>
+                <Td className="whitespace-nowrap text-right tabular-nums text-muted">
+                  {asset.renewalCostMinor !== null && asset.currency ? money(asset.renewalCostMinor, asset.currency) : '—'}
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      <Pager base={`/companies/${id}`} params={{ tab: 'infrastructure' }} cursor={cursor} nextCursor={assets.nextCursor} />
+    </Card>
+  )
+}
+
+async function Documents({ id, summary, can, cursor }: Context) {
+  const [documents, projects] = await Promise.all([
+    call(documentList, { companyId: id, limit: 50, ...(cursor ? { cursor } : {}) }),
+    can('project:read') ? call(projectList, { companyId: id, limit: 100 }) : Promise.resolve({ data: [] }),
+  ])
+  const live = !summary.company.archivedAt
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader title="Documents" description="Contracts, briefs, and reports filed against this client." />
+        {documents.data.length === 0 ? (
+          <EmptyState>Nothing filed yet.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr><Th>Document</Th><Th>Category</Th><Th>Project</Th><Th className="text-right">Size</Th><Th>Filed</Th><Th>Client sees</Th><Th /></tr>
+            </thead>
+            <tbody>
+              {documents.data.map((document) => (
+                <Tr key={document.id}>
+                  <Td>
+                    <a href={`/files/documents/${document.id}`} className="font-medium hover:underline">{document.title}</a>
+                    <div className="text-xs text-muted">{document.filename}</div>
+                  </Td>
+                  <Td className="text-muted">{labelOf(DOCUMENT_CATEGORY_LABELS, document.category)}</Td>
+                  <Td className="text-muted">
+                    {document.projectId ? <Link href={`/projects/${document.projectId}`} className="hover:underline">{document.projectName}</Link> : '—'}
+                  </Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums text-muted">{formatBytes(document.sizeBytes)}</Td>
+                  <Td className="whitespace-nowrap text-muted">
+                    {formatDate(document.createdAt)}
+                    {document.uploaderName ? ` · ${document.uploaderName}` : ''}
+                  </Td>
+                  <Td>
+                    {can('document:update') ? (
+                      <DocumentVisibilityToggle id={document.id} companyId={id} clientVisible={document.clientVisible} />
+                    ) : (
+                      <span className="text-sm text-muted">{document.clientVisible ? 'Yes' : 'No'}</span>
+                    )}
+                  </Td>
+                  <Td className="text-right">{can('document:delete') && <DeleteDocumentButton id={document.id} companyId={id} />}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <Pager base={`/companies/${id}`} params={{ tab: 'documents' }} cursor={cursor} nextCursor={documents.nextCursor} />
+      </Card>
+
+      {live && can('document:create') && (
+        <Card>
+          <details>
+            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-ink">File a document</summary>
+            <div className="border-t border-line p-5">
+              <UploadDocumentForm companyId={id} projects={projects.data.map((p) => ({ id: p.id, name: p.name }))} />
+            </div>
+          </details>
+        </Card>
+      )}
+    </div>
   )
 }
 

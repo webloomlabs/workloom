@@ -74,6 +74,8 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'expense:read',
     'expense:create',
     'payment:read',
+    ...all('ticket', 'maintenancePlan', 'infrastructure', 'document'),
+    'billingSchedule:read',
     'report:read',
     'report:readFinancial',
   ],
@@ -92,6 +94,13 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'comment:create',
     'milestone:read',
     ...all('timeEntry'),
+    // Tickets are work, and the person who fixes the bug is the one who
+    // answers for it. Raising and closing them is not theirs to decide.
+    'ticket:read',
+    'ticket:update',
+    'maintenancePlan:read',
+    'infrastructure:read',
+    'document:read',
     'report:read',
   ],
 
@@ -116,6 +125,12 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'invoice:send',
     'payment:read',
     'expense:read',
+    ...all('ticket', 'maintenancePlan', 'document'),
+    'infrastructure:read',
+    // Sets up a retainer; does not get to delete the billing behind one.
+    'billingSchedule:read',
+    'billingSchedule:create',
+    'billingSchedule:update',
     'report:read',
   ],
 
@@ -137,6 +152,11 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'rate:update',
     'comment:create',
     ...all('service', 'taxRate', 'quote', 'invoice', 'payment', 'expense'),
+    ...all('billingSchedule'),
+    // What is being billed for, and what the renewals cost.
+    'maintenancePlan:read',
+    'infrastructure:read',
+    'document:read',
     'report:read',
     'report:readFinancial',
   ],

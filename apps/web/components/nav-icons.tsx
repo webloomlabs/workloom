@@ -12,6 +12,10 @@ import {
   ReceiptIcon,
   SettingsIcon,
   TargetIcon,
+  LifebuoyIcon,
+  RepeatIcon,
+  ServerIcon,
+  ShieldIcon,
   TaskIcon,
   UsersIcon,
   WalletIcon,
@@ -38,6 +42,10 @@ export const NAV_ICONS = {
   projects: FolderIcon,
   tasks: TaskIcon,
   time: ClockIcon,
+  tickets: LifebuoyIcon,
+  maintenance: ShieldIcon,
+  infrastructure: ServerIcon,
+  recurring: RepeatIcon,
   settings: SettingsIcon,
 } as const satisfies Record<string, (props: IconProps) => React.ReactNode>
 

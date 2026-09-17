@@ -41,10 +41,10 @@ export const CLIENT_SECTIONS = {
   payments: { label: 'Payments', since: 'S7c', permission: 'payment:read' },
   expenses: { label: 'Expenses', since: 'S7c', permission: 'expense:read' },
   activity: { label: 'Activity', since: 'S3', permission: 'activity:read' },
-  support: { label: 'Support', since: 'phase-2' },
-  maintenance: { label: 'Maintenance', since: 'phase-2' },
-  infrastructure: { label: 'Infrastructure', since: 'phase-2' },
-  documents: { label: 'Documents', since: 'phase-2' },
+  support: { label: 'Support', since: 'S11', permission: 'ticket:read' },
+  maintenance: { label: 'Maintenance', since: 'S11', permission: 'maintenancePlan:read' },
+  infrastructure: { label: 'Infrastructure', since: 'S11', permission: 'infrastructure:read' },
+  documents: { label: 'Documents', since: 'S11', permission: 'document:read' },
 } as const satisfies Record<string, SectionDefinition>
 
 export type ClientSectionKey = keyof typeof CLIENT_SECTIONS
@@ -91,6 +91,31 @@ export const SECTION_COUNTERS: Partial<Record<ClientSectionKey, Counter>> = {
         .from(schema.activities)
         .where(and(eq(schema.activities.companyId, id), visibleTo(ctx))),
     ),
+  // Support counts what is still open: a client with two hundred closed
+  // tickets and none outstanding is not a client with two hundred problems.
+  support: (ctx, id) =>
+    counted(
+      ctx.tx
+        .select({ n: count() })
+        .from(schema.tickets)
+        .where(and(eq(schema.tickets.companyId, id), sql`${schema.tickets.status} in ('open', 'in_progress', 'waiting_on_client')`)),
+    ),
+  maintenance: (ctx, id) =>
+    counted(
+      ctx.tx
+        .select({ n: count() })
+        .from(schema.maintenancePlans)
+        .where(and(eq(schema.maintenancePlans.companyId, id), sql`${schema.maintenancePlans.status} <> 'ended'`)),
+    ),
+  infrastructure: (ctx, id) =>
+    counted(
+      ctx.tx
+        .select({ n: count() })
+        .from(schema.infrastructureAssets)
+        .where(and(eq(schema.infrastructureAssets.companyId, id), sql`${schema.infrastructureAssets.status} <> 'decommissioned'`)),
+    ),
+  documents: (ctx, id) =>
+    counted(ctx.tx.select({ n: count() }).from(schema.clientDocuments).where(eq(schema.clientDocuments.companyId, id))),
 }
 
 /** Sections that summarise rather than list, and so have nothing to count. */
