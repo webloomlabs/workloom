@@ -35,3 +35,16 @@ export const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, norma
 /** Minutes as "1.5h" for display and editing. */
 export const minutesToHours = (minutes: number | null) =>
   minutes === null ? '' : String(Math.round((minutes / 60) * 100) / 100)
+
+export const REVISION_KIND_LABELS: Record<string, string> = {
+  variation: 'Variation',
+  extension: 'Extension',
+}
+
+export const REVISION_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+}

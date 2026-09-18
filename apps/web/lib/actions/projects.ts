@@ -15,7 +15,19 @@ import {
   projectMemberAdd,
   projectMemberRemove,
   projectMemberUpdate,
+  projectBillingStageCreate,
+  projectBillingStageRelease,
+  projectBillingStageRemove,
+  projectBillingStageReorder,
+  projectBillingStageUpdate,
   projectRestore,
+  projectRevisionAccept,
+  projectRevisionCreate,
+  projectRevisionDecline,
+  projectRevisionDelete,
+  projectRevisionSend,
+  projectRevisionUpdate,
+  projectRevisionWithdraw,
   projectUpdate,
   taskChangeStatus,
   taskCreate,
@@ -102,6 +114,7 @@ export async function createProjectAction(_: ActionState, form: FormData): Promi
       dueDate: text(form, 'dueDate') || null,
       ...(currency ? { currency } : {}),
       budgetMinor: money(form, 'budget', currency || text(form, 'baseCurrency')) ?? null,
+      contractValueMinor: money(form, 'contractValue', currency || text(form, 'baseCurrency')) ?? null,
       ownerId: nullable(form, 'ownerId'),
     })
   } catch (error) {
@@ -124,6 +137,7 @@ export async function updateProjectAction(_: ActionState, form: FormData): Promi
       dueDate: nullable(form, 'dueDate'),
       ...(currency ? { currency } : {}),
       budgetMinor: money(form, 'budget', currency),
+      contractValueMinor: money(form, 'contractValue', currency),
       ownerId: nullable(form, 'ownerId'),
     })
   } catch (error) {
@@ -363,4 +377,203 @@ export async function uploadAttachmentAction(_: ActionState, form: FormData): Pr
 export async function deleteAttachmentAction(form: FormData): Promise<void> {
   await call(attachmentDelete, { id: id(form) })
   revalidatePath(returnPath(form))
+}
+
+// Revisions
+
+/**
+ * A money field that may be negative, because taking work out of a project is
+ * as much a variation as putting it in. `parseAmount` reads a magnitude, so the
+ * sign is stripped and reapplied.
+ */
+function signedMoney(form: FormData, name: string, currency: string): number {
+  const raw = text(form, name)
+  if (raw === '') return 0
+  const negative = raw.startsWith('-')
+  try {
+    return (negative ? -1 : 1) * parseAmount(negative ? raw.slice(1).trim() : raw, currency)
+  } catch (error) {
+    if (error instanceof AmountFormatError) throw new FieldError(name, error.message)
+    throw error
+  }
+}
+
+export async function createRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  const currency = text(form, 'currency')
+  const kind = text(form, 'kind') || 'variation'
+  try {
+    await call(projectRevisionCreate, {
+      id: projectId,
+      title: text(form, 'title'),
+      kind: kind as never,
+      // An extension is a change of time; the procedure refuses a priced one.
+      amountMinor: kind === 'extension' ? 0 : signedMoney(form, 'amount', currency),
+      summary: text(form, 'summary'),
+      newDueDate: text(form, 'newDueDate') || null,
+      requestedOn: text(form, 'requestedOn') || undefined,
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Revision drafted.' }
+}
+
+export async function updateRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  const currency = text(form, 'currency')
+  const kind = maybe(form, 'kind')
+  try {
+    await call(projectRevisionUpdate, {
+      id: id(form),
+      title: maybe(form, 'title'),
+      kind: (kind || undefined) as never,
+      amountMinor: form.has('amount') ? (kind === 'extension' ? 0 : signedMoney(form, 'amount', currency)) : undefined,
+      summary: maybe(form, 'summary'),
+      newDueDate: form.has('newDueDate') ? text(form, 'newDueDate') || null : undefined,
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Saved.' }
+}
+
+export async function sendRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectRevisionSend, { id: id(form) })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Sent to the client.' }
+}
+
+export async function acceptRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectRevisionAccept, { id: id(form), raiseBudget: checked(form, 'raiseBudget') })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Accepted. The project has been updated.' }
+}
+
+export async function declineRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectRevisionDecline, { id: id(form), reason: text(form, 'reason') })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Recorded as declined.' }
+}
+
+export async function withdrawRevisionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectRevisionWithdraw, { id: id(form) })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Withdrawn.' }
+}
+
+export async function deleteRevisionAction(form: FormData): Promise<void> {
+  await call(projectRevisionDelete, { id: id(form) })
+  revalidatePath(projectPath(id(form, 'projectId')))
+}
+
+// The billing plan
+
+/**
+ * What a stage is worth. The two bases are exclusive, so the one not in use is
+ * sent as null and the procedure clears it.
+ */
+function stageWorth(form: FormData, currency: string) {
+  const percent = text(form, 'basis') === 'percent'
+  return {
+    basis: (percent ? 'percent' : 'amount') as 'percent' | 'amount',
+    percent: percent ? text(form, 'percent') : null,
+    amountMinor: percent ? null : (money(form, 'amount', currency) ?? 0),
+  }
+}
+
+export async function createStageAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectBillingStageCreate, {
+      id: projectId,
+      name: text(form, 'name'),
+      ...stageWorth(form, text(form, 'currency')),
+      trigger: text(form, 'trigger'),
+      dueOn: text(form, 'dueOn') || null,
+      milestoneId: text(form, 'milestoneId') || null,
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Stage added to the plan.' }
+}
+
+export async function updateStageAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectBillingStageUpdate, {
+      id: id(form),
+      name: maybe(form, 'name'),
+      ...stageWorth(form, text(form, 'currency')),
+      trigger: maybe(form, 'trigger'),
+      dueOn: form.has('dueOn') ? text(form, 'dueOn') || null : undefined,
+      milestoneId: form.has('milestoneId') ? text(form, 'milestoneId') || null : undefined,
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Saved.' }
+}
+
+export async function removeStageAction(form: FormData): Promise<void> {
+  await call(projectBillingStageRemove, { id: id(form) })
+  revalidatePath(projectPath(id(form, 'projectId')))
+}
+
+export async function reorderStagesAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  try {
+    await call(projectBillingStageReorder, {
+      id: projectId,
+      stageIds: z.array(z.uuid()).parse(String(form.get('stageIds') ?? '').split(',').filter(Boolean)),
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId))
+  return { status: 'success', message: 'Reordered.' }
+}
+
+export async function releaseStageAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const projectId = id(form, 'projectId')
+  let raised: { invoiceId: string }
+  try {
+    raised = await call(projectBillingStageRelease, {
+      id: id(form),
+      contactId: text(form, 'contactId') || null,
+      taxRateId: text(form, 'taxRateId') || null,
+      ...(text(form, 'paymentTermsDays') ? { paymentTermsDays: Number(text(form, 'paymentTermsDays')) } : {}),
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(projectPath(projectId, 'billing'))
+  revalidatePath('/invoices')
+  // The next thing anyone does is read the draft, so go there.
+  redirect(`/invoices/${raised.invoiceId}`)
 }

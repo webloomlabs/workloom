@@ -10,6 +10,10 @@ import {
   projectGet,
   projectFinancials,
   projectMemberList,
+  projectBillingStageList,
+  projectRevisionList,
+  taxRateList,
+  contactList,
   taskList,
   timeEntryList,
   timeEntrySummary,
@@ -22,7 +26,7 @@ import type { ReactNode } from 'react'
 import { ArchivedBadge } from '@/components/crm/badges'
 import { param } from '@/components/crm/list-controls'
 import { SectionTabs, type SectionTab } from '@/components/crm/section-tabs'
-import { BlockedBadge, PriorityBadge, ProgressBar, ProjectStatusBadge } from '@/components/projects/badges'
+import { BlockedBadge, PriorityBadge, ProgressBar, ProjectStatusBadge, RevisionStatusBadge } from '@/components/projects/badges'
 import { CommentForm, CommentList, FileList, UploadForm } from '@/components/projects/discussion'
 import {
   AddMemberForm,
@@ -33,6 +37,8 @@ import {
   ProjectArchiveControl,
   ProjectStatusControl,
 } from '@/components/projects/project-forms'
+import { AddStageForm, EditStageForm, ReleaseStageForm, RemoveStageButton, ReorderStagesForm } from '@/components/projects/billing-plan-forms'
+import { CreateRevisionForm, EditRevisionForm, RevisionControls } from '@/components/projects/revision-forms'
 import { QuickTaskForm, TaskStatusControl } from '@/components/projects/task-forms'
 import { EntryControls, LogTimeForm } from '@/components/time/time-forms'
 import { label as labelOf } from '@/lib/crm-labels'
@@ -58,7 +64,7 @@ type Context = {
   members: Awaited<ReturnType<typeof memberChoices>>
 }
 
-const TABS = ['tasks', 'milestones', 'time', 'financials', 'team', 'updates', 'files', 'details'] as const
+const TABS = ['tasks', 'milestones', 'time', 'revisions', 'billing', 'financials', 'team', 'updates', 'files', 'details'] as const
 type Tab = (typeof TABS)[number]
 
 export default async function ProjectPage({ params, searchParams }: PageProps<'/projects/[id]'>) {
@@ -73,8 +79,8 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
   const context: Context = { project, can, selfId, timezone: settings.timezone, members }
   const base = `/projects/${id}`
 
-  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', financials: 'Financials', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
-  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read', financials: 'report:readFinancial' }
+  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', revisions: 'Revisions', billing: 'Billing', financials: 'Financials', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
+  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read', revisions: 'projectRevision:read', billing: 'projectBilling:read', financials: 'report:readFinancial' }
   const tabs: SectionTab[] = TABS.filter((t) => !visible[t] || can(visible[t])).map((t) => ({
     key: t,
     label: labels[t],
@@ -83,7 +89,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
     ...(t === 'tasks' ? { count: project.progress.tasksTotal } : t === 'milestones' ? { count: project.progress.milestonesTotal } : {}),
   }))
 
-  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, financials: Financials, team: Team, updates: Updates, files: Files, details: Details }
+  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, revisions: Revisions, billing: Billing, financials: Financials, team: Team, updates: Updates, files: Files, details: Details }
   const live = !project.archivedAt
 
   return (
@@ -103,6 +109,9 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
               )}
               <span>{members.nameOf(project.ownerId)}</span>
               {project.dueDate && <span>Due {formatDate(project.dueDate)}</span>}
+              {project.contractValueMinor !== null && (
+                <span>Contract {money(project.contractValueMinor, project.currency)}</span>
+              )}
               {project.budgetMinor !== null && <span>Budget {money(project.budgetMinor, project.currency)}</span>}
             </div>
             <ProgressBar
@@ -251,6 +260,290 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
  * rate it was logged at, revenue from the lines of issued invoices. Raising
  * someone's rate today moves none of it.
  */
+async function Revisions({ project, can }: Context) {
+  const { data } = await call(projectRevisionList, { id: project.id })
+  const financial = can('report:readFinancial')
+  const live = !project.archivedAt
+  const decimal = (minor: number | null) => (minor === null ? '' : minorToDecimalString(minor, project.currency))
+  const row = (r: (typeof data)[number]) => ({
+    id: r.id,
+    number: r.number,
+    kind: r.kind,
+    title: r.title,
+    summary: r.summary,
+    status: r.status,
+    amount: decimal(r.amountMinor),
+    newDueDate: r.newDueDate,
+  })
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Revisions"
+          description="Scope and price variations, and extensions to the dates. Accepting one raises what the project is contracted for and moves its due date."
+        />
+        {data.length === 0 ? (
+          <EmptyState>Nothing has changed since this project was agreed.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>#</Th>
+                <Th>What changed</Th>
+                <Th>Status</Th>
+                {financial && <Th className="text-right">Price change</Th>}
+                <Th>New due date</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <Tr key={r.id}>
+                  <Td className="text-muted tabular-nums">{r.number}</Td>
+                  <Td>
+                    <div className="font-medium">{r.title}</div>
+                    {r.summary && <div className="text-xs text-muted">{r.summary}</div>}
+                    <div className="text-xs text-muted">
+                      {r.kind === 'extension' ? 'Extension' : 'Variation'}
+                      {r.quoteNumber ? ` · quoted as ${r.quoteNumber}` : ''}
+                      {r.status === 'declined' && r.declineReason ? ` · ${r.declineReason}` : ''}
+                    </div>
+                  </Td>
+                  <Td><RevisionStatusBadge status={r.status} /></Td>
+                  {financial && (
+                    <Td className="whitespace-nowrap text-right tabular-nums">
+                      {r.amountMinor === null || r.amountMinor === 0 ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <span className={r.amountMinor < 0 ? 'text-critical' : ''}>
+                          {r.amountMinor > 0 ? '+' : ''}
+                          {money(r.amountMinor, r.currency)}
+                        </span>
+                      )}
+                    </Td>
+                  )}
+                  <Td className="whitespace-nowrap text-muted">{r.newDueDate ? formatDate(r.newDueDate) : '—'}</Td>
+                  <Td>
+                    {live && (
+                      <RevisionControls
+                        revision={row(r)}
+                        projectId={project.id}
+                        canSend={can('projectRevision:send')}
+                        canAnswer={can('projectRevision:accept')}
+                        canEdit={can('projectRevision:update')}
+                        canDelete={can('projectRevision:delete')}
+                      />
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {/* Editing is only ever possible while a revision is a draft, so the
+          editor is given its own card rather than squeezed into the row. */}
+      {live &&
+        can('projectRevision:update') &&
+        data
+          .filter((r) => r.status === 'draft')
+          .map((r) => (
+            <Card key={`edit-${r.id}`}>
+              <CardHeader title={`Revision ${r.number}`} description="Drafts can still change. Once sent, this becomes a record." />
+              <div className="p-5">
+                <EditRevisionForm revision={row(r)} projectId={project.id} currency={project.currency} />
+              </div>
+            </Card>
+          ))}
+
+      {live && can('projectRevision:create') && (
+        <Card>
+          <CardHeader title="Draft a revision" />
+          <div className="p-5">
+            <CreateRevisionForm projectId={project.id} currency={project.currency} />
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+async function Billing({ project, can }: Context) {
+  const [plan, milestones, taxRates, contacts] = await Promise.all([
+    call(projectBillingStageList, { id: project.id }),
+    can('milestone:read') ? call(milestoneList, { id: project.id }) : { data: [] },
+    can('taxRate:read') ? call(taxRateList, {}) : { data: [] },
+    project.companyId && can('contact:read') ? call(contactList, { companyId: project.companyId, limit: 100 }) : { data: [] },
+  ])
+  const live = !project.archivedAt
+  const canPlan = can('projectBilling:update') && live
+  const canRelease = can('projectBilling:release') && can('invoice:create') && live
+  const money_ = (minor: number) => money(minor, plan.currency)
+  const decimal = (minor: number | null) => (minor === null ? '' : minorToDecimalString(minor, plan.currency))
+  const milestoneChoices = milestones.data.map((m) => ({ id: m.id, name: m.name }))
+  const pending = plan.stages.filter((s) => s.status === 'pending')
+  const row = (s: (typeof plan.stages)[number]) => ({
+    id: s.id,
+    name: s.name,
+    basis: s.basis,
+    percent: s.percent ?? '',
+    amount: decimal(s.amountMinor),
+    trigger: s.trigger,
+    dueOn: s.dueOn,
+    milestoneId: s.milestoneId,
+    status: s.status,
+  })
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="p-5">
+          <div className="text-sm text-muted">Contracted for</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">
+            {plan.contractedValueMinor === null ? '—' : money_(plan.contractedValueMinor)}
+          </div>
+          <div className="mt-1 text-xs text-muted">
+            {plan.contractedValueMinor === null
+              ? 'No agreed price — set one on Details to bill in stages.'
+              : plan.acceptedRevisionsMinor === 0
+                ? 'As agreed'
+                : `${money_(plan.contractValueMinor ?? 0)} agreed ${plan.acceptedRevisionsMinor > 0 ? '+' : '−'} ${money_(Math.abs(plan.acceptedRevisionsMinor))} in revisions`}
+          </div>
+        </Card>
+        <Card className="p-5">
+          <div className="text-sm text-muted">Billed against it</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{money_(plan.releasedMinor)}</div>
+          <div className="mt-1 text-xs text-muted">
+            {plan.otherInvoicedMinor > 0
+              ? `${money_(plan.otherInvoicedMinor)} more invoiced on this project outside the plan`
+              : 'Through this plan only'}
+          </div>
+        </Card>
+        <Card className="p-5">
+          <div className="text-sm text-muted">Left to bill</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">
+            {plan.remainingMinor === null ? '—' : money_(plan.remainingMinor)}
+          </div>
+          <div className="mt-1 text-xs text-muted">{plan.stages.length === 0 ? 'No stages planned' : `${pending.length} still to bill`}</div>
+        </Card>
+      </div>
+
+      {plan.overCommittedMinor > 0 && (
+        <Alert tone="warning">
+          This plan adds up to {money_(plan.plannedMinor)}, which is {money_(plan.overCommittedMinor)} more than the project is contracted for.
+          Releasing the last stage will be refused until the contract covers it.
+        </Alert>
+      )}
+
+      <Card>
+        <CardHeader
+          title="Billing plan"
+          description="Each stage raises a draft invoice when you release it. A percentage follows the contract as accepted revisions raise it, and freezes at what it was worth once billed."
+        />
+        {plan.stages.length === 0 ? (
+          <EmptyState>No stages yet. Add the advance, the mid-term and the final, and bill them as they are earned.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>#</Th>
+                <Th>Stage</Th>
+                <Th>Worth</Th>
+                <Th className="text-right">Amount</Th>
+                <Th>Status</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {plan.stages.map((s, index) => (
+                <Tr key={s.id}>
+                  <Td className="text-muted tabular-nums">{s.position}</Td>
+                  <Td>
+                    <div className="font-medium">{s.name}</div>
+                    {s.trigger && <div className="text-xs text-muted">{s.trigger}</div>}
+                    <div className="text-xs text-muted">
+                      {s.milestoneName ? `Released by ${s.milestoneName}` : null}
+                      {s.milestoneName && s.dueOn ? ' · ' : null}
+                      {s.dueOn ? `Expected ${formatDate(s.dueOn)}` : null}
+                    </div>
+                  </Td>
+                  <Td className="text-muted">{s.basis === 'percent' ? `${s.percent}% of the contract` : 'Fixed'}</Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">
+                    {money_(s.releasedAmountMinor ?? s.resolvedAmountMinor)}
+                  </Td>
+                  <Td>
+                    {s.invoiceId ? (
+                      <Link href={`/invoices/${s.invoiceId}`} className="hover:underline">
+                        <Badge tone={s.invoiceStatus === 'cancelled' ? 'neutral' : 'positive'}>
+                          {s.invoiceNumber ?? 'Draft'}
+                        </Badge>
+                      </Link>
+                    ) : (
+                      <Badge tone="neutral">Pending</Badge>
+                    )}
+                  </Td>
+                  <Td>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {canPlan && s.status === 'pending' && index > 0 && (
+                        <ReorderStagesForm
+                          projectId={project.id}
+                          label="↑"
+                          order={plan.stages.map((x) => x.id).map((id_, i, all) =>
+                            i === index - 1 ? all[index]! : i === index ? all[index - 1]! : id_,
+                          )}
+                        />
+                      )}
+                      {canPlan && s.status === 'pending' && <RemoveStageButton id={s.id} projectId={project.id} />}
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {canRelease &&
+        pending.map((s) => (
+          <Card key={`release-${s.id}`}>
+            <CardHeader title={`Bill “${s.name}”`} />
+            <div className="p-5">
+              <ReleaseStageForm
+                stage={row(s)}
+                projectId={project.id}
+                amountLabel={money_(s.resolvedAmountMinor)}
+                remainingLabel={plan.remainingMinor === null ? '—' : money_(plan.remainingMinor - s.resolvedAmountMinor)}
+                contacts={contacts.data.map((c) => ({ id: c.id, name: c.fullName }))}
+                taxRates={taxRates.data.map((t) => ({ id: t.id, name: `${t.name} (${t.rate}%)` }))}
+              />
+            </div>
+          </Card>
+        ))}
+
+      {canPlan &&
+        pending.map((s) => (
+          <Card key={`edit-${s.id}`}>
+            <CardHeader title={`Stage ${s.position}`} description="A stage can change until it has raised its invoice." />
+            <div className="p-5">
+              <EditStageForm stage={row(s)} projectId={project.id} currency={plan.currency} milestones={milestoneChoices} />
+            </div>
+          </Card>
+        ))}
+
+      {canPlan && (
+        <Card>
+          <CardHeader title="Add a stage" />
+          <div className="p-5">
+            <AddStageForm projectId={project.id} currency={plan.currency} milestones={milestoneChoices} />
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 async function Financials({ project, can }: Context) {
   const report = await call(projectFinancials, { id: project.id })
   // A contractor on a fixed fee usually also sends an invoice. Entering both
@@ -350,6 +643,21 @@ async function Financials({ project, can }: Context) {
                       label={`Budget of ${money_(report.budgetMinor)}`}
                       value={report.budgetUsedPercent === null ? '—' : `${report.budgetUsedPercent}% spent`}
                     />
+                  )}
+                  {report.contractedValueMinor !== null && figures.currency === report.currency && (
+                    <Row
+                      label={
+                        report.acceptedRevisionsMinor === 0
+                          ? 'Contracted for'
+                          : `Contracted for (${money_(report.contractValueMinor ?? 0)} agreed ${
+                              report.acceptedRevisionsMinor > 0 ? '+' : '−'
+                            } ${money_(Math.abs(report.acceptedRevisionsMinor))} in revisions)`
+                      }
+                      value={money_(report.contractedValueMinor)}
+                    />
+                  )}
+                  {report.contractedValueMinor !== null && figures.currency === report.currency && (
+                    <Row label="Left to bill against it" value={money_(report.contractedValueMinor - figures.billedMinor)} />
                   )}
                 </dl>
               </Card>
@@ -710,6 +1018,8 @@ async function Details({ project, can, members }: Context) {
               project={{
                 ...project,
                 budget: project.budgetMinor === null ? '' : minorToDecimalString(project.budgetMinor, project.currency),
+                contractValue:
+                  project.contractValueMinor === null ? '' : minorToDecimalString(project.contractValueMinor, project.currency),
               }}
               members={members.choices}
               companies={companyChoices}

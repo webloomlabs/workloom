@@ -1,11 +1,26 @@
 import { Badge } from '@workloom/ui'
-import { PROJECT_STATUS_LABELS, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, label } from './labels'
+import { PROJECT_STATUS_LABELS, REVISION_STATUS_LABELS, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, label } from './labels'
 
 const projectTones = { planning: 'neutral', in_progress: 'positive', on_hold: 'caution', review: 'caution', completed: 'positive', cancelled: 'critical' } as const
 const taskTones = { todo: 'neutral', in_progress: 'caution', in_review: 'caution', done: 'positive', cancelled: 'critical' } as const
 
 export function ProjectStatusBadge({ status }: { status: string }) {
   return <Badge tone={projectTones[status as keyof typeof projectTones] ?? 'neutral'}>{label(PROJECT_STATUS_LABELS, status)}</Badge>
+}
+
+/**
+ * Sent is the state that wants an answer, so it is the one that draws the eye.
+ * Accepted is quiet: it is already reflected in what the project is contracted
+ * for, and a loud badge on settled history says something needs doing.
+ */
+const revisionTones = { draft: 'neutral', sent: 'caution', accepted: 'positive', declined: 'critical', withdrawn: 'neutral' } as const
+
+export function RevisionStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge tone={revisionTones[status as keyof typeof revisionTones] ?? 'neutral'} dot={status === 'sent'}>
+      {label(REVISION_STATUS_LABELS, status)}
+    </Badge>
+  )
 }
 
 export function TaskStatusBadge({ status }: { status: string }) {

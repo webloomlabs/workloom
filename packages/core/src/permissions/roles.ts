@@ -63,6 +63,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'auditLog:read',
     ...all('company', 'contact', 'lead', 'deal', 'activity'),
     ...all('project', 'milestone', 'task', 'timeEntry', 'timeEntryAll', 'comment'),
+    ...all('projectRevision', 'projectBilling'),
     'rate:update',
     ...all('service'),
     'taxRate:read',
@@ -97,6 +98,9 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'task:update',
     'comment:create',
     'milestone:read',
+    // The dates move for them too. The money is invisible without
+    // `report:readFinancial`, which they do not have.
+    'projectRevision:read',
     ...all('timeEntry'),
     // Tickets are work, and the person who fixes the bug is the one who
     // answers for it. Raising and closing them is not theirs to decide.
@@ -118,6 +122,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     ...all('company', 'contact', 'lead', 'deal', 'activity'),
     ...READ_ONLY_COMMERCIAL,
     'comment:create',
+    ...all('projectRevision', 'projectBilling'),
     'service:read',
     'taxRate:read',
     'quote:read',
@@ -153,6 +158,8 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'task:read',
     'timeEntry:read',
     'timeEntryAll:read',
+    'projectRevision:read',
+    ...all('projectBilling'),
     'rate:update',
     'comment:create',
     ...all('service', 'taxRate', 'quote', 'invoice', 'payment', 'expense'),

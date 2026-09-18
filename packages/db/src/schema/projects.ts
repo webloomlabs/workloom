@@ -61,6 +61,23 @@ export const projects = pgTable(
     currency: text('currency').notNull(),
     /** Integer minor units of `currency`. Null when there is no budget. */
     budgetMinor: bigint('budget_minor', { mode: 'number' }),
+    /**
+     * The price originally agreed, in `currency`.
+     *
+     * Deliberately not `budget_minor`, which is the internal cost ceiling: what
+     * the work may cost us and what the client pays are different numbers, and
+     * raising the price does not make the work cheaper. Reporting compares
+     * budget against cost and contract against what has been billed.
+     *
+     * **This column does not move when a revision is accepted.** What the
+     * project is contracted for now is this price plus every accepted row in
+     * `project_revisions` -- see `contractedValue` in core. Adding the change
+     * here as well would count it twice, and leave two numbers to keep in step.
+     *
+     * Null when the engagement is not fixed-price -- time and materials has no
+     * agreed total, and a project without one cannot have a billing plan.
+     */
+    contractValueMinor: bigint('contract_value_minor', { mode: 'number' }),
 
     /** The person accountable for delivery. */
     ownerId: uuid('owner_id').references(() => user.id, { onDelete: 'set null' }),
@@ -71,6 +88,9 @@ export const projects = pgTable(
   },
   (t) => [
     unique('projects_organization_id_id_key').on(t.organizationId, t.id),
+    // Carries the currency, so a revision or a billing stage cannot be in one
+    // the project is not.
+    unique('projects_organization_id_id_currency_key').on(t.organizationId, t.id, t.currency),
     index('projects_organization_status_idx').on(t.organizationId, t.status),
     index('projects_organization_company_idx').on(t.organizationId, t.companyId),
     foreignKey({
@@ -86,6 +106,7 @@ export const projects = pgTable(
     check('projects_status_check', sql`${t.status} in ${oneOf(PROJECT_STATUSES)}`),
     check('projects_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
     check('projects_budget_check', sql`${t.budgetMinor} >= 0`),
+    check('projects_contract_value_check', sql`${t.contractValueMinor} >= 0`),
     check('projects_completed_check', sql`(${t.status} = 'completed') = (${t.completedAt} is not null)`),
   ],
 )

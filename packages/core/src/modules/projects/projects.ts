@@ -59,6 +59,14 @@ export const projectOutput = z.object({
    * the caller lacks `report:readFinancial` -- a budget is a commercial term.
    */
   budgetMinor: z.number().int().nullable(),
+  /**
+   * The price originally agreed, as distinct from the budget above: what the
+   * client pays rather than what the work may cost. Accepted revisions are not
+   * folded in here -- for what the project is contracted for now, read
+   * `contractedValueMinor` from `project.financials`. Null when the engagement
+   * is not fixed-price, or without `report:readFinancial`.
+   */
+  contractValueMinor: z.number().int().nullable(),
   ownerId: z.uuid().nullable(),
   progress: progressOutput,
   completedAt: z.date().nullable(),
@@ -145,6 +153,7 @@ function present(
     dueDate: project.dueDate,
     currency: project.currency,
     budgetMinor: options.financial ? project.budgetMinor : null,
+    contractValueMinor: options.financial ? project.contractValueMinor : null,
     ownerId: project.ownerId,
     progress,
     completedAt: project.completedAt,
@@ -186,13 +195,13 @@ export async function loadActiveProject(ctx: ActorContext, id: string, options: 
   return project
 }
 
-function assertDates(startDate: string | null | undefined, dueDate: string | null | undefined) {
+export function assertDates(startDate: string | null | undefined, dueDate: string | null | undefined) {
   if (startDate && dueDate && dueDate < startDate) {
     throw new DomainError('The due date cannot be before the start date.', 'due_before_start', 'dueDate')
   }
 }
 
-function requireFinancial(ctx: ActorContext, touched: boolean) {
+export function requireFinancial(ctx: ActorContext, touched: boolean) {
   // Budgets and rates are commercial terms: setting one is reading it.
   if (touched) ctx.require('report:readFinancial')
 }
@@ -257,6 +266,7 @@ const details = {
   startDate: z.iso.date().nullish(),
   dueDate: z.iso.date().nullish(),
   budgetMinor: minorAmount.nullish(),
+  contractValueMinor: minorAmount.nullish(),
   ownerId: z.uuid().nullish(),
 }
 
@@ -289,7 +299,7 @@ export const projectCreate = defineProcedure({
     }
     if (companyId) refuseArchived(await loadCompany(ctx, companyId), 'company')
     assertDates(input.startDate, input.dueDate)
-    requireFinancial(ctx, input.budgetMinor != null)
+    requireFinancial(ctx, input.budgetMinor != null || input.contractValueMinor != null)
 
     const ownerId = input.ownerId === undefined ? actingUserId(ctx) : input.ownerId
     await assertMember(ctx, ownerId)
@@ -307,6 +317,7 @@ export const projectCreate = defineProcedure({
       dueDate: input.dueDate ?? null,
       currency: input.currency ?? (await baseCurrency(ctx)),
       budgetMinor: input.budgetMinor ?? null,
+      contractValueMinor: input.contractValueMinor ?? null,
       ownerId,
       createdBy: actingUserId(ctx),
     })
@@ -338,7 +349,7 @@ export const projectUpdate = defineProcedure({
     const { id, ...fields } = input
     const before = await loadProject(ctx, id, { lock: true })
     const patch = provided(fields)
-    requireFinancial(ctx, 'budgetMinor' in patch)
+    requireFinancial(ctx, 'budgetMinor' in patch || 'contractValueMinor' in patch)
     if (patch.companyId && patch.companyId !== before.companyId) {
       refuseArchived(await loadCompany(ctx, patch.companyId), 'company')
     }

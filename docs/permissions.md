@@ -143,6 +143,35 @@ was a decision.
 | `project:update` | ● | ● | ● | · | · | · |
 | `project:archive` | ● | ● | ● | · | · | · |
 
+**projectRevision**
+
+Scope and price variations, and extensions to a project's dates. `accept` is the
+commercial decision — agreeing that the client owes more — so it is separate from
+editing the offer. A developer sees that the scope changed and by when; the
+amount is hidden from anyone without `report:readFinancial`.
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `projectRevision:read` | ● | ● | ● | ● | ● | ● |
+| `projectRevision:create` | ● | ● | ● | · | ● | · |
+| `projectRevision:update` | ● | ● | ● | · | ● | · |
+| `projectRevision:send` | ● | ● | ● | · | ● | · |
+| `projectRevision:accept` | ● | ● | ● | · | ● | · |
+| `projectRevision:delete` | ● | ● | ● | · | ● | · |
+
+**projectBilling**
+
+A project's staged billing plan. `release` raises the draft invoice for a stage,
+which is what draws money down against the contract, so it also requires
+`invoice:create`. A developer gets nothing: a delivery person has no business
+seeing the price schedule.
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `projectBilling:read` | ● | ● | ● | · | ● | ● |
+| `projectBilling:update` | ● | ● | ● | · | ● | ● |
+| `projectBilling:release` | ● | ● | ● | · | ● | ● |
+
 **milestone**
 
 | Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |

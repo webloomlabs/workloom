@@ -4,6 +4,7 @@ import type { ActorContext } from '../../context.ts'
 import { budgetUsedPercent, effectiveHourlyMinor, marginPercent, utilisationPercent } from '../../reports/margin.ts'
 import { defineProcedure } from '../../registry/index.ts'
 import { loadCompany } from '../crm/companies.ts'
+import { contractFor } from '../projects/revisions.ts'
 import { loadProject } from '../projects/projects.ts'
 
 /**
@@ -163,6 +164,15 @@ export const projectFinancials = defineProcedure({
     budgetMinor: z.number().int().nullable(),
     /** What has been spent against the budget, in the project's own currency. */
     budgetUsedPercent: z.string().nullable(),
+    /** The agreed price before any variation. Null when the project is not fixed-price. */
+    contractValueMinor: z.number().int().nullable(),
+    /**
+     * The agreed price plus every accepted revision -- what the project may be
+     * billed for in total. This is the figure a billing plan draws against.
+     */
+    contractedValueMinor: z.number().int().nullable(),
+    acceptedRevisionsMinor: z.number().int(),
+    revisionCount: z.number().int(),
     /**
      * One entry per currency anything was recorded in, the project's own first.
      * Nothing is converted between them: the MVP records an exchange rate only
@@ -173,7 +183,10 @@ export const projectFinancials = defineProcedure({
   http: { method: 'GET', path: '/projects/{id}/financials' },
   async handler(ctx, input) {
     const project = await loadProject(ctx, input.id)
-    const currencies = await financialsFor(ctx, project.id, project.currency)
+    const [currencies, contract] = await Promise.all([
+      financialsFor(ctx, project.id, project.currency),
+      contractFor(ctx, project),
+    ])
     const own = currencies[0]!
     return {
       projectId: project.id,
@@ -181,6 +194,7 @@ export const projectFinancials = defineProcedure({
       currency: project.currency,
       budgetMinor: project.budgetMinor,
       budgetUsedPercent: budgetUsedPercent(own.costMinor, project.budgetMinor),
+      ...contract,
       currencies,
     }
   },

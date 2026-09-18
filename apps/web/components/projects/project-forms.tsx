@@ -33,6 +33,7 @@ export type ProjectFormValues = {
   currency: string
   /** Decimal string, e.g. "25000.00". */
   budget?: string
+  contractValue?: string
   ownerId: string | null
 }
 
@@ -68,10 +69,22 @@ function ProjectFields({
       <TextField state={state} name="startDate" label="Start" type="date" defaultValue={project.startDate} />
       <TextField state={state} name="dueDate" label="Due" type="date" defaultValue={project.dueDate} />
       {financial && (
-        <div className="grid grid-cols-[1fr_6rem] gap-2">
-          <TextField state={state} name="budget" label="Budget" defaultValue={project.budget} placeholder="25,000.00" />
-          <TextField state={state} name="currency" label="Currency" defaultValue={project.currency} />
-        </div>
+        <>
+          <div className="grid grid-cols-[1fr_6rem] gap-2">
+            <TextField state={state} name="budget" label="Budget" defaultValue={project.budget} placeholder="25,000.00" />
+            <TextField state={state} name="currency" label="Currency" defaultValue={project.currency} />
+          </div>
+          {/* Two different numbers: the budget is what the work may cost us,
+              the contract is what the client pays. */}
+          <TextField
+            state={state}
+            name="contractValue"
+            label="Contract value"
+            defaultValue={project.contractValue}
+            placeholder="40,000.00"
+            hint="The price agreed, before any variation. Blank for time and materials."
+          />
+        </>
       )}
       <div className="sm:col-span-2">
         <TextAreaField state={state} name="description" label="Description" defaultValue={project.description} />

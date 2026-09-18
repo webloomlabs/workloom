@@ -422,3 +422,306 @@ describe('transaction hooks', () => {
     expect(calls).toEqual(['commit', 'rollback'])
   })
 })
+
+describe('project revisions', () => {
+  const revise = (projectId: string, input: Record<string, unknown> = {}) =>
+    run('projectRevision.create', owner(), { id: projectId, title: `Extra scope ${unique()}`, amountMinor: 2_000_00, ...input })
+  const contract = (projectId: string) => run('project.financials', owner(), { id: projectId })
+
+  it('number from one, per project', async () => {
+    const [p, q] = [await project(), await project()]
+    expect(await revise(p.id)).toMatchObject({ number: 1 })
+    expect(await revise(p.id)).toMatchObject({ number: 2 })
+    // A different project starts again, because "revision 2" names one project's history.
+    expect(await revise(q.id)).toMatchObject({ number: 1 })
+  })
+
+  it('raise the contracted value and move the due date, in one step', async () => {
+    const p = await project({ contractValueMinor: 10_000_00, budgetMinor: 6_000_00, dueDate: '2030-03-31' })
+    expect(await contract(p.id)).toMatchObject({
+      contractValueMinor: 10_000_00,
+      contractedValueMinor: 10_000_00,
+      acceptedRevisionsMinor: 0,
+      revisionCount: 0,
+    })
+
+    const r = await revise(p.id, { amountMinor: 2_000_00, newDueDate: '2030-04-30' })
+    // Drafting changes nothing: it is an offer, not an agreement.
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 10_000_00, revisionCount: 1 })
+
+    await run('projectRevision.send', owner(), { id: r.id })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 10_000_00 })
+
+    const accepted = await run('projectRevision.accept', owner(), { id: r.id })
+    expect(accepted).toMatchObject({
+      status: 'accepted',
+      previousContractValueMinor: 10_000_00,
+      previousDueDate: '2030-03-31',
+    })
+    expect(await contract(p.id)).toMatchObject({
+      // The agreed price is left as agreed; the revision carries the change.
+      contractValueMinor: 10_000_00,
+      contractedValueMinor: 12_000_00,
+      acceptedRevisionsMinor: 2_000_00,
+    })
+    // The budget is what the work may cost us, and is left alone by default.
+    expect(await run('project.get', owner(), { id: p.id })).toMatchObject({
+      dueDate: '2030-04-30',
+      budgetMinor: 6_000_00,
+      contractValueMinor: 10_000_00,
+    })
+  })
+
+  it('raise the budget too, only when asked', async () => {
+    const p = await project({ contractValueMinor: 10_000_00, budgetMinor: 6_000_00 })
+    const r = await revise(p.id, { amountMinor: 2_000_00 })
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.accept', owner(), { id: r.id, raiseBudget: true })
+    expect(await run('project.get', owner(), { id: p.id })).toMatchObject({ budgetMinor: 8_000_00, contractValueMinor: 10_000_00 })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 12_000_00 })
+  })
+
+  it('subtract a descope, and refuse one bigger than the contract', async () => {
+    const p = await project({ contractValueMinor: 10_000_00 })
+    const cut = await revise(p.id, { amountMinor: -2_500_00 })
+    await run('projectRevision.send', owner(), { id: cut.id })
+    await run('projectRevision.accept', owner(), { id: cut.id })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 7_500_00, acceptedRevisionsMinor: -2_500_00 })
+
+    const tooBig = await revise(p.id, { amountMinor: -9_000_00 })
+    await run('projectRevision.send', owner(), { id: tooBig.id })
+    await expect(run('projectRevision.accept', owner(), { id: tooBig.id })).rejects.toMatchObject({ code: 'descope_below_zero' })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 7_500_00 })
+  })
+
+  it('give a price to a project that never had one', async () => {
+    const p = await project()
+    expect(await contract(p.id)).toMatchObject({ contractValueMinor: null, contractedValueMinor: null })
+    const r = await revise(p.id, { amountMinor: 3_000_00 })
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.accept', owner(), { id: r.id })
+    // Still no agreed base price -- the whole contract is the one agreed change.
+    expect(await contract(p.id)).toMatchObject({ contractValueMinor: null, contractedValueMinor: 3_000_00 })
+  })
+
+  it('refuse accepting anything that is not sent, and refuse accepting twice', async () => {
+    const p = await project({ contractValueMinor: 10_000_00 })
+    const r = await revise(p.id)
+    await expect(run('projectRevision.accept', owner(), { id: r.id })).rejects.toMatchObject({ code: 'revision_not_sent' })
+
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.accept', owner(), { id: r.id })
+    await expect(run('projectRevision.accept', owner(), { id: r.id })).rejects.toMatchObject({ code: 'revision_not_sent' })
+    // Accepted once means counted once.
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 12_000_00 })
+  })
+
+  it('freeze a revision once it is sent', async () => {
+    const p = await project({ contractValueMinor: 10_000_00 })
+    const r = await revise(p.id)
+    await run('projectRevision.update', owner(), { id: r.id, amountMinor: 3_000_00 })
+    await run('projectRevision.send', owner(), { id: r.id })
+
+    await expect(run('projectRevision.update', owner(), { id: r.id, amountMinor: 9_000_00 })).rejects.toMatchObject({
+      code: 'revision_not_draft',
+    })
+    await expect(run('projectRevision.delete', owner(), { id: r.id })).rejects.toMatchObject({ code: 'revision_not_draft' })
+
+    // Withdrawing is how a sent revision goes away, and it leaves the record.
+    await run('projectRevision.withdraw', owner(), { id: r.id })
+    expect(await run('projectRevision.get', owner(), { id: r.id })).toMatchObject({ status: 'withdrawn' })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 10_000_00, revisionCount: 1 })
+  })
+
+  it('record a decline with its reason', async () => {
+    const p = await project({ contractValueMinor: 10_000_00 })
+    const r = await revise(p.id)
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.decline', owner(), { id: r.id, reason: 'Not this quarter.' })
+    expect(await run('projectRevision.get', owner(), { id: r.id })).toMatchObject({ status: 'declined', declineReason: 'Not this quarter.' })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: 10_000_00 })
+  })
+
+  it('treat an extension as time only', async () => {
+    const p = await project({ dueDate: '2030-03-31' })
+    await expect(revise(p.id, { kind: 'extension', amountMinor: 1_000_00, newDueDate: '2030-04-30' })).rejects.toMatchObject({
+      code: 'extension_priced',
+    })
+    await expect(revise(p.id, { kind: 'extension', amountMinor: 0 })).rejects.toMatchObject({ code: 'extension_undated' })
+
+    const r = await revise(p.id, { kind: 'extension', amountMinor: 0, newDueDate: '2030-05-31' })
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.accept', owner(), { id: r.id })
+    expect(await run('project.get', owner(), { id: p.id })).toMatchObject({ dueDate: '2030-05-31' })
+    expect(await contract(p.id)).toMatchObject({ contractedValueMinor: null })
+  })
+
+  it('refuse a new due date before the project started', async () => {
+    const p = await project({ startDate: '2030-02-01', dueDate: '2030-03-31' })
+    await expect(revise(p.id, { kind: 'extension', amountMinor: 0, newDueDate: '2030-01-01' })).rejects.toMatchObject({
+      code: 'due_before_start',
+    })
+  })
+
+  it('show the dates to a developer and the money to nobody without report:readFinancial', async () => {
+    const p = await project({ contractValueMinor: 10_000_00 })
+    const r = await revise(p.id, { amountMinor: 2_000_00, newDueDate: '2030-04-30' })
+
+    const seen = await run('projectRevision.get', developer(), { id: r.id })
+    expect(seen).toMatchObject({ title: r.title, newDueDate: '2030-04-30', amountMinor: null })
+    expect(await run('project.get', developer(), { id: p.id })).toMatchObject({ contractValueMinor: null })
+  })
+})
+
+describe('the billing plan', () => {
+  const priced = async (contractValueMinor: number | null = 10_000_00) => {
+    const company = await run('company.create', owner(), { name: `Client ${unique()}` })
+    return project({ companyId: company.id, ...(contractValueMinor === null ? {} : { contractValueMinor }) })
+  }
+  const stage = (projectId: string, input: Record<string, unknown>) =>
+    run('projectBillingStage.create', owner(), { id: projectId, name: `Stage ${unique()}`, ...input })
+  const plan = (projectId: string) => run('projectBillingStage.list', owner(), { id: projectId })
+  const release = (id: string) => run('projectBillingStage.release', owner(), { id })
+
+  it('resolves percentage stages against the contracted value, exactly', async () => {
+    const p = await priced(10_000_00)
+    await stage(p.id, { basis: 'percent', percent: '50', name: 'Advance' })
+    await stage(p.id, { basis: 'percent', percent: '40', name: 'On delivery' })
+    await stage(p.id, { basis: 'percent', percent: '10', name: 'Final' })
+
+    const { stages, plannedMinor, remainingMinor } = await plan(p.id)
+    expect(stages.map((s: { resolvedAmountMinor: number }) => s.resolvedAmountMinor)).toEqual([5_000_00, 4_000_00, 1_000_00])
+    expect(plannedMinor).toBe(10_000_00)
+    expect(remainingMinor).toBe(10_000_00)
+  })
+
+  it('raises a draft invoice for exactly the stage amount', async () => {
+    const p = await priced(10_000_00)
+    const advance = await stage(p.id, { basis: 'percent', percent: '50', name: 'Advance' })
+    const { invoiceId } = await release(advance.id)
+
+    const invoice = await run('invoice.get', owner(), { id: invoiceId })
+    expect(invoice).toMatchObject({ status: 'draft', projectId: p.id, totalMinor: 5_000_00, currency: 'AUD' })
+    expect(invoice.lines).toHaveLength(1)
+    expect(invoice.lines[0]).toMatchObject({ description: 'Advance', totalMinor: 5_000_00 })
+
+    const after = await plan(p.id)
+    expect(after.releasedMinor).toBe(5_000_00)
+    expect(after.remainingMinor).toBe(5_000_00)
+    expect(after.stages[0]).toMatchObject({ status: 'invoiced', releasedAmountMinor: 5_000_00, invoiceId })
+  })
+
+  it('refuses to bill past what the project is contracted for', async () => {
+    const p = await priced(10_000_00)
+    const first = await stage(p.id, { basis: 'amount', amountMinor: 8_000_00, name: 'Most of it' })
+    const second = await stage(p.id, { basis: 'amount', amountMinor: 5_000_00, name: 'Too much' })
+
+    // Over-committing while drafting is allowed, and reported.
+    expect(await plan(p.id)).toMatchObject({ plannedMinor: 13_000_00, overCommittedMinor: 3_000_00 })
+
+    await release(first.id)
+    await expect(release(second.id)).rejects.toMatchObject({ code: 'over_billing' })
+    expect(await plan(p.id)).toMatchObject({ releasedMinor: 8_000_00, remainingMinor: 2_000_00 })
+  })
+
+  it('refuses a project with no agreed price, and an internal one', async () => {
+    const p = await priced(null)
+    const s = await stage(p.id, { basis: 'amount', amountMinor: 1_000_00 })
+    await expect(release(s.id)).rejects.toMatchObject({ code: 'no_contract_value' })
+
+    const internal = await project({ contractValueMinor: 5_000_00 })
+    const inner = await stage(internal.id, { basis: 'amount', amountMinor: 1_000_00 })
+    await expect(release(inner.id)).rejects.toMatchObject({ code: 'project_internal' })
+  })
+
+  it('returns a stage to pending when its draft invoice is deleted', async () => {
+    const p = await priced(10_000_00)
+    const s = await stage(p.id, { basis: 'amount', amountMinor: 4_000_00 })
+    const { invoiceId } = await release(s.id)
+    expect(await plan(p.id)).toMatchObject({ releasedMinor: 4_000_00, remainingMinor: 6_000_00 })
+
+    await run('invoice.delete', owner(), { id: invoiceId })
+    const after = await plan(p.id)
+    expect(after).toMatchObject({ releasedMinor: 0, remainingMinor: 10_000_00 })
+    expect(after.stages[0]).toMatchObject({ status: 'pending', invoiceId: null, releasedAmountMinor: null })
+    // And it can be billed again.
+    await expect(release(s.id)).resolves.toMatchObject({ invoiceId: expect.any(String) })
+  })
+
+  it('follows the contracted value as an accepted revision raises it', async () => {
+    const p = await priced(10_000_00)
+    const advance = await stage(p.id, { basis: 'percent', percent: '50', name: 'Advance' })
+    const rest = await stage(p.id, { basis: 'percent', percent: '50', name: 'Final' })
+    await release(advance.id)
+
+    const r = await run('projectRevision.create', owner(), { id: p.id, title: 'More scope', amountMinor: 2_000_00 })
+    await run('projectRevision.send', owner(), { id: r.id })
+    await run('projectRevision.accept', owner(), { id: r.id })
+
+    const after = await plan(p.id)
+    expect(after.contractedValueMinor).toBe(12_000_00)
+    // The billed stage is frozen at what it was worth; the pending one grew.
+    expect(after.stages[0]).toMatchObject({ releasedAmountMinor: 5_000_00 })
+    expect(after.stages[1]!.resolvedAmountMinor).toBe(7_000_00)
+
+    const { invoiceId } = await release(rest.id)
+    expect(await run('invoice.get', owner(), { id: invoiceId })).toMatchObject({ totalMinor: 7_000_00 })
+    expect(await plan(p.id)).toMatchObject({ releasedMinor: 12_000_00, remainingMinor: 0 })
+  })
+
+  it('does not let an invoice outside the plan eat the contract', async () => {
+    const p = await priced(10_000_00)
+    const s = await stage(p.id, { basis: 'amount', amountMinor: 10_000_00, name: 'The lot' })
+
+    // A hand-written invoice against the same project -- a retainer, say.
+    const other = await run('invoice.create', owner(), {
+      companyId: p.companyId,
+      projectId: p.id,
+      title: 'Hosting',
+      lines: [{ description: 'Hosting', quantity: '1', unitAmountMinor: 500_00 }],
+    })
+    await run('invoice.send', owner(), { id: other.id })
+
+    const before = await plan(p.id)
+    expect(before.releasedMinor).toBe(0)
+    expect(before.otherInvoicedMinor).toBe(500_00)
+    // The plan still has the whole contract available to it.
+    await expect(release(s.id)).resolves.toMatchObject({ invoiceId: expect.any(String) })
+  })
+
+  it('refuses to change or remove a stage that has been billed', async () => {
+    const p = await priced(10_000_00)
+    const s = await stage(p.id, { basis: 'amount', amountMinor: 4_000_00 })
+    await release(s.id)
+    await expect(run('projectBillingStage.update', owner(), { id: s.id, amountMinor: 9_000_00 })).rejects.toMatchObject({
+      code: 'stage_invoiced',
+    })
+    await expect(run('projectBillingStage.remove', owner(), { id: s.id })).rejects.toMatchObject({ code: 'stage_invoiced' })
+    await expect(release(s.id)).rejects.toMatchObject({ code: 'stage_not_pending' })
+  })
+
+  it('reorders a plan without colliding on position', async () => {
+    const p = await priced(10_000_00)
+    const first = await stage(p.id, { basis: 'amount', amountMinor: 1_000_00, name: 'First' })
+    const second = await stage(p.id, { basis: 'amount', amountMinor: 2_000_00, name: 'Second' })
+    const third = await stage(p.id, { basis: 'amount', amountMinor: 3_000_00, name: 'Third' })
+
+    const after = await run('projectBillingStage.reorder', owner(), { id: p.id, stageIds: [third.id, first.id, second.id] })
+    expect(after.stages.map((s: { name: string; position: number }) => [s.name, s.position])).toEqual([
+      ['Third', 1],
+      ['First', 2],
+      ['Second', 3],
+    ])
+    await expect(run('projectBillingStage.reorder', owner(), { id: p.id, stageIds: [first.id] })).rejects.toMatchObject({
+      code: 'stages_incomplete',
+    })
+  })
+
+  it('insists a stage says what it is worth', async () => {
+    const p = await priced(10_000_00)
+    await expect(stage(p.id, { basis: 'amount' })).rejects.toMatchObject({ code: 'amount_required' })
+    await expect(stage(p.id, { basis: 'percent' })).rejects.toMatchObject({ code: 'percent_required' })
+    const zero = await stage(p.id, { basis: 'amount', amountMinor: 0 })
+    await expect(release(zero.id)).rejects.toMatchObject({ code: 'stage_worth_nothing' })
+  })
+})

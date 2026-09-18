@@ -171,6 +171,19 @@ const definitions = {
 
   'bank_reconciliation.completed': { description: 'An account was reconciled to a statement', since: 'S12' },
   'bank_reconciliation.undone': { description: 'A completed reconciliation was re-opened', since: 'S12' },
+
+  'project_revision.created': { description: 'A scope or price variation was drafted', since: 'S13b' },
+  'project_revision.updated': { description: "A draft revision's details changed", since: 'S13b' },
+  'project_revision.sent': { description: 'A revision was put to the client', since: 'S13b' },
+  'project_revision.accepted': { description: "A revision was agreed, raising the project's contracted value", since: 'S13b' },
+  'project_revision.declined': { description: 'A revision was declined', since: 'S13b' },
+  'project_revision.withdrawn': { description: 'A revision was withdrawn before it was answered', since: 'S13b' },
+  'project_revision.deleted': { description: 'A draft revision was deleted', since: 'S13b' },
+
+  'project_billing_stage.created': { description: 'A stage was added to a project\'s billing plan', since: 'S13c' },
+  'project_billing_stage.updated': { description: 'A billing stage changed, or the plan was reordered', since: 'S13c' },
+  'project_billing_stage.released': { description: 'A billing stage raised its draft invoice', since: 'S13c' },
+  'project_billing_stage.removed': { description: 'A billing stage was removed from the plan', since: 'S13c' },
 } as const satisfies Record<string, Definition>
 
 export type EventType = keyof typeof definitions

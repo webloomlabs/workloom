@@ -24,6 +24,7 @@ import {
   requiredText,
   searchInput,
 } from '../crm/shared.ts'
+import { releaseStageForInvoice } from '../projects/stage-release.ts'
 import { loadProject } from '../projects/projects.ts'
 import {
   assertOneDiscount,
@@ -302,7 +303,7 @@ async function nextPosition(ctx: ActorContext, invoiceId: string): Promise<numbe
 }
 
 /** The organization's default payment terms, for a new invoice. */
-async function defaultTerms(ctx: ActorContext): Promise<number> {
+export async function defaultTerms(ctx: ActorContext): Promise<number> {
   const [org] = await ctx.tx
     .select({ days: schema.organization.paymentTermsDays })
     .from(schema.organization)
@@ -521,6 +522,9 @@ export const invoiceDelete = defineProcedure({
     }
     const invoice = await getInvoice(ctx, before.id)
     await releaseBilled(ctx, (await loadLines(ctx, before.id)).map((l) => l.id))
+    // A billing stage that raised this draft goes back to pending: the money
+    // was never demanded, so the plan must stop saying it was.
+    await releaseStageForInvoice(ctx, before.id)
     await ctx.tx.delete(schema.invoices).where(eq(schema.invoices.id, before.id))
     await ctx.audit({ action: 'invoice.deleted', entityType: 'invoice', entityId: before.id, entityLabel: before.title })
     await ctx.emit('invoice.deleted', invoice)

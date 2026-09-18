@@ -20,6 +20,18 @@ export const STATEMENTS = {
   activity: ['read', 'create', 'update', 'delete'],
 
   project: ['read', 'create', 'update', 'archive'],
+  /**
+   * Scope and price variations on a project, and extensions to its dates.
+   * `accept` is the commercial decision -- agreeing that the client owes more --
+   * so it is separate from editing the offer.
+   */
+  projectRevision: ['read', 'create', 'update', 'send', 'accept', 'delete'],
+  /**
+   * A project's staged billing plan. `release` raises the invoice for a stage,
+   * which is the act that draws money down against the contract; `update` only
+   * shapes the plan.
+   */
+  projectBilling: ['read', 'update', 'release'],
   milestone: ['read', 'create', 'update', 'delete'],
   task: ['read', 'create', 'update', 'delete'],
   /**

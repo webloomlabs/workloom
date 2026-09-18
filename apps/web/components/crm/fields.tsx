@@ -81,11 +81,14 @@ export function SelectField({
   options,
   empty,
   disabled,
+  onChange,
 }: Common & {
   defaultValue?: string | null | undefined
   options: Option[]
   empty?: string | undefined
   disabled?: boolean | undefined
+  /** For a select that decides which other fields apply. Receives the new value. */
+  onChange?: ((value: string) => void) | undefined
 }) {
   const error = fieldError(state, name)
   return (
@@ -95,6 +98,7 @@ export function SelectField({
         name={name}
         disabled={disabled}
         defaultValue={initial(state, name, defaultValue)}
+        onChange={onChange ? (e) => onChange(e.currentTarget.value) : undefined}
         aria-invalid={error ? true : undefined}
       >
         {empty !== undefined && <option value="">{empty}</option>}

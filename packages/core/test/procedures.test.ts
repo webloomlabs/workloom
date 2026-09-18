@@ -295,6 +295,44 @@ async function createAsset(input: Record<string, unknown> = {}): Promise<string>
   return asset.id
 }
 
+async function createRevision(input: Record<string, unknown> = {}): Promise<string> {
+  const revision = (await run('projectRevision.create', ownerOfA(), {
+    id: await createProject(),
+    title: `Extra scope ${unique()}`,
+    amountMinor: 2_000_00,
+    ...input,
+  })) as { id: string }
+  return revision.id
+}
+
+/** A revision already put to the client, which is the only state accept and decline take. */
+async function createSentRevision(input: Record<string, unknown> = {}): Promise<string> {
+  const id = await createRevision(input)
+  await run('projectRevision.send', ownerOfA(), { id })
+  return id
+}
+
+/** A project with a client and a price, which is what a billing plan needs. */
+async function createPricedProject(): Promise<string> {
+  const project = (await run('project.create', ownerOfA(), {
+    name: `Priced ${unique()}`,
+    companyId: await createCompany(),
+    contractValueMinor: 10_000_00,
+  })) as { id: string }
+  return project.id
+}
+
+async function createStage(input: Record<string, unknown> = {}, projectId?: string): Promise<string> {
+  const stage = (await run('projectBillingStage.create', ownerOfA(), {
+    id: projectId ?? (await createPricedProject()),
+    name: `Advance ${unique()}`,
+    basis: 'amount',
+    amountMinor: 1_000_00,
+    ...input,
+  })) as { id: string }
+  return stage.id
+}
+
 async function createBankAccount(input: Record<string, unknown> = {}): Promise<string> {
   const account = (await run('bankAccount.create', ownerOfA(), {
     name: `Everyday ${unique()}`,
@@ -746,6 +784,35 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'infrastructureAsset.update': async () => ({ id: await createAsset(), provider: `Registrar ${unique()}`, autoRenew: true }),
   'infrastructureAsset.delete': async () => ({ id: await createAsset() }),
 
+  'projectRevision.create': [
+    async () => ({ id: await createProject(), title: `Extra scope ${unique()}`, amountMinor: 2_000_00, summary: 'Two more templates.' }),
+    // An extension moves the dates and nothing else.
+    async () => ({ id: await createProject(), title: `More time ${unique()}`, kind: 'extension', newDueDate: '2030-06-30' }),
+  ],
+  'projectRevision.update': async () => ({ id: await createRevision(), amountMinor: 3_000_00 }),
+  'projectRevision.send': async () => ({ id: await createRevision() }),
+  'projectRevision.accept': [
+    async () => ({ id: await createSentRevision() }),
+    async () => ({ id: await createSentRevision(), raiseBudget: true }),
+  ],
+  'projectRevision.decline': async () => ({ id: await createSentRevision(), reason: 'Out of budget this quarter.' }),
+  'projectRevision.withdraw': async () => ({ id: await createSentRevision() }),
+  'projectRevision.delete': async () => ({ id: await createRevision() }),
+
+  'projectBillingStage.create': [
+    async () => ({ id: await createPricedProject(), name: `Advance ${unique()}`, basis: 'amount', amountMinor: 5_000_00 }),
+    async () => ({ id: await createPricedProject(), name: `On delivery ${unique()}`, basis: 'percent', percent: '40' }),
+  ],
+  'projectBillingStage.update': async () => ({ id: await createStage(), amountMinor: 2_500_00 }),
+  'projectBillingStage.reorder': async () => {
+    const projectId = await createPricedProject()
+    const first = await createStage({ name: `First ${unique()}` }, projectId)
+    const second = await createStage({ name: `Second ${unique()}` }, projectId)
+    return { id: projectId, stageIds: [second, first] }
+  },
+  'projectBillingStage.remove': async () => ({ id: await createStage() }),
+  'projectBillingStage.release': async () => ({ id: await createStage() }),
+
   'bankAccount.create': async () => ({ name: `Everyday ${unique()}`, kind: 'bank', openingBalanceOn: '2026-09-01', openingBalanceMinor: 10_000_00 }),
   'bankAccount.update': async () => ({ id: await createBankAccount(), institution: `Bank ${unique()}`, accountIdentifier: '\u20266789' }),
   'bankAccount.archive': async () => ({ id: await createBankAccount() }),
@@ -851,6 +918,10 @@ const READS: Record<string, Fixture> = {
   'ticketMessage.list': async () => ({ ticketId: await createTicket() }),
   'maintenancePlan.get': async () => ({ id: await createPlan() }),
   'infrastructureAsset.get': async () => ({ id: await createAsset() }),
+  'projectRevision.get': async () => ({ id: await createRevision() }),
+  'projectRevision.list': async () => ({ id: await createProject() }),
+  'projectBillingStage.list': async () => ({ id: await createPricedProject() }),
+  'project.billingSummary': async () => ({ id: await createPricedProject() }),
   'bankAccount.get': async () => ({ id: await createBankAccount() }),
   'bankTransaction.get': async () => ({ id: await createBankTransaction() }),
   'document.get': async () => ({ id: await createDocument() }),
@@ -936,7 +1007,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId']
+const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId', 'revisionId', 'stageId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {
