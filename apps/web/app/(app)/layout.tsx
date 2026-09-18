@@ -54,6 +54,7 @@ const SECTIONS: Array<{ key: string; label: string; items: Entry[] }> = [
       { href: '/invoices', label: 'Invoices', icon: 'invoices', permission: 'invoice:read' },
       { href: '/payments', label: 'Payments', icon: 'payments', permission: 'payment:read' },
       { href: '/expenses', label: 'Expenses', icon: 'expenses', permission: 'expense:read' },
+      { href: '/banking', label: 'Banking', icon: 'banking', permission: 'bankTransaction:read' },
       { href: '/recurring', label: 'Recurring', icon: 'recurring', permission: 'billingSchedule:read' },
       { href: '/reports', label: 'Reports', icon: 'reports', permission: 'report:readFinancial' },
     ],

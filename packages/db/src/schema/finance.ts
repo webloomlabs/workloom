@@ -556,6 +556,8 @@ export const expenses = pgTable(
   },
   (t) => [
     unique('expenses_organization_id_id_key').on(t.organizationId, t.id),
+    // Carries the currency, so a bank match in another currency cannot reference it.
+    unique('expenses_organization_id_id_currency_key').on(t.organizationId, t.id, t.currency),
     index('expenses_organization_incurred_on_idx').on(t.organizationId, t.incurredOn),
     index('expenses_organization_project_idx').on(t.organizationId, t.projectId),
     index('expenses_organization_company_idx').on(t.organizationId, t.companyId),

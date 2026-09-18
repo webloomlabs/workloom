@@ -255,6 +255,73 @@ describe('rates', () => {
     expect(await run('timeEntry.get', owner(), { id: later.id })).toMatchObject({ billableRateMinor: 200_00, costRateMinor: 90_00 })
   })
 
+  it('cost nothing per hour for a member on a fixed engagement fee', async () => {
+    await run('rate.set', owner(), { billableRateMinor: 100_00, costRateMinor: 50_00 })
+    const p = await clientProject()
+    await run('projectMember.add', owner(), { id: p.id, userId: developerA, billableRateMinor: 200_00, fixedFeeMinor: 4_000_00, fixedFeeOn: '2026-09-01' })
+
+    const entry = await log(developer(), { projectId: p.id, durationSeconds: 7200 })
+    expect(await run('timeEntry.get', owner(), { id: entry.id })).toMatchObject({
+      // The fee is the cost, so the hours cost nothing -- and say why.
+      costRateMinor: 0,
+      costRateSource: 'project_member_fixed',
+      // What the client is charged is untouched by what the person costs us.
+      billableRateMinor: 200_00,
+      billableRateSource: 'project_member',
+    })
+
+    const financials = await run('project.financials', owner(), { id: p.id })
+    expect(financials.currencies[0]).toMatchObject({
+      labourCostMinor: 0,
+      fixedCostMinor: 4_000_00,
+      membersWithFixedFee: 1,
+      costMinor: 4_000_00,
+      // Nothing billed yet, so the fee is the whole of the loss so far.
+      marginMinor: -4_000_00,
+      // Zero is a rate. These entries are not missing one.
+      entriesWithoutCostRate: 0,
+      billableSeconds: 7200,
+    })
+  })
+
+  it('refuse a fixed fee over time already logged at an hourly cost, until it is confirmed', async () => {
+    await run('rate.set', owner(), { billableRateMinor: 100_00, costRateMinor: 50_00 })
+    const p = await clientProject()
+    const member = await run('projectMember.add', owner(), { id: p.id, userId: developerA, costRateMinor: 70_00 })
+    await log(developer(), { projectId: p.id, durationSeconds: 3600 })
+    await log(developer(), { projectId: p.id, durationSeconds: 3600 })
+    expect((await run('project.financials', owner(), { id: p.id })).currencies[0]).toMatchObject({ labourCostMinor: 140_00 })
+
+    await expect(run('projectMember.update', owner(), { id: member.id, fixedFeeMinor: 4_000_00 })).rejects.toThrow(
+      /already has 2 time entries .* logged at an hourly cost/s,
+    )
+    // Refused means refused: nothing moved.
+    expect((await run('project.financials', owner(), { id: p.id })).currencies[0]).toMatchObject({ labourCostMinor: 140_00, fixedCostMinor: 0 })
+
+    await run('projectMember.update', owner(), { id: member.id, fixedFeeMinor: 4_000_00, rebaseLoggedCost: true })
+    expect((await run('project.financials', owner(), { id: p.id })).currencies[0]).toMatchObject({
+      labourCostMinor: 0,
+      fixedCostMinor: 4_000_00,
+      costMinor: 4_000_00,
+    })
+
+    // Changing the amount afterwards needs no confirmation: the entries already cost nothing.
+    await run('projectMember.update', owner(), { id: member.id, fixedFeeMinor: 5_000_00 })
+    expect((await run('project.financials', owner(), { id: p.id })).currencies[0]).toMatchObject({ fixedCostMinor: 5_000_00 })
+  })
+
+  it('keep a fixed fee out of events and away from anyone who cannot see money', async () => {
+    const p = await clientProject()
+    const member = await run('projectMember.add', owner(), { id: p.id, userId: developerA, fixedFeeMinor: 4_000_00 })
+    expect(member).toMatchObject({ fixedFeeMinor: 4_000_00 })
+
+    const asDeveloper = await run('projectMember.list', developer(), { id: p.id })
+    expect(asDeveloper.data.find((m: { userId: string }) => m.userId === developerA)).toMatchObject({
+      fixedFeeMinor: null,
+      costRateMinor: null,
+    })
+  })
+
   it('resolve again when an entry moves to another project', async () => {
     await run('rate.set', owner(), { billableRateMinor: 100_00, costRateMinor: 50_00 })
     const [p, q] = [await project(), await project({ currency: 'NZD' })]

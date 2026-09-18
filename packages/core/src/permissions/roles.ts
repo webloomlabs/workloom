@@ -76,6 +76,10 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'payment:read',
     ...all('ticket', 'maintenancePlan', 'infrastructure', 'document'),
     'billingSchedule:read',
+    // Seeing the cash position is the same argument as seeing a project's
+    // margin. Explaining a line against the books is not theirs to do.
+    'bankAccount:read',
+    'bankTransaction:read',
     'report:read',
     'report:readFinancial',
   ],
@@ -153,6 +157,8 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     'comment:create',
     ...all('service', 'taxRate', 'quote', 'invoice', 'payment', 'expense'),
     ...all('billingSchedule'),
+    // The role this module exists for.
+    ...all('bankAccount', 'bankTransaction'),
     // What is being billed for, and what the renewals cost.
     'maintenancePlan:read',
     'infrastructure:read',

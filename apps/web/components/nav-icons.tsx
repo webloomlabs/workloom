@@ -1,4 +1,5 @@
 import {
+  BankIcon,
   BuildingIcon,
   ChartIcon,
   ClockIcon,
@@ -38,6 +39,7 @@ export const NAV_ICONS = {
   invoices: ReceiptIcon,
   payments: CreditCardIcon,
   expenses: WalletIcon,
+  banking: BankIcon,
   reports: ChartIcon,
   projects: FolderIcon,
   tasks: TaskIcon,

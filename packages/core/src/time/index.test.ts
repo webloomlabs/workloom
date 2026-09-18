@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays,
+  applyFixedFee,
   dateIn,
   formatDuration,
   formatElapsed,
@@ -115,6 +116,48 @@ describe('resolveRates', () => {
 
   it('leaves a rate unset when nothing defines it', () => {
     expect(resolveRates({})).toEqual({ billableRateMinor: null, billableRateSource: null, costRateMinor: null, costRateSource: null })
+  })
+})
+
+describe('applyFixedFee', () => {
+  const snapshot = {
+    billableRateMinor: 200_00,
+    billableRateSource: 'project_member' as const,
+    costRateMinor: 90_00,
+    costRateSource: 'project_member' as const,
+  }
+
+  it('leaves an hourly member alone', () => {
+    expect(applyFixedFee(snapshot, null)).toEqual(snapshot)
+  })
+
+  it('costs a fixed-fee member nothing per hour, and says why', () => {
+    expect(applyFixedFee(snapshot, 4_000_00)).toEqual({
+      billableRateMinor: 200_00,
+      billableRateSource: 'project_member',
+      costRateMinor: 0,
+      costRateSource: 'project_member_fixed',
+    })
+  })
+
+  it('never touches what the client is charged', () => {
+    // The fee is what the person costs us. It says nothing about the price.
+    expect(applyFixedFee(snapshot, 4_000_00).billableRateMinor).toBe(200_00)
+    expect(applyFixedFee({ ...snapshot, billableRateMinor: null, billableRateSource: null }, 4_000_00)).toMatchObject({
+      billableRateMinor: null,
+      billableRateSource: null,
+    })
+  })
+
+  it('applies to a fee of zero, which is a fee and not an absence', () => {
+    expect(applyFixedFee(snapshot, 0)).toMatchObject({ costRateMinor: 0, costRateSource: 'project_member_fixed' })
+  })
+
+  it('overrides a cost rate that had resolved from anywhere', () => {
+    const fromOrg = { ...snapshot, costRateMinor: 60_00, costRateSource: 'organization' as const }
+    expect(applyFixedFee(fromOrg, 4_000_00)).toMatchObject({ costRateMinor: 0, costRateSource: 'project_member_fixed' })
+    const unset = { ...snapshot, costRateMinor: null, costRateSource: null }
+    expect(applyFixedFee(unset, 4_000_00)).toMatchObject({ costRateMinor: 0, costRateSource: 'project_member_fixed' })
   })
 })
 

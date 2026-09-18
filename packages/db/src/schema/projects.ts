@@ -111,6 +111,15 @@ export const projectMembers = pgTable(
     billableRateMinor: bigint('billable_rate_minor', { mode: 'number' }),
     /** What an hour costs the agency, in the project's currency. */
     costRateMinor: bigint('cost_rate_minor', { mode: 'number' }),
+    /**
+     * A fixed engagement cost: what this person costs the project in total,
+     * rather than per hour. Set, their time still tracks but carries a cost
+     * rate of zero, so the hours stay visible without being paid for twice.
+     * Minor units of the project's currency, as the rates above are.
+     */
+    fixedFeeMinor: bigint('fixed_fee_minor', { mode: 'number' }),
+    /** The day the fee counts from, as an expense has `incurred_on`. */
+    fixedFeeOn: date('fixed_fee_on', { mode: 'string' }),
     ...timestamps,
   },
   (t) => [
@@ -122,6 +131,9 @@ export const projectMembers = pgTable(
     }),
     check('project_members_role_check', sql`${t.role} in ${oneOf(PROJECT_MEMBER_ROLES)}`),
     check('project_members_rates_check', sql`${t.billableRateMinor} >= 0 and ${t.costRateMinor} >= 0`),
+    check('project_members_fixed_fee_check', sql`${t.fixedFeeMinor} >= 0`),
+    // A date without a fee dates nothing.
+    check('project_members_fixed_fee_date_check', sql`${t.fixedFeeOn} is null or ${t.fixedFeeMinor} is not null`),
   ],
 )
 

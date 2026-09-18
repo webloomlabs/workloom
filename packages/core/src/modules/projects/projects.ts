@@ -442,6 +442,12 @@ const memberOutput = z.object({
   /** Per-hour overrides in the project's currency. Null when unset, or without `report:readFinancial`. */
   billableRateMinor: z.number().int().nullable(),
   costRateMinor: z.number().int().nullable(),
+  /**
+   * A fixed engagement cost instead of an hourly one: what this person costs
+   * the project in total. Set, their time is logged at a cost rate of zero.
+   */
+  fixedFeeMinor: z.number().int().nullable(),
+  fixedFeeOn: z.iso.date().nullable(),
   createdAt: z.date(),
 })
 
@@ -463,6 +469,8 @@ async function getMembers(ctx: ActorContext, where: ReturnType<typeof eq>, finan
     role: member.role as Member['role'],
     billableRateMinor: financial ? member.billableRateMinor : null,
     costRateMinor: financial ? member.costRateMinor : null,
+    fixedFeeMinor: financial ? member.fixedFeeMinor : null,
+    fixedFeeOn: financial ? member.fixedFeeOn : null,
     createdAt: member.createdAt,
   }))
 }
@@ -473,15 +481,23 @@ async function getMember(ctx: ActorContext, id: string, financial = ctx.has('rep
   return member
 }
 
-/** Rates are internal economics: they never go out in events. */
+/** Rates are internal economics: they never go out in events. A fee is a rate. */
 function memberEvent(member: Member) {
-  const { billableRateMinor: _b, costRateMinor: _c, ...rest } = member
+  const { billableRateMinor: _b, costRateMinor: _c, fixedFeeMinor: _f, fixedFeeOn: _fo, ...rest } = member
   return rest
 }
 
 async function insertMember(
   ctx: ActorContext,
-  values: { projectId: string; userId: string; role: Member['role']; billableRateMinor?: number | null; costRateMinor?: number | null },
+  values: {
+    projectId: string
+    userId: string
+    role: Member['role']
+    billableRateMinor?: number | null
+    costRateMinor?: number | null
+    fixedFeeMinor?: number | null
+    fixedFeeOn?: string | null
+  },
 ): Promise<Member> {
   const id = newId()
   const inserted = await ctx.tx
@@ -521,7 +537,17 @@ export const projectMemberList = defineProcedure({
 const rates = {
   billableRateMinor: minorAmount.nullish(),
   costRateMinor: minorAmount.nullish(),
+  /**
+   * A fixed engagement cost instead of an hourly one. Set, this person's time
+   * on this project is logged at a cost rate of zero and the fee is counted
+   * once against the project.
+   */
+  fixedFeeMinor: minorAmount.nullish(),
+  fixedFeeOn: z.iso.date().nullish(),
 }
+
+/** Every commercial term on a membership, for the permission escalation below. */
+const RATE_FIELDS = ['billableRateMinor', 'costRateMinor', 'fixedFeeMinor', 'fixedFeeOn'] as const
 
 export const projectMemberAdd = defineProcedure({
   name: 'projectMember.add',
@@ -539,38 +565,101 @@ export const projectMemberAdd = defineProcedure({
   async handler(ctx, input) {
     await loadActiveProject(ctx, input.id)
     await assertMember(ctx, input.userId)
-    requireFinancial(ctx, input.billableRateMinor != null || input.costRateMinor != null)
+    requireFinancial(ctx, RATE_FIELDS.some((f) => input[f] != null))
     return insertMember(ctx, {
       projectId: input.id,
       userId: input.userId,
       role: input.role,
       billableRateMinor: input.billableRateMinor ?? null,
       costRateMinor: input.costRateMinor ?? null,
+      fixedFeeMinor: input.fixedFeeMinor ?? null,
+      fixedFeeOn: input.fixedFeeOn ?? null,
     })
   },
 })
 
+/**
+ * Time already logged at an hourly cost rate, for someone about to go onto a
+ * fixed fee. Those entries would be paid for twice -- once by the hour and
+ * once by the fee -- so the caller has to say what should happen to them.
+ *
+ * Entries already at zero are not counted: they cost the project nothing
+ * either way.
+ */
+async function costedEntries(ctx: ActorContext, projectId: string, userId: string): Promise<number> {
+  const te = schema.timeEntries
+  const [row] = await ctx.tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(te)
+    .where(and(eq(te.projectId, projectId), eq(te.userId, userId), sql`${te.costRateMinor} > 0`))
+  return row?.n ?? 0
+}
+
 export const projectMemberUpdate = defineProcedure({
   name: 'projectMember.update',
-  summary: "Change a project member's role or rate overrides",
+  summary: "Change a project member's role, rate overrides, or fixed fee",
   permission: 'project:update',
-  input: z.object({ id: z.uuid(), role: z.enum(schema.PROJECT_MEMBER_ROLES).optional(), ...rates }),
+  input: z.object({
+    id: z.uuid(),
+    role: z.enum(schema.PROJECT_MEMBER_ROLES).optional(),
+    ...rates,
+    /**
+     * Confirms that time already logged at an hourly cost should be rewritten
+     * to cost nothing, because the fee now covers it. Without it, putting
+     * someone with costed time onto a fixed fee is refused rather than quietly
+     * double-counting.
+     */
+    rebaseLoggedCost: z.boolean().optional(),
+  }),
   output: memberOutput,
   http: { method: 'PATCH', path: '/project-members/{id}' },
   emits: ['project_member.updated'],
   async handler(ctx, input) {
-    const { id, ...fields } = input
+    const { id, rebaseLoggedCost, ...fields } = input
     const [before] = await ctx.tx.select().from(schema.projectMembers).where(eq(schema.projectMembers.id, id)).limit(1)
     if (!before) throw new NotFoundError('Project member', id)
     const patch = provided(fields)
-    requireFinancial(ctx, 'billableRateMinor' in patch || 'costRateMinor' in patch)
+    requireFinancial(ctx, RATE_FIELDS.some((f) => f in patch))
+
+    // Only when the fee is being switched on. Changing its amount afterwards
+    // touches nothing, because the entries already cost zero.
+    const startsFixedFee = patch.fixedFeeMinor != null && before.fixedFeeMinor === null
+    let rebased = 0
+    if (startsFixedFee) {
+      const costed = await costedEntries(ctx, before.projectId, before.userId)
+      if (costed > 0 && !rebaseLoggedCost) {
+        throw new DomainError(
+          `This person already has ${costed} time ${costed === 1 ? 'entry' : 'entries'} on this project logged at an hourly cost. ` +
+            'A fixed fee would count that work twice. Confirm to rewrite those entries to cost nothing.',
+          'logged_cost_would_double',
+          'fixedFeeMinor',
+        )
+      }
+      rebased = costed
+    }
 
     const changes = diff(before as Record<string, unknown>, patch)
-    if (!changes) return getMember(ctx, id)
+    if (!changes && rebased === 0) return getMember(ctx, id)
 
     await ctx.tx.update(schema.projectMembers).set({ ...patch, updatedAt: ctx.now }).where(eq(schema.projectMembers.id, id))
+
+    if (rebased > 0) {
+      const te = schema.timeEntries
+      await ctx.tx
+        .update(te)
+        .set({ costRateMinor: 0, costRateSource: 'project_member_fixed', updatedAt: ctx.now })
+        .where(and(eq(te.projectId, before.projectId), eq(te.userId, before.userId), sql`${te.costRateMinor} > 0`))
+    }
+
     const member = await getMember(ctx, id)
-    await ctx.audit({ action: 'project_member.updated', entityType: 'project', entityId: before.projectId, entityLabel: member.name, changes })
+    await ctx.audit({
+      action: 'project_member.updated',
+      entityType: 'project',
+      entityId: before.projectId,
+      entityLabel: member.name,
+      // How much history moved is the part someone will come back asking about.
+      changes: { ...changes, ...(rebased > 0 ? { rebasedTimeEntries: { from: null, to: rebased } } : {}) },
+    })
     await ctx.emit('project_member.updated', memberEvent(member))
     return member
   },

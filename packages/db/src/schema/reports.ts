@@ -4,7 +4,7 @@ import { bigint, integer, pgView, text, uuid } from 'drizzle-orm/pg-core'
  * What a project earned and what it cost.
  *
  * Declared here only so queries against it are typed; the view itself is
- * created by migration 0018, by hand, because `WITH (security_invoker = true)`
+ * created by migrations 0018 and 0025, by hand, because `WITH (security_invoker = true)`
  * is a security boundary and must not depend on which version of drizzle-kit
  * ran -- the same reason the row-level-security policies are hand-written.
  * `.existing()` tells drizzle-kit to leave it alone.
@@ -39,11 +39,19 @@ export const projectFinancials = pgView('project_financials_v', {
 
   /** Billable time nobody has invoiced yet, at its billable rate: what is still to bill. */
   uninvoicedMinor: bigint('uninvoiced_minor', { mode: 'number' }).notNull(),
-  /** Billed less labour and expenses. Work in progress is not counted until it is billed. */
+  /** Billed less labour, expenses and fixed fees. Work in progress is not counted until it is billed. */
   marginMinor: bigint('margin_minor', { mode: 'number' }).notNull(),
 
   billableSeconds: bigint('billable_seconds', { mode: 'number' }).notNull(),
   nonBillableSeconds: bigint('non_billable_seconds', { mode: 'number' }).notNull(),
   /** Entries with no cost rate: time the labour cost above cannot include. */
   entriesWithoutCostRate: integer('entries_without_cost_rate').notNull(),
+
+  /**
+   * Members engaged for a fixed fee rather than by the hour. Separate from
+   * `labourCostMinor`, which stays hourly: their time is snapshotted at a cost
+   * rate of zero, so the hours are visible and the money is counted once.
+   */
+  fixedCostMinor: bigint('fixed_cost_minor', { mode: 'number' }).notNull(),
+  membersWithFixedFee: integer('members_with_fixed_fee').notNull(),
 }).existing()

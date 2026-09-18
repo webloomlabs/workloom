@@ -295,6 +295,28 @@ async function createAsset(input: Record<string, unknown> = {}): Promise<string>
   return asset.id
 }
 
+async function createBankAccount(input: Record<string, unknown> = {}): Promise<string> {
+  const account = (await run('bankAccount.create', ownerOfA(), {
+    name: `Everyday ${unique()}`,
+    kind: 'bank',
+    openingBalanceOn: '2026-09-01',
+    openingBalanceMinor: 10_000_00,
+    ...input,
+  })) as { id: string }
+  return account.id
+}
+
+async function createBankTransaction(input: Record<string, unknown> = {}): Promise<string> {
+  const line = (await run('bankTransaction.create', ownerOfA(), {
+    bankAccountId: await createBankAccount(),
+    amountMinor: 1_320_00,
+    bookedOn: '2026-09-16',
+    description: `TRANSFER ACME ${unique()}`,
+    ...input,
+  })) as { id: string }
+  return line.id
+}
+
 async function createDocument(input: Record<string, unknown> = {}): Promise<string> {
   const document = (await run('document.upload', ownerOfA(), {
     companyId: await createCompany(),
@@ -433,12 +455,25 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   ],
   'project.archive': async () => ({ id: await createProject() }),
   'project.restore': async () => archived('project.archive', await createProject()),
-  'projectMember.add': async () => ({ id: await createProject(), userId: developerA, billableRateMinor: 150_00 }),
-  'projectMember.update': async () => {
-    const projectId = await createProject()
-    const member = (await run('projectMember.add', ownerOfA(), { id: projectId, userId: developerA })) as { id: string }
-    return { id: member.id, role: 'manager' }
-  },
+  'projectMember.add': async () => ({
+    id: await createProject(),
+    userId: developerA,
+    billableRateMinor: 150_00,
+    fixedFeeMinor: 4_000_00,
+    fixedFeeOn: '2026-09-01',
+  }),
+  'projectMember.update': [
+    async () => {
+      const projectId = await createProject()
+      const member = (await run('projectMember.add', ownerOfA(), { id: projectId, userId: developerA })) as { id: string }
+      return { id: member.id, role: 'manager' }
+    },
+    // No logged time, so switching a fee on needs no confirmation.
+    async () => {
+      const member = (await run('projectMember.add', ownerOfA(), { id: await createProject(), userId: developerA })) as { id: string }
+      return { id: member.id, fixedFeeMinor: 2_500_00 }
+    },
+  ],
   'projectMember.remove': async () => {
     const member = (await run('projectMember.add', ownerOfA(), { id: await createProject(), userId: developerA })) as { id: string }
     return { id: member.id }
@@ -711,6 +746,31 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'infrastructureAsset.update': async () => ({ id: await createAsset(), provider: `Registrar ${unique()}`, autoRenew: true }),
   'infrastructureAsset.delete': async () => ({ id: await createAsset() }),
 
+  'bankAccount.create': async () => ({ name: `Everyday ${unique()}`, kind: 'bank', openingBalanceOn: '2026-09-01', openingBalanceMinor: 10_000_00 }),
+  'bankAccount.update': async () => ({ id: await createBankAccount(), institution: `Bank ${unique()}`, accountIdentifier: '\u20266789' }),
+  'bankAccount.archive': async () => ({ id: await createBankAccount() }),
+  'bankAccount.restore': async () => {
+    const id = await createBankAccount()
+    await run('bankAccount.archive', ownerOfA(), { id })
+    return { id }
+  },
+
+  'bankTransaction.create': async () => ({
+    bankAccountId: await createBankAccount(),
+    amountMinor: 1_320_00,
+    bookedOn: '2026-09-16',
+    description: `TRANSFER ACME ${unique()}`,
+  }),
+  // Money out, so the register is exercised in both directions.
+  'bankTransaction.update': async () => ({ id: await createBankTransaction({ amountMinor: -44_00 }), counterparty: `Supplier ${unique()}` }),
+  'bankTransaction.delete': async () => ({ id: await createBankTransaction() }),
+  'bankTransaction.ignore': async () => ({ id: await createBankTransaction(), reason: `Bank error, reversed ${unique()}` }),
+  'bankTransaction.unignore': async () => {
+    const id = await createBankTransaction()
+    await run('bankTransaction.ignore', ownerOfA(), { id, reason: 'Set aside' })
+    return { id }
+  },
+
   'document.upload': async () => ({ companyId: await createCompany(), file: aFile(), title: `Signed contract ${unique()}`, category: 'contract' }),
   'document.update': async () => ({ id: await createDocument(), notes: `Countersigned ${unique()}`, clientVisible: true }),
   'document.delete': async () => ({ id: await createDocument() }),
@@ -791,6 +851,8 @@ const READS: Record<string, Fixture> = {
   'ticketMessage.list': async () => ({ ticketId: await createTicket() }),
   'maintenancePlan.get': async () => ({ id: await createPlan() }),
   'infrastructureAsset.get': async () => ({ id: await createAsset() }),
+  'bankAccount.get': async () => ({ id: await createBankAccount() }),
+  'bankTransaction.get': async () => ({ id: await createBankTransaction() }),
   'document.get': async () => ({ id: await createDocument() }),
   'document.download': async () => ({ id: await createDocument() }),
   'billingSchedule.get': async () => ({ id: (await createSchedule()).id }),

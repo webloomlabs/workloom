@@ -21,6 +21,7 @@ import { memberName, snapshotRates } from './rates.ts'
 type EntryRow = typeof schema.timeEntries.$inferSelect
 
 const rateSource = z.enum(schema.RATE_SOURCES)
+const costRateSource = z.enum(schema.COST_RATE_SOURCES)
 
 export const timeEntryOutput = z.object({
   id: z.uuid(),
@@ -51,7 +52,7 @@ export const timeEntryOutput = z.object({
   billableRateMinor: z.number().int().nullable(),
   billableRateSource: rateSource.nullable(),
   costRateMinor: z.number().int().nullable(),
-  costRateSource: rateSource.nullable(),
+  costRateSource: costRateSource.nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 })

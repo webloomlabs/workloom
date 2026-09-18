@@ -196,6 +196,18 @@ export const WalletIcon = icon(
   'WalletIcon',
 )
 
+export const BankIcon = icon(
+  <>
+    <path d="M3 9.5 12 4l9 5.5" />
+    <path d="M4.5 9.5V18" />
+    <path d="M9.5 9.5V18" />
+    <path d="M14.5 9.5V18" />
+    <path d="M19.5 9.5V18" />
+    <path d="M2.5 20.5h19" />
+  </>,
+  'BankIcon',
+)
+
 export const ChartIcon = icon(
   <>
     <path d="M4 20V4" />

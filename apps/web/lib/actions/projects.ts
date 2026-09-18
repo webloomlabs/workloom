@@ -169,6 +169,7 @@ export async function addMemberAction(_: ActionState, form: FormData): Promise<A
       role: (text(form, 'role') || 'member') as never,
       billableRateMinor: money(form, 'billableRate', currency),
       costRateMinor: money(form, 'costRate', currency),
+      fixedFeeMinor: money(form, 'fixedFee', currency),
     })
   } catch (error) {
     return failed(error, form)
@@ -186,6 +187,10 @@ export async function updateMemberAction(_: ActionState, form: FormData): Promis
       role: (maybe(form, 'role') || undefined) as never,
       billableRateMinor: money(form, 'billableRate', currency),
       costRateMinor: money(form, 'costRate', currency),
+      fixedFeeMinor: money(form, 'fixedFee', currency),
+      // The procedure refuses a fee over already-costed time unless this says
+      // to rewrite it. The checkbox only appears after that refusal.
+      rebaseLoggedCost: checked(form, 'rebaseLoggedCost'),
     })
   } catch (error) {
     return failed(error, form)

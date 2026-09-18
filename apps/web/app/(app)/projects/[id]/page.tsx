@@ -4,6 +4,8 @@ import {
   attachmentList,
   commentList,
   companyList,
+  documentList,
+  expenseList,
   milestoneList,
   projectGet,
   projectFinancials,
@@ -33,6 +35,9 @@ import {
 } from '@/components/projects/project-forms'
 import { QuickTaskForm, TaskStatusControl } from '@/components/projects/task-forms'
 import { EntryControls, LogTimeForm } from '@/components/time/time-forms'
+import { label as labelOf } from '@/lib/crm-labels'
+import { DOCUMENT_CATEGORY_LABELS } from '@/lib/service-labels'
+import { DeleteDocumentButton, DocumentVisibilityToggle, UploadDocumentForm } from '@/components/service/document-forms'
 import { formatBytes, formatDate, formatDateTime, todayIn } from '@/lib/format'
 import { PRIORITY_RANK, TASK_STATUS_LABELS } from '@/lib/project-labels'
 import { memberChoices, money, organizationSettings } from '@/lib/server/crm'
@@ -246,8 +251,14 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
  * rate it was logged at, revenue from the lines of issued invoices. Raising
  * someone's rate today moves none of it.
  */
-async function Financials({ project }: Context) {
+async function Financials({ project, can }: Context) {
   const report = await call(projectFinancials, { id: project.id })
+  // A contractor on a fixed fee usually also sends an invoice. Entering both
+  // counts the same money twice, and this is the only place to catch it.
+  const contractorSpend =
+    report.currencies.some((f) => f.membersWithFixedFee > 0) && can('expense:read')
+      ? (await call(expenseList, { projectId: project.id, category: 'contractor', limit: 1 })).data.length
+      : 0
 
   return (
     <div className="space-y-6">
@@ -261,7 +272,14 @@ async function Financials({ project }: Context) {
             )}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Stat label="Billed" value={money_(figures.billedMinor)} detail={`${money_(figures.collectedMinor)} collected`} />
-              <Stat label="Cost" value={money_(figures.costMinor)} detail={`${money_(figures.labourCostMinor)} time · ${money_(figures.expenseCostMinor)} expenses`} />
+              <Stat
+                label="Cost"
+                value={money_(figures.costMinor)}
+                detail={
+                  `${money_(figures.labourCostMinor)} time · ${money_(figures.expenseCostMinor)} expenses` +
+                  (figures.fixedCostMinor > 0 ? ` · ${money_(figures.fixedCostMinor)} fixed fees` : '')
+                }
+              />
               <Stat
                 label="Margin"
                 value={money_(figures.marginMinor)}
@@ -277,6 +295,12 @@ async function Financials({ project }: Context) {
             {negative && figures.billedMinor > 0 && (
               <Alert tone="warning">This project has cost more than it has billed.</Alert>
             )}
+            {figures.fixedCostMinor > 0 && contractorSpend > 0 && (
+              <Alert tone="warning">
+                Someone on this project is on a fixed fee, and there are also contractor expenses against it. If the fee and the contractor&rsquo;s
+                invoice are the same money, it is being counted twice — keep one or the other.
+              </Alert>
+            )}
             {figures.entriesWithoutCostRate > 0 && (
               <Alert tone="info">
                 {figures.entriesWithoutCostRate} time {figures.entriesWithoutCostRate === 1 ? 'entry has' : 'entries have'} no cost rate, so that
@@ -290,6 +314,12 @@ async function Financials({ project }: Context) {
                 <dl className="space-y-2 p-5 text-sm" aria-label={`Profit and loss in ${figures.currency}`}>
                   <Row label="Billed, excluding tax" value={money_(figures.billedMinor)} />
                   <Row label="Time" value={`-${money_(figures.labourCostMinor)}`} />
+                  {figures.fixedCostMinor > 0 && (
+                    <Row
+                      label={`Fixed fees (${figures.membersWithFixedFee} ${figures.membersWithFixedFee === 1 ? 'person' : 'people'})`}
+                      value={`-${money_(figures.fixedCostMinor)}`}
+                    />
+                  )}
                   <Row label="Expenses" value={`-${money_(figures.expenseCostMinor)}`} />
                   <div className={`flex justify-between gap-4 border-t border-line pt-2 text-base font-semibold ${negative ? 'text-critical' : ''}`}>
                     <dt>Margin</dt>
@@ -487,7 +517,11 @@ async function Team({ project, can, members }: Context) {
       <Card>
         <CardHeader
           title="Team"
-          description={financial ? `Rates are per hour in ${project.currency}, and override each person's defaults on this project only.` : undefined}
+          description={
+            financial
+              ? `Rates are per hour in ${project.currency}, and override each person's defaults on this project only. A fixed fee replaces the hourly cost: their time then costs nothing per hour and the fee is counted once.`
+              : undefined
+          }
         />
         {team.length === 0 ? (
           <EmptyState>Nobody is on this project yet.</EmptyState>
@@ -506,12 +540,18 @@ async function Team({ project, can, members }: Context) {
                     <Td className="whitespace-nowrap text-xs text-muted">
                       {m.billableRateMinor !== null ? `Bill ${money(m.billableRateMinor, project.currency)}/h` : 'Default bill rate'}
                       <br />
-                      {m.costRateMinor !== null ? `Cost ${money(m.costRateMinor, project.currency)}/h` : 'Default cost rate'}
+                      {/* A fixed fee replaces the hourly cost rather than sitting
+                          beside it, because that is what it does to the books. */}
+                      {m.fixedFeeMinor !== null
+                        ? `Fixed ${money(m.fixedFeeMinor, project.currency)}`
+                        : m.costRateMinor !== null
+                          ? `Cost ${money(m.costRateMinor, project.currency)}/h`
+                          : 'Default cost rate'}
                     </Td>
                   )}
                   <Td>
                     <MemberControls
-                      member={{ ...m, billableRate: rate(m.billableRateMinor), costRate: rate(m.costRateMinor) }}
+                      member={{ ...m, billableRate: rate(m.billableRateMinor), costRate: rate(m.costRateMinor), fixedFee: rate(m.fixedFeeMinor) }}
                       projectId={project.id}
                       currency={project.currency}
                       financial={financial}
@@ -557,22 +597,98 @@ async function Updates({ project, can, timezone }: Context) {
 }
 
 async function Files({ project, can, timezone }: Context) {
-  const { data } = await call(attachmentList, { projectId: project.id })
   const returnTo = `/projects/${project.id}`
+  // Two different things, deliberately kept apart: working files that belong to
+  // the project, and documents filed against the client that this project is
+  // the subject of -- a proposal, a contract, a brief. The second are the
+  // client's records and live in `client_documents`, so an internal project
+  // with no client cannot have any.
+  const [attachments, documents] = await Promise.all([
+    call(attachmentList, { projectId: project.id }),
+    project.companyId && can('document:read')
+      ? call(documentList, { projectId: project.id, limit: 50 })
+      : Promise.resolve({ data: [] as Awaited<ReturnType<typeof call<typeof documentList>>>['data'] }),
+  ])
+
   return (
-    <Card>
-      <CardHeader title="Files" description="Files for the project as a whole. Task files live on their tasks." />
-      {can('project:update') && !project.archivedAt && (
-        <div className="border-b border-line p-5">
-          <UploadForm projectId={project.id} returnTo={returnTo} canPublish maxLabel={formatBytes(ATTACHMENT_MAX_BYTES)} />
-        </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader title="Files" description="Files for the project as a whole. Task files live on their tasks." />
+        {can('project:update') && !project.archivedAt && (
+          <div className="border-b border-line p-5">
+            <UploadForm projectId={project.id} returnTo={returnTo} canPublish maxLabel={formatBytes(ATTACHMENT_MAX_BYTES)} />
+          </div>
+        )}
+        <FileList
+          projectId={project.id}
+          returnTo={returnTo}
+          files={attachments.data.map((f) => ({ ...f, size: formatBytes(f.sizeBytes), when: formatDateTime(f.createdAt, timezone) }))}
+        />
+      </Card>
+
+      {project.companyId && can('document:read') && (
+        <Card>
+          <CardHeader
+            title="Documents"
+            description="Proposals, contracts and briefs filed against the client for this project. They also appear on the client's record."
+          />
+          {can('document:create') && !project.archivedAt && (
+            <div className="border-b border-line p-5">
+              <UploadDocumentForm companyId={project.companyId} projects={[]} projectId={project.id} />
+            </div>
+          )}
+          {documents.data.length === 0 ? (
+            <EmptyState>Nothing filed against this project yet.</EmptyState>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Document</Th>
+                  <Th>Category</Th>
+                  <Th className="text-right">Size</Th>
+                  <Th>Filed</Th>
+                  <Th>Client can see</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {documents.data.map((document) => (
+                  <Tr key={document.id}>
+                    <Td>
+                      <a href={`/files/documents/${document.id}`} className="font-medium hover:underline">{document.title}</a>
+                      <div className="text-xs text-muted">{document.filename}</div>
+                    </Td>
+                    <Td className="text-muted">{labelOf(DOCUMENT_CATEGORY_LABELS, document.category)}</Td>
+                    <Td className="whitespace-nowrap text-right tabular-nums text-muted">{formatBytes(document.sizeBytes)}</Td>
+                    <Td className="whitespace-nowrap text-muted">
+                      {formatDate(document.createdAt)}
+                      {document.uploaderName ? ` · ${document.uploaderName}` : ''}
+                    </Td>
+                    <Td>
+                      {can('document:update') ? (
+                        <DocumentVisibilityToggle
+                          id={document.id}
+                          companyId={project.companyId!}
+                          projectId={project.id}
+                          clientVisible={document.clientVisible}
+                        />
+                      ) : (
+                        <span className="text-sm text-muted">{document.clientVisible ? 'Yes' : 'No'}</span>
+                      )}
+                    </Td>
+                    <Td className="text-right">
+                      {can('document:delete') && (
+                        <DeleteDocumentButton id={document.id} companyId={project.companyId!} projectId={project.id} />
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
       )}
-      <FileList
-        projectId={project.id}
-        returnTo={returnTo}
-        files={data.map((f) => ({ ...f, size: formatBytes(f.sizeBytes), when: formatDateTime(f.createdAt, timezone) }))}
-      />
-    </Card>
+    </div>
   )
 }
 

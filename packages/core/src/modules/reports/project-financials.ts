@@ -9,7 +9,7 @@ import { loadProject } from '../projects/projects.ts'
 /**
  * What a project earned and what it cost.
  *
- * Every figure comes from `project_financials_v` (migration 0018), which
+ * Every figure comes from `project_financials_v` (migrations 0018 and 0025), which
  * derives them from what was stored at the time: time at the rate each entry
  * was logged at, revenue from the lines of issued invoices. Nothing here
  * recomputes a rate, which is why raising someone's pay today cannot change
@@ -31,6 +31,13 @@ const financialsOutput = z.object({
   expenseCostMinor: z.number().int(),
   /** The part of that cost already rebilled, and so also counted in `billedMinor`. */
   rebilledCostMinor: z.number().int(),
+  /**
+   * Members engaged for a fixed fee rather than by the hour. Counted once, and
+   * kept out of `labourCostMinor` -- their time is logged at a cost rate of
+   * zero, so the hours show without the money being counted twice.
+   */
+  fixedCostMinor: z.number().int(),
+  membersWithFixedFee: z.number().int(),
   costMinor: z.number().int(),
   /** Billable time nobody has invoiced yet, at its billable rate. */
   uninvoicedMinor: z.number().int(),
@@ -57,6 +64,8 @@ type ViewRow = {
   labourCostMinor: number
   expenseCostMinor: number
   rebilledCostMinor: number
+  fixedCostMinor: number
+  membersWithFixedFee: number
   uninvoicedMinor: number
   marginMinor: number
   billableSeconds: number
@@ -74,6 +83,8 @@ export function noFinancials(currency: string): ProjectFinancials {
     labourCostMinor: 0,
     expenseCostMinor: 0,
     rebilledCostMinor: 0,
+    fixedCostMinor: 0,
+    membersWithFixedFee: 0,
     uninvoicedMinor: 0,
     marginMinor: 0,
     billableSeconds: 0,
@@ -92,7 +103,9 @@ function present(row: ViewRow): ProjectFinancials {
     labourCostMinor: row.labourCostMinor,
     expenseCostMinor: row.expenseCostMinor,
     rebilledCostMinor: row.rebilledCostMinor,
-    costMinor: row.labourCostMinor + row.expenseCostMinor,
+    fixedCostMinor: row.fixedCostMinor,
+    membersWithFixedFee: row.membersWithFixedFee,
+    costMinor: row.labourCostMinor + row.expenseCostMinor + row.fixedCostMinor,
     uninvoicedMinor: row.uninvoicedMinor,
     marginMinor: row.marginMinor,
     marginPercent: marginPercent(row.marginMinor, row.billedMinor),
@@ -114,6 +127,8 @@ const columns = {
   labourCostMinor: v.labourCostMinor,
   expenseCostMinor: v.expenseCostMinor,
   rebilledCostMinor: v.rebilledCostMinor,
+  fixedCostMinor: v.fixedCostMinor,
+  membersWithFixedFee: v.membersWithFixedFee,
   uninvoicedMinor: v.uninvoicedMinor,
   marginMinor: v.marginMinor,
   billableSeconds: v.billableSeconds,

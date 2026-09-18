@@ -61,6 +61,18 @@ export const STATEMENTS = {
   /** Recurring billing: the schedules that raise invoices on their own. */
   billingSchedule: ['read', 'create', 'update', 'delete'],
 
+  /** The agency's own bank, card, and cash accounts. A setting more than daily work. */
+  bankAccount: ['read', 'create', 'update', 'archive'],
+  /**
+   * Statement lines and the reconciliation desk. `reconcile` covers matching a
+   * line, ignoring one, and closing off a statement period -- one permission,
+   * because they are one job. Explaining a line as a new payment or expense
+   * takes `payment:create` or `expense:create` instead: creating the record is
+   * the stronger thing it does, and gating that behind a reconciliation
+   * permission would be a quiet escalation.
+   */
+  bankTransaction: ['read', 'create', 'update', 'delete', 'import', 'reconcile'],
+
   /** Financial reporting, including project profitability and margins. */
   report: ['read', 'readFinancial'],
 } as const satisfies Record<string, readonly string[]>

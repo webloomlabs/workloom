@@ -359,6 +359,9 @@ export async function uploadDocumentAction(_: ActionState, form: FormData): Prom
     return failed(error, form)
   }
   revalidatePath(`/companies/${companyId}`)
+  // A document filed against a project shows on the project too.
+  const filedAgainst = text(form, 'projectId')
+  if (filedAgainst) revalidatePath(`/projects/${filedAgainst}`)
   return { status: 'success', message: 'Document filed.' }
 }
 
@@ -375,6 +378,7 @@ export async function updateDocumentAction(_: ActionState, form: FormData): Prom
     return failed(error, form)
   }
   revalidatePath(`/companies/${text(form, 'companyId')}`)
+  if (text(form, 'projectId')) revalidatePath(`/projects/${text(form, 'projectId')}`)
   return { status: 'success', message: 'Saved.' }
 }
 
@@ -385,6 +389,7 @@ export async function deleteDocumentAction(_: ActionState, form: FormData): Prom
     return failed(error, form)
   }
   revalidatePath(`/companies/${text(form, 'companyId')}`)
+  if (text(form, 'projectId')) revalidatePath(`/projects/${text(form, 'projectId')}`)
   return { status: 'idle' }
 }
 

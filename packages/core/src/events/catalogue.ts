@@ -152,6 +152,25 @@ const definitions = {
   'billing_schedule.status_changed': { description: 'A schedule was paused, resumed, or ended', since: 'S11' },
   'billing_schedule.invoiced': { description: 'A schedule raised a draft invoice for a period', since: 'S11' },
   'billing_schedule.deleted': { description: 'A schedule was deleted', since: 'S11' },
+
+  'bank_account.created': { description: 'A bank, card, or cash account was added', since: 'S12' },
+  'bank_account.updated': { description: "An account's details changed", since: 'S12' },
+  'bank_account.archived': { description: 'An account was archived', since: 'S12' },
+  'bank_account.restored': { description: 'An archived account was restored', since: 'S12' },
+  'bank_account.unreconciled': { description: 'An account has statement lines nobody has explained', since: 'S12' },
+
+  // One event per import, not one per line: a two-thousand-row statement must
+  // not put two thousand rows in the outbox. The payload carries the counts.
+  'bank_transaction.imported': { description: 'Statement lines were imported from a file', since: 'S12' },
+  'bank_transaction.created': { description: 'A statement line was entered by hand', since: 'S12' },
+  'bank_transaction.updated': { description: 'A statement line was corrected', since: 'S12' },
+  'bank_transaction.deleted': { description: 'A statement line was deleted', since: 'S12' },
+  'bank_transaction.matched': { description: 'A statement line was explained by a payment or an expense', since: 'S12' },
+  'bank_transaction.unmatched': { description: 'An explanation was removed from a statement line', since: 'S12' },
+  'bank_transaction.ignored': { description: 'A statement line was set aside with a reason', since: 'S12' },
+
+  'bank_reconciliation.completed': { description: 'An account was reconciled to a statement', since: 'S12' },
+  'bank_reconciliation.undone': { description: 'A completed reconciliation was re-opened', since: 'S12' },
 } as const satisfies Record<string, Definition>
 
 export type EventType = keyof typeof definitions

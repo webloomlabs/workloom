@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DomainError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
-import { resolveRates, type RateSnapshot } from '../../time/index.ts'
+import { applyFixedFee, resolveRates, type RateSnapshot } from '../../time/index.ts'
 import { baseCurrency, currencyCode, minorAmount } from '../crm/shared.ts'
 
 /**
@@ -157,7 +157,7 @@ export async function snapshotRates(ctx: ActorContext, project: { id: string; cu
   const pm = schema.projectMembers
   const [overrides, defaults] = await Promise.all([
     ctx.tx
-      .select({ billableRateMinor: pm.billableRateMinor, costRateMinor: pm.costRateMinor })
+      .select({ billableRateMinor: pm.billableRateMinor, costRateMinor: pm.costRateMinor, fixedFeeMinor: pm.fixedFeeMinor })
       .from(pm)
       .where(and(eq(pm.projectId, project.id), eq(pm.userId, userId)))
       .limit(1),
@@ -166,9 +166,12 @@ export async function snapshotRates(ctx: ActorContext, project: { id: string; cu
       .from(r)
       .where(and(eq(r.currency, project.currency), or(eq(r.userId, userId), isNull(r.userId)))),
   ])
-  return resolveRates({
+  const resolved = resolveRates({
     project_member: overrides[0],
     member: defaults.find((d) => d.userId === userId),
     organization: defaults.find((d) => d.userId === null),
   })
+  // Last, and after the hourly chain has run: a fixed fee overrides whatever
+  // cost rate would otherwise have applied, and leaves the billable side alone.
+  return applyFixedFee(resolved, overrides[0]?.fixedFeeMinor ?? null)
 }

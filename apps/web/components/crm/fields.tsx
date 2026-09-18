@@ -31,7 +31,19 @@ export function TextField({
   type = 'text',
   required,
   placeholder,
-}: Common & { defaultValue?: string | null | undefined; type?: string | undefined; required?: boolean | undefined; placeholder?: string | undefined }) {
+  disabled,
+}: Common & {
+  defaultValue?: string | null | undefined
+  type?: string | undefined
+  required?: boolean | undefined
+  placeholder?: string | undefined
+  /**
+   * A field the record no longer allows changing. A disabled input is not
+   * submitted at all, which is what tells an update action to leave the value
+   * alone rather than sending back what it read.
+   */
+  disabled?: boolean | undefined
+}) {
   const error = fieldError(state, name)
   return (
     <Field id={id} label={label} hint={hint} error={error}>
@@ -41,6 +53,7 @@ export function TextField({
         type={type}
         required={required}
         placeholder={placeholder}
+        disabled={disabled}
         defaultValue={initial(state, name, defaultValue)}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
@@ -67,11 +80,23 @@ export function SelectField({
   defaultValue,
   options,
   empty,
-}: Common & { defaultValue?: string | null | undefined; options: Option[]; empty?: string | undefined }) {
+  disabled,
+}: Common & {
+  defaultValue?: string | null | undefined
+  options: Option[]
+  empty?: string | undefined
+  disabled?: boolean | undefined
+}) {
   const error = fieldError(state, name)
   return (
     <Field id={id} label={label} hint={hint} error={error}>
-      <Select id={id} name={name} defaultValue={initial(state, name, defaultValue)} aria-invalid={error ? true : undefined}>
+      <Select
+        id={id}
+        name={name}
+        disabled={disabled}
+        defaultValue={initial(state, name, defaultValue)}
+        aria-invalid={error ? true : undefined}
+      >
         {empty !== undefined && <option value="">{empty}</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>

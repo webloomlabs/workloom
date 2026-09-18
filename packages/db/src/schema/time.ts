@@ -17,6 +17,13 @@ import { projects, tasks } from './projects.ts'
 
 /** Where a snapshotted rate came from. */
 export const RATE_SOURCES = ['project_member', 'member', 'organization'] as const
+/**
+ * The same, plus the one source a billable rate can never have: a member on a
+ * fixed engagement fee costs the project nothing per hour, because the fee is
+ * the cost. The zero that lands on their entries says so, rather than looking
+ * like a rate nobody set.
+ */
+export const COST_RATE_SOURCES = [...RATE_SOURCES, 'project_member_fixed'] as const
 
 function oneOf(values: readonly string[]) {
   return sql.raw(`(${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`)
@@ -135,7 +142,7 @@ export const timeEntries = pgTable(
     ),
     check(
       'time_entries_cost_source_check',
-      sql`(${t.costRateMinor} is null) = (${t.costRateSource} is null) and ${t.costRateSource} in ${oneOf(RATE_SOURCES)}`,
+      sql`(${t.costRateMinor} is null) = (${t.costRateSource} is null) and ${t.costRateSource} in ${oneOf(COST_RATE_SOURCES)}`,
     ),
   ],
 )

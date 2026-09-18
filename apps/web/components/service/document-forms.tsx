@@ -12,12 +12,22 @@ import { FormMessage, SubmitButton, fieldError } from '../form-bits'
 const choices = (items: Choice[]) => items.map((i) => ({ value: i.id, label: i.name }))
 
 /** Files a document against a client. Up to 25 MB, which the procedure enforces. */
-export function UploadDocumentForm({ companyId, projects }: { companyId: string; projects: Choice[] }) {
+export function UploadDocumentForm({
+  companyId,
+  projects,
+  projectId,
+}: {
+  companyId: string
+  projects: Choice[]
+  /** Fixed, when filing from a project's own page: the picker would only offer the project you are on. */
+  projectId?: string
+}) {
   const [state, action] = useActionState(uploadDocumentAction, idle)
   const error = fieldError(state, 'file')
   return (
     <form action={action} className="space-y-4" noValidate>
       <input type="hidden" name="companyId" value={companyId} />
+      {projectId && <input type="hidden" name="projectId" value={projectId} />}
       <FormMessage state={state} />
       <div className="space-y-1.5">
         <Label htmlFor="file">File</Label>
@@ -37,7 +47,7 @@ export function UploadDocumentForm({ companyId, projects }: { companyId: string;
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField state={state} name="title" label="Title" hint="Defaults to the file's name." />
         <SelectField state={state} name="category" label="Category" defaultValue="contract" options={options(DOCUMENT_CATEGORY_LABELS)} />
-        <SelectField state={state} name="projectId" label="Project" options={choices(projects)} empty="Not project-specific" />
+        {!projectId && <SelectField state={state} name="projectId" label="Project" options={choices(projects)} empty="Not project-specific" />}
       </div>
       <TextAreaField state={state} name="notes" label="Notes" />
       <div className="flex items-center gap-2">
@@ -51,24 +61,36 @@ export function UploadDocumentForm({ companyId, projects }: { companyId: string;
   )
 }
 
-export function DeleteDocumentButton({ id, companyId }: { id: string; companyId: string }) {
+export function DeleteDocumentButton({ id, companyId, projectId }: { id: string; companyId: string; projectId?: string }) {
   const [, action] = useActionState(deleteDocumentAction, idle)
   return (
     <form action={action}>
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="companyId" value={companyId} />
+      {projectId && <input type="hidden" name="projectId" value={projectId} />}
       <SubmitButton variant="ghost" size="xs" pendingLabel="…">Delete</SubmitButton>
     </form>
   )
 }
 
 /** Flips whether the client may see a document. Submits on change. */
-export function DocumentVisibilityToggle({ id, companyId, clientVisible }: { id: string; companyId: string; clientVisible: boolean }) {
+export function DocumentVisibilityToggle({
+  id,
+  companyId,
+  clientVisible,
+  projectId,
+}: {
+  id: string
+  companyId: string
+  clientVisible: boolean
+  projectId?: string
+}) {
   const [, action] = useActionState(updateDocumentAction, idle)
   return (
     <form action={action} className="flex items-center">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="companyId" value={companyId} />
+      {projectId && <input type="hidden" name="projectId" value={projectId} />}
       <input type="hidden" name="clientVisiblePresent" value="1" />
       <label className="flex items-center gap-2 text-xs text-muted">
         <Checkbox

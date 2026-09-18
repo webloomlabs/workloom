@@ -80,12 +80,14 @@ export function weekDays(date: string): string[] {
 
 export type RateLevel = { billableRateMinor: number | null; costRateMinor: number | null }
 export type RateSource = 'project_member' | 'member' | 'organization'
+/** Cost has one source a billable rate cannot: a fixed engagement fee. */
+export type CostRateSource = RateSource | 'project_member_fixed'
 
 export type RateSnapshot = {
   billableRateMinor: number | null
   billableRateSource: RateSource | null
   costRateMinor: number | null
-  costRateSource: RateSource | null
+  costRateSource: CostRateSource | null
 }
 
 /**
@@ -113,6 +115,22 @@ export function resolveRates(levels: { project_member?: RateLevel | undefined; m
     costRateMinor: cost.value,
     costRateSource: cost.source,
   }
+}
+
+/**
+ * A member engaged for a fixed fee costs the project nothing per hour: the fee
+ * is the cost, counted once against the project rather than against the clock.
+ *
+ * Applied at snapshot time rather than subtracted when the books are read.
+ * Reading it back would let today's membership rewrite last quarter's labour
+ * cost, which is the one property the whole snapshot design exists to prevent.
+ *
+ * Zero rather than null, because null means "nobody set a rate" and feeds the
+ * data-quality counter. This person's marginal cost is genuinely nothing.
+ */
+export function applyFixedFee(snapshot: RateSnapshot, fixedFeeMinor: number | null): RateSnapshot {
+  if (fixedFeeMinor === null) return snapshot
+  return { ...snapshot, costRateMinor: 0, costRateSource: 'project_member_fixed' }
 }
 
 /**

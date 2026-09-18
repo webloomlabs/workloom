@@ -165,6 +165,8 @@ export type MemberRow = {
   /** Decimal strings; empty when unset. */
   billableRate: string
   costRate: string
+  /** A total for the project rather than an hourly rate. Empty when they are hourly. */
+  fixedFee: string
 }
 
 export function AddMemberForm({ projectId, people, currency, financial }: { projectId: string; people: Choice[]; currency: string; financial: boolean }) {
@@ -181,6 +183,12 @@ export function AddMemberForm({ projectId, people, currency, financial }: { proj
           <>
             <TextField state={state} name="billableRate" label={`Billable rate (${currency}/h)`} hint="Blank uses their default." />
             <TextField state={state} name="costRate" label={`Cost rate (${currency}/h)`} />
+            <TextField
+              state={state}
+              name="fixedFee"
+              label={`Fixed fee (${currency})`}
+              hint="A total for the project instead of an hourly cost. Their time then costs nothing per hour."
+            />
           </>
         )}
       </div>
@@ -215,10 +223,26 @@ export function MemberControls({ member, projectId, currency, financial, canEdit
             <div className="w-24">
               <Input id={`cost-${member.id}`} name="costRate" defaultValue={member.costRate} placeholder="Cost/h" className="h-8 text-xs" />
             </div>
+            <label className="sr-only" htmlFor={`fee-${member.id}`}>Fixed fee for {member.name}</label>
+            <div className="w-24">
+              <Input id={`fee-${member.id}`} name="fixedFee" defaultValue={member.fixedFee} placeholder="Fixed fee" className="h-8 text-xs" />
+            </div>
           </>
         )}
         <SubmitButton size="sm" variant="secondary" pendingLabel="…">Save</SubmitButton>
-        {state.status === 'error' && <span role="alert" className="text-xs text-critical">{fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? state.message}</span>}
+        {/* The procedure refuses a fee over time already costed by the hour, and
+            names how many entries. Confirming rewrites them to cost nothing. */}
+        {fieldError(state, 'fixedFeeMinor') && (
+          <label className="flex items-center gap-2 text-xs text-muted">
+            <Checkbox name="rebaseLoggedCost" />
+            Rewrite that logged time to cost nothing
+          </label>
+        )}
+        {state.status === 'error' && (
+          <span role="alert" className="text-xs text-critical">
+            {fieldError(state, 'billableRate') ?? fieldError(state, 'costRate') ?? fieldError(state, 'fixedFeeMinor') ?? state.message}
+          </span>
+        )}
       </form>
       <form action={removeMemberAction}>
         <input type="hidden" name="id" value={member.id} />
