@@ -136,6 +136,36 @@ export function refuseArchivedAccount(account: AccountRow): void {
 }
 
 /**
+ * The account a payment or an expense says its money moved through.
+ *
+ * Validated here rather than left to the foreign key so the refusal says
+ * something useful: the key would only report a constraint name, and "that
+ * account is in USD" is the thing the person needs to hear.
+ *
+ * Lives in this file because it is about accounts and this file imports nothing
+ * from finance -- which is what keeps finance's own dependency on it one-way.
+ */
+export async function resolveAccount(
+  ctx: ActorContext,
+  bankAccountId: string | null | undefined,
+  currency: string,
+): Promise<string | null> {
+  if (!bankAccountId) return null
+  const account = await loadBankAccount(ctx, bankAccountId)
+  if (account.archivedAt) {
+    throw new DomainError(`${account.name} is closed. Choose an open account.`, 'account_archived', 'bankAccountId')
+  }
+  if (account.currency !== currency) {
+    throw new DomainError(
+      `${account.name} is in ${account.currency}, and this is in ${currency}. Money cannot move through an account in another currency.`,
+      'account_currency_mismatch',
+      'bankAccountId',
+    )
+  }
+  return account.id
+}
+
+/**
  * Leaves exactly one default. The partial unique index would refuse a second,
  * so the old one is stood down in the same transaction rather than relying on
  * the caller to have noticed.

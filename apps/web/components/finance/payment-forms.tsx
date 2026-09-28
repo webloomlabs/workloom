@@ -29,6 +29,8 @@ export function RecordPaymentForm({
   today,
   invoice,
   returnTo,
+  accounts,
+  defaultAccountId,
 }: {
   companies?: Choice[]
   companyId: string | null
@@ -38,6 +40,9 @@ export function RecordPaymentForm({
   /** Set when recording against one invoice: the amount defaults to what it still owes. */
   invoice?: { id: string; number: string | null; amountDueMinor: string } | undefined
   returnTo?: string | undefined
+  /** Open accounts in this payment's currency. Empty when none has been set up. */
+  accounts?: Choice[]
+  defaultAccountId?: string | null | undefined
 }) {
   const [state, action] = useActionState(recordPaymentAction, idle)
   return (
@@ -72,6 +77,18 @@ export function RecordPaymentForm({
         <TextField state={state} id="payment-receivedOn" name="receivedOn" label="Date" type="date" defaultValue={today} />
         <SelectField state={state} id="payment-method" name="method" label="How" defaultValue="bank_transfer" options={options(PAYMENT_METHOD_LABELS)} />
         <TextField state={state} id="payment-reference" name="reference" label="Reference" placeholder="Bank reference or receipt number" />
+        {accounts && accounts.length > 0 && (
+          <SelectField
+            state={state}
+            id="payment-bankAccountId"
+            name="bankAccountId"
+            label="Account"
+            defaultValue={defaultAccountId ?? ''}
+            options={choices(accounts)}
+            empty="Not recorded"
+            hint="Where the money landed. It does not add a line to the register — the bank statement still does that."
+          />
+        )}
         {currency !== baseCurrency && (
           <TextField state={state} id="payment-exchangeRate" name="exchangeRate" label={`1 ${currency} in ${baseCurrency}`} placeholder="1.52" />
         )}
@@ -144,8 +161,19 @@ export function UnallocateButton({ allocationId, invoiceId, label }: { allocatio
 
 export function EditPaymentForm({
   payment,
+  accounts,
 }: {
-  payment: { id: string; currency: string; amount: string; receivedOn: string; method: string; reference: string | null; notes: string | null }
+  payment: {
+    id: string
+    currency: string
+    amount: string
+    receivedOn: string
+    method: string
+    reference: string | null
+    bankAccountId: string | null
+    notes: string | null
+  }
+  accounts?: Choice[]
 }) {
   const [state, action] = useActionState(updatePaymentAction, idle)
   return (
@@ -157,6 +185,16 @@ export function EditPaymentForm({
         <TextField state={state} name="receivedOn" label="Date" type="date" defaultValue={payment.receivedOn} />
         <SelectField state={state} name="method" label="How" defaultValue={payment.method} options={options(PAYMENT_METHOD_LABELS)} />
         <TextField state={state} name="reference" label="Reference" defaultValue={payment.reference} />
+        {accounts && accounts.length > 0 && (
+          <SelectField
+            state={state}
+            name="bankAccountId"
+            label="Account"
+            defaultValue={payment.bankAccountId}
+            options={choices(accounts)}
+            empty="Not recorded"
+          />
+        )}
       </div>
       <TextAreaField state={state} name="notes" label="Notes" defaultValue={payment.notes} />
       <div className="flex flex-wrap items-center gap-3">

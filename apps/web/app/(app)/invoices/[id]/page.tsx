@@ -19,7 +19,7 @@ import { addInvoiceLineAction, removeInvoiceLineAction, updateInvoiceAction, upd
 import { formatDate, formatDateTime, todayIn } from '@/lib/format'
 import { PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
 import { TAX_MODE_LABELS } from '@/lib/finance-labels'
-import { money, organizationSettings } from '@/lib/server/crm'
+import { accountChoices, money, organizationSettings } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -42,6 +42,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
       ])
     : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
   const taxChoices = taxRates.data.map((t) => ({ id: t.id, name: t.name, rate: t.rate }))
+  const accounts = await accountChoices(invoice.currency, can('bankAccount:read'))
   const decimal = (minor: number) => minorToDecimalString(minor, invoice.currency)
   const contactEmail = contacts.data.find((c) => c.id === invoice.contactId)?.email ?? null
   const settled = !draft && can('payment:read') ? await call(paymentList, { invoiceId: invoice.id, limit: 100 }) : { data: [] }
@@ -238,6 +239,8 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                   today={todayIn(settings.timezone)}
                   invoice={{ id: invoice.id, number: invoice.number, amountDueMinor: decimal(invoice.amountDueMinor) }}
                   returnTo={`/invoices/${invoice.id}`}
+                  accounts={accounts.choices}
+                  defaultAccountId={accounts.defaultId}
                 />
               </div>
             </Card>

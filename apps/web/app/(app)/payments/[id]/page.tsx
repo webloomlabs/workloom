@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { AllocateForm, DeletePaymentButton, EditPaymentForm, UnallocateButton } from '@/components/finance/payment-forms'
 import { formatDate } from '@/lib/format'
 import { PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
-import { money } from '@/lib/server/crm'
+import { accountChoices, money } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -18,6 +18,7 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
   const can = (p: Permission) => viewer.permissions.has(p)
   const payment = await call(paymentGet, { id })
   const refund = payment.kind === 'refund'
+  const accounts = await accountChoices(payment.currency, can('bankAccount:read'))
 
   // What is left of it can go against anything of this client's still outstanding.
   const outstanding =
@@ -41,6 +42,11 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
             <span>{formatDate(payment.receivedOn)}</span>
             <span>{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</span>
             {payment.reference && <span className="text-ink">{payment.reference}</span>}
+            {payment.bankAccountId && (
+              <Link href={`/banking/${payment.bankAccountId}`} className="hover:underline">
+                into {payment.bankAccountName}
+              </Link>
+            )}
           </div>
         }
         actions={
@@ -113,8 +119,10 @@ export default async function PaymentPage({ params }: PageProps<'/payments/[id]'
                     receivedOn: payment.receivedOn,
                     method: payment.method,
                     reference: payment.reference,
+                    bankAccountId: payment.bankAccountId,
                     notes: payment.notes,
                   }}
+                  accounts={accounts.choices}
                 />
               </div>
             </Card>

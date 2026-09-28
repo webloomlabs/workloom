@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
 import { RecordPaymentForm } from '@/components/finance/payment-forms'
 import { todayIn } from '@/lib/format'
+import { accountChoices } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -12,9 +13,10 @@ export const metadata: Metadata = { title: 'Record a payment · Workloom' }
 
 export default async function NewPaymentPage({ searchParams }: PageProps<'/payments/new'>) {
   const query = await searchParams
-  await requireViewer()
+  const viewer = await requireViewer()
   const companyId = param(query.companyId) ?? null
   const [companies, organization] = await Promise.all([call(companyList, { limit: 100 }), call(organizationGet, {})])
+  const accounts = await accountChoices(organization.baseCurrency, viewer.permissions.has('bankAccount:read'))
 
   return (
     <div className="space-y-6">
@@ -38,6 +40,8 @@ export default async function NewPaymentPage({ searchParams }: PageProps<'/payme
             currency={organization.baseCurrency}
             baseCurrency={organization.baseCurrency}
             today={todayIn(organization.timezone)}
+            accounts={accounts.choices}
+            defaultAccountId={accounts.defaultId}
           />
         </div>
       </Card>

@@ -76,6 +76,9 @@ export async function recordPaymentAction(_: ActionState, form: FormData): Promi
       ...(text(form, 'receivedOn') ? { receivedOn: text(form, 'receivedOn') } : {}),
       method: (text(form, 'method') || 'bank_transfer') as never,
       reference: text(form, 'reference'),
+      // Blank means "not recorded", which is a real answer: money whose account
+      // nobody is sure of yet.
+      bankAccountId: text(form, 'bankAccountId') || null,
       notes: text(form, 'notes'),
       ...(text(form, 'exchangeRate') ? { exchangeRate: text(form, 'exchangeRate') } : {}),
       // A blank amount against a named invoice takes as much as it still owes.
@@ -128,6 +131,7 @@ export async function updatePaymentAction(_: ActionState, form: FormData): Promi
       ...(text(form, 'receivedOn') ? { receivedOn: text(form, 'receivedOn') } : {}),
       ...(text(form, 'method') ? { method: text(form, 'method') as never } : {}),
       reference: text(form, 'reference'),
+      ...(form.has('bankAccountId') ? { bankAccountId: text(form, 'bankAccountId') || null } : {}),
       notes: text(form, 'notes'),
     })
   } catch (error) {

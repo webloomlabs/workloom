@@ -57,6 +57,8 @@ function fields(form: FormData, currency: string) {
     taxRateId: text(form, 'taxRateId') || null,
     billable: checked(form, 'billable'),
     markupPercent: text(form, 'markupPercent') || null,
+    // Blank means "not recorded", which is a real answer.
+    bankAccountId: text(form, 'bankAccountId') || null,
     notes: text(form, 'notes'),
     ...(text(form, 'exchangeRate') ? { exchangeRate: text(form, 'exchangeRate') } : {}),
     amountMinor: amount(form, 'amount', currency),

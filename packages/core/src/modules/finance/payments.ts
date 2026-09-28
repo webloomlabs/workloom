@@ -5,6 +5,7 @@ import { ConflictError, DomainError, NotFoundError, type ActorContext } from '..
 import { newId } from '../../ids.ts'
 import { convert, formatDecimal, parseDecimal, RATE_SCALE, toSafeNumber } from '../../money/money.ts'
 import { defineProcedure } from '../../registry/index.ts'
+import { resolveAccount } from '../banking/accounts.ts'
 import { loadCompany } from '../crm/companies.ts'
 import {
   actingUserId,
@@ -76,6 +77,13 @@ export const paymentOutput = z.object({
   baseCurrency: z.string().length(3),
   exchangeRateToBase: z.string(),
   amountBaseMinor: z.number().int(),
+  /**
+   * The account the money moved through. Recorded when the payment is, because
+   * that is when it is known -- no statement has arrived yet. Reconciling later
+   * cannot contradict it: a match against a line in another account is refused.
+   */
+  bankAccountId: z.uuid().nullable(),
+  bankAccountName: z.string().nullable(),
   notes: z.string().nullable(),
   allocations: z.array(allocationOutput),
   createdAt: z.date(),
@@ -84,7 +92,12 @@ export const paymentOutput = z.object({
 
 export type Payment = z.infer<typeof paymentOutput>
 
-function presentPayment(row: PaymentRow, companyName: string, allocations: Payment['allocations']): Payment {
+function presentPayment(
+  row: PaymentRow,
+  companyName: string,
+  allocations: Payment['allocations'],
+  bankAccountName: string | null = null,
+): Payment {
   const allocatedMinor = allocations.reduce((sum, a) => sum + a.amountMinor, 0)
   return {
     id: row.id,
@@ -101,6 +114,8 @@ function presentPayment(row: PaymentRow, companyName: string, allocations: Payme
     baseCurrency: row.baseCurrency,
     exchangeRateToBase: asRate(row.exchangeRateToBase),
     amountBaseMinor: row.amountBaseMinor,
+    bankAccountId: row.bankAccountId,
+    bankAccountName,
     notes: row.notes,
     allocations,
     createdAt: row.createdAt,
@@ -135,15 +150,16 @@ async function loadAllocations(ctx: ActorContext, paymentIds: string[]): Promise
 
 function selectPayments(ctx: ActorContext) {
   return ctx.tx
-    .select({ payment: schema.payments, companyName: schema.companies.name })
+    .select({ payment: schema.payments, companyName: schema.companies.name, bankAccountName: schema.bankAccounts.name })
     .from(schema.payments)
     .innerJoin(schema.companies, eq(schema.companies.id, schema.payments.companyId))
+    .leftJoin(schema.bankAccounts, eq(schema.bankAccounts.id, schema.payments.bankAccountId))
 }
 
 export async function getPayment(ctx: ActorContext, id: string): Promise<Payment> {
   const [row] = await selectPayments(ctx).where(eq(schema.payments.id, id)).limit(1)
   if (!row) throw new NotFoundError('Payment', id)
-  return presentPayment(row.payment, row.companyName, (await loadAllocations(ctx, [id])).get(id) ?? [])
+  return presentPayment(row.payment, row.companyName, (await loadAllocations(ctx, [id])).get(id) ?? [], row.bankAccountName)
 }
 
 export async function loadPayment(ctx: ActorContext, id: string, options: { lock?: boolean } = {}): Promise<PaymentRow> {
@@ -379,6 +395,12 @@ export const paymentRecord = defineProcedure({
     receivedOn: z.iso.date().optional(),
     method: z.enum(schema.PAYMENT_METHODS).default('bank_transfer'),
     reference: optionalText(200),
+    /**
+     * The account the money landed in, or was refunded from. Must be in the
+     * payment's own currency. Recording it does not create a bank transaction:
+     * the register only ever shows what the bank reported.
+     */
+    bankAccountId: z.uuid().nullish(),
     notes: optionalText(10_000),
     exchangeRate: exchangeRateInput.optional(),
     /** What it settles. Left out, the money sits on the client's account. */
@@ -409,6 +431,7 @@ export const paymentRecord = defineProcedure({
       currency,
       amountMinor: input.amountMinor,
       ...(await inBaseCurrency(ctx, currency, input.amountMinor, input.exchangeRate)),
+      bankAccountId: await resolveAccount(ctx, input.bankAccountId, currency),
       notes: input.notes ?? null,
       createdBy: actingUserId(ctx),
     })
@@ -442,6 +465,7 @@ export const paymentUpdate = defineProcedure({
     receivedOn: z.iso.date().optional(),
     method: z.enum(schema.PAYMENT_METHODS).optional(),
     reference: optionalText(200),
+    bankAccountId: z.uuid().nullish(),
     notes: optionalText(10_000),
     exchangeRate: exchangeRateInput.optional(),
   }),
@@ -452,6 +476,7 @@ export const paymentUpdate = defineProcedure({
     const { id, exchangeRate, ...fields } = input
     const before = await loadPayment(ctx, id, { lock: true })
     const patch = provided(fields) as Partial<PaymentRow>
+    if ('bankAccountId' in patch) patch.bankAccountId = await resolveAccount(ctx, patch.bankAccountId, before.currency)
     const amountMinor = patch.amountMinor ?? before.amountMinor
     if (amountMinor !== before.amountMinor || exchangeRate !== undefined) {
       Object.assign(patch, await inBaseCurrency(ctx, before.currency, amountMinor, exchangeRate ?? before.exchangeRateToBase))

@@ -23,6 +23,7 @@ export type ExpenseValues = {
   taxRateId: string | null
   billable: boolean
   markupPercent: string | null
+  bankAccountId: string | null
   notes: string | null
 }
 
@@ -38,6 +39,8 @@ export function ExpenseForm({
   taxRates,
   baseCurrency,
   returnTo,
+  accounts,
+  defaultAccountId,
 }: {
   expense: ExpenseValues
   companies: Choice[]
@@ -45,6 +48,9 @@ export function ExpenseForm({
   taxRates: TaxChoice[]
   baseCurrency: string
   returnTo?: string | undefined
+  /** Open accounts in this expense's currency. Empty when none has been set up. */
+  accounts?: Choice[]
+  defaultAccountId?: string | null | undefined
 }) {
   const editing = Boolean(expense.id)
   const [state, action] = useActionState(editing ? updateExpenseAction : createExpenseAction, idle)
@@ -67,6 +73,17 @@ export function ExpenseForm({
           <TextField state={state} name="exchangeRate" label={`1 ${expense.currency} in ${baseCurrency}`} placeholder="1.52" />
         )}
         {!editing && <TextField state={state} name="currency" label="Currency" defaultValue={expense.currency} />}
+        {accounts && accounts.length > 0 && (
+          <SelectField
+            state={state}
+            name="bankAccountId"
+            label="Paid from"
+            empty="Not recorded"
+            defaultValue={editing ? expense.bankAccountId : (expense.bankAccountId ?? defaultAccountId ?? '')}
+            options={choices(accounts)}
+            hint="It does not add a line to the register — the bank statement still does that."
+          />
+        )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex items-center gap-2 text-sm">

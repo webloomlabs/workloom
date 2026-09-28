@@ -1,6 +1,6 @@
 import 'server-only'
 import { formatAmount } from '@workloom/core'
-import { memberList, organizationGet } from '@workloom/core/modules'
+import { bankAccountList, memberList, organizationGet } from '@workloom/core/modules'
 import type { TimelineEntry } from '@/components/crm/activity'
 import type { Choice } from '@/components/crm/fields'
 import { formatDateTime } from '../format.ts'
@@ -12,6 +12,25 @@ export async function memberChoices(): Promise<{ choices: Choice[]; nameOf: (id:
   const choices = data.map((m) => ({ id: m.userId, name: m.name })).sort((a, b) => a.name.localeCompare(b.name))
   const names = new Map(choices.map((c) => [c.id, c.name]))
   return { choices, nameOf: (id) => (id ? (names.get(id) ?? 'Former member') : 'Unassigned') }
+}
+
+/**
+ * Open accounts money can move through, for a payment or an expense in one
+ * currency, and which of them to offer first.
+ *
+ * Narrowed to the currency because the foreign key is: money cannot be recorded
+ * into an account that is not in its currency. `allowed` is passed rather than
+ * inferred, so a caller without `bankAccount:read` gets an empty list and the
+ * field simply does not appear.
+ */
+export async function accountChoices(currency: string, allowed: boolean): Promise<{ choices: Choice[]; defaultId: string | null }> {
+  if (!allowed) return { choices: [], defaultId: null }
+  const { data } = await call(bankAccountList, { limit: 100 })
+  const usable = data.filter((a) => a.currency === currency)
+  return {
+    choices: usable.map((a) => ({ id: a.id, name: a.name })),
+    defaultId: usable.find((a) => a.isDefault)?.id ?? null,
+  }
 }
 
 /** Base currency and time zone, for defaults and display. */

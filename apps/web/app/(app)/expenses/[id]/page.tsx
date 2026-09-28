@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { DeleteExpenseButton, ExpenseForm } from '@/components/finance/expense-forms'
 import { formatDate } from '@/lib/format'
 import { EXPENSE_CATEGORY_LABELS } from '@/lib/finance-labels'
-import { money } from '@/lib/server/crm'
+import { accountChoices, money } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -18,6 +18,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
   const can = (p: Permission) => viewer.permissions.has(p)
   const expense = await call(expenseGet, { id })
   const rebilled = expense.invoiceLineId !== null
+  const accounts = await accountChoices(expense.currency, can('bankAccount:read'))
   const editable = can('expense:update') && !rebilled
 
   const [companies, projects, taxRates, organization] = editable
@@ -39,6 +40,11 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
             <span>{formatDate(expense.incurredOn)}</span>
             <span>{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</span>
             {expense.supplier && <span>{expense.supplier}</span>}
+            {expense.bankAccountId && (
+              <Link href={`/banking/${expense.bankAccountId}`} className="hover:underline">
+                from {expense.bankAccountName}
+              </Link>
+            )}
             {expense.projectId && <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link>}
             {expense.companyId && <Link href={`/companies/${expense.companyId}?tab=expenses`} className="hover:underline">{expense.companyName}</Link>}
           </div>
@@ -79,8 +85,10 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
                   taxRateId: expense.taxRateId,
                   billable: expense.billable,
                   markupPercent: expense.markupPercent,
+                  bankAccountId: expense.bankAccountId,
                   notes: expense.notes,
                 }}
+                accounts={accounts.choices}
               />
             </div>
           </Card>

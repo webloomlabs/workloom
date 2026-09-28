@@ -19,6 +19,7 @@ import {
 import { user } from './auth.ts'
 import { tenantColumn, timestamps } from './columns.ts'
 import { companies, contacts, deals } from './crm.ts'
+import { bankAccounts } from './banking.ts'
 import { projects } from './projects.ts'
 
 /**
@@ -429,6 +430,21 @@ export const payments = pgTable(
     exchangeRateToBase: numeric('exchange_rate_to_base', { precision: 18, scale: 8 }).notNull(),
     amountBaseMinor: bigint('amount_base_minor', { mode: 'number' }).notNull(),
 
+    /**
+     * The account the money moved through.
+     *
+     * Recorded when the payment is, because that is when the person knows it --
+     * there is no statement line to ask yet. It is an attribution, not a
+     * reconciliation: it does not create a bank transaction, and the register
+     * still only ever shows what the bank actually reported. When the statement
+     * arrives and a line is matched, a trigger (migration 0031) refuses a match
+     * against any other account, so the two can never come to disagree.
+     *
+     * The currency is part of the foreign key, so money cannot be recorded into
+     * an account that is not in its currency.
+     */
+    bankAccountId: uuid('bank_account_id'),
+
     notes: text('notes'),
     createdBy: createdBy(),
     ...timestamps,
@@ -440,6 +456,12 @@ export const payments = pgTable(
     index('payments_organization_company_idx').on(t.organizationId, t.companyId),
     index('payments_organization_received_on_idx').on(t.organizationId, t.receivedOn),
     foreignKey({ name: 'payments_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
+    index('payments_organization_bank_account_idx').on(t.organizationId, t.bankAccountId),
+    foreignKey({
+      name: 'payments_bank_account_fk',
+      columns: [t.organizationId, t.bankAccountId, t.currency],
+      foreignColumns: [bankAccounts.organizationId, bankAccounts.id, bankAccounts.currency],
+    }),
     check('payments_kind_check', sql`${t.kind} in ${oneOf(PAYMENT_KINDS)}`),
     check('payments_method_check', sql`${t.method} in ${oneOf(PAYMENT_METHODS)}`),
     check('payments_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and ${t.baseCurrency} ~ '^[A-Z]{3}$'`),
@@ -550,6 +572,12 @@ export const expenses = pgTable(
     /** The invoice line that rebilled it. Set, the expense can no longer change. */
     invoiceLineId: uuid('invoice_line_id'),
 
+    /**
+     * The account it was paid from. As on a payment: an attribution recorded
+     * when the expense is, not a reconciliation. See the comment there.
+     */
+    bankAccountId: uuid('bank_account_id'),
+
     notes: text('notes'),
     createdBy: createdBy(),
     ...timestamps,
@@ -566,6 +594,12 @@ export const expenses = pgTable(
     foreignKey({ name: 'expenses_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
     foreignKey({ name: 'expenses_tax_rate_fk', columns: [t.organizationId, t.taxRateId], foreignColumns: [taxRates.organizationId, taxRates.id] }),
     foreignKey({ name: 'expenses_invoice_line_fk', columns: [t.organizationId, t.invoiceLineId], foreignColumns: [invoiceLines.organizationId, invoiceLines.id] }),
+    index('expenses_organization_bank_account_idx').on(t.organizationId, t.bankAccountId),
+    foreignKey({
+      name: 'expenses_bank_account_fk',
+      columns: [t.organizationId, t.bankAccountId, t.currency],
+      foreignColumns: [bankAccounts.organizationId, bankAccounts.id, bankAccounts.currency],
+    }),
     check('expenses_category_check', sql`${t.category} in ${oneOf(EXPENSE_CATEGORIES)}`),
     check('expenses_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and ${t.baseCurrency} ~ '^[A-Z]{3}$'`),
     check('expenses_amount_check', sql`${t.amountMinor} >= 0 and ${t.taxMinor} >= 0`),

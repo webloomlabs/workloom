@@ -16820,6 +16820,1248 @@
         }
       }
     },
+    "/bank-accounts": {
+      "get": {
+        "operationId": "bankAccount.list",
+        "summary": "The agency’s accounts, with what is in them and what is still unexplained",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "bank",
+                "credit_card",
+                "cash",
+                "paypal",
+                "stripe",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "needsAttention",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "bank",
+                              "credit_card",
+                              "cash",
+                              "paypal",
+                              "stripe",
+                              "other"
+                            ]
+                          },
+                          "currency": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 3
+                          },
+                          "institution": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "accountIdentifier": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "openingBalanceMinor": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "openingBalanceOn": {
+                            "type": "string",
+                            "format": "date",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                          },
+                          "currentBalanceMinor": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "isDefault": {
+                            "type": "boolean"
+                          },
+                          "unexplainedCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "unexplainedMinor": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "oldestUnexplainedOn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastReconciledOn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "archivedAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {},
+                          "updatedAt": {}
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "kind",
+                          "currency",
+                          "institution",
+                          "accountIdentifier",
+                          "openingBalanceMinor",
+                          "openingBalanceOn",
+                          "currentBalanceMinor",
+                          "isDefault",
+                          "unexplainedCount",
+                          "unexplainedMinor",
+                          "oldestUnexplainedOn",
+                          "lastReconciledOn",
+                          "archivedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      },
+      "post": {
+        "operationId": "bankAccount.create",
+        "summary": "Add a bank, card, or cash account",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "openingBalanceMinor": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "openingBalanceOn": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "bank",
+                      "credit_card",
+                      "cash",
+                      "paypal",
+                      "stripe",
+                      "other"
+                    ]
+                  },
+                  "institution": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "accountIdentifier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "isDefault": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "bank",
+                        "credit_card",
+                        "cash",
+                        "paypal",
+                        "stripe",
+                        "other"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    },
+                    "institution": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accountIdentifier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "openingBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openingBalanceOn": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "currentBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    },
+                    "unexplainedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexplainedMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "oldestUnexplainedOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastReconciledOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {},
+                    "updatedAt": {}
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "currency",
+                    "institution",
+                    "accountIdentifier",
+                    "openingBalanceMinor",
+                    "openingBalanceOn",
+                    "currentBalanceMinor",
+                    "isDefault",
+                    "unexplainedCount",
+                    "unexplainedMinor",
+                    "oldestUnexplainedOn",
+                    "lastReconciledOn",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/bank-accounts/{id}": {
+      "get": {
+        "operationId": "bankAccount.get",
+        "summary": "One account, its balance, and when it last reconciled",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "bank",
+                        "credit_card",
+                        "cash",
+                        "paypal",
+                        "stripe",
+                        "other"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    },
+                    "institution": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accountIdentifier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "openingBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openingBalanceOn": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "currentBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    },
+                    "unexplainedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexplainedMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "oldestUnexplainedOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastReconciledOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {},
+                    "updatedAt": {}
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "currency",
+                    "institution",
+                    "accountIdentifier",
+                    "openingBalanceMinor",
+                    "openingBalanceOn",
+                    "currentBalanceMinor",
+                    "isDefault",
+                    "unexplainedCount",
+                    "unexplainedMinor",
+                    "oldestUnexplainedOn",
+                    "lastReconciledOn",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "bankAccount.update",
+        "summary": "Rename an account, or change how it is identified",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "openingBalanceMinor": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "openingBalanceOn": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "bank",
+                      "credit_card",
+                      "cash",
+                      "paypal",
+                      "stripe",
+                      "other"
+                    ]
+                  },
+                  "institution": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "accountIdentifier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "isDefault": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "bank",
+                        "credit_card",
+                        "cash",
+                        "paypal",
+                        "stripe",
+                        "other"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    },
+                    "institution": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accountIdentifier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "openingBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openingBalanceOn": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "currentBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    },
+                    "unexplainedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexplainedMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "oldestUnexplainedOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastReconciledOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {},
+                    "updatedAt": {}
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "currency",
+                    "institution",
+                    "accountIdentifier",
+                    "openingBalanceMinor",
+                    "openingBalanceOn",
+                    "currentBalanceMinor",
+                    "isDefault",
+                    "unexplainedCount",
+                    "unexplainedMinor",
+                    "oldestUnexplainedOn",
+                    "lastReconciledOn",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/bank-accounts/{id}/archive": {
+      "post": {
+        "operationId": "bankAccount.archive",
+        "summary": "Close an account, keeping everything that went through it",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "bank",
+                        "credit_card",
+                        "cash",
+                        "paypal",
+                        "stripe",
+                        "other"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    },
+                    "institution": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accountIdentifier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "openingBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openingBalanceOn": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "currentBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    },
+                    "unexplainedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexplainedMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "oldestUnexplainedOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastReconciledOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {},
+                    "updatedAt": {}
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "currency",
+                    "institution",
+                    "accountIdentifier",
+                    "openingBalanceMinor",
+                    "openingBalanceOn",
+                    "currentBalanceMinor",
+                    "isDefault",
+                    "unexplainedCount",
+                    "unexplainedMinor",
+                    "oldestUnexplainedOn",
+                    "lastReconciledOn",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/bank-accounts/{id}/restore": {
+      "post": {
+        "operationId": "bankAccount.restore",
+        "summary": "Reopen an archived account",
+        "tags": [
+          "bankAccount"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "bank",
+                        "credit_card",
+                        "cash",
+                        "paypal",
+                        "stripe",
+                        "other"
+                      ]
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    },
+                    "institution": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accountIdentifier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "openingBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "openingBalanceOn": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "currentBalanceMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    },
+                    "unexplainedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexplainedMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "oldestUnexplainedOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastReconciledOn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {},
+                    "updatedAt": {}
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "currency",
+                    "institution",
+                    "accountIdentifier",
+                    "openingBalanceMinor",
+                    "openingBalanceOn",
+                    "currentBalanceMinor",
+                    "isDefault",
+                    "unexplainedCount",
+                    "unexplainedMinor",
+                    "oldestUnexplainedOn",
+                    "lastReconciledOn",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
     "/expenses": {
       "get": {
         "operationId": "expense.list",
@@ -17142,6 +18384,24 @@
                               "null"
                             ]
                           },
+                          "bankAccountId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "bankAccountName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "notes": {
                             "type": [
                               "string",
@@ -17177,6 +18437,8 @@
                           "invoiceLineId",
                           "invoiceId",
                           "invoiceNumber",
+                          "bankAccountId",
+                          "bankAccountName",
                           "notes",
                           "createdAt",
                           "updatedAt"
@@ -17331,6 +18593,18 @@
                       "string",
                       "number",
                       "null"
+                    ]
+                  },
+                  "bankAccountId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   },
                   "notes": {
@@ -17535,6 +18809,24 @@
                         "null"
                       ]
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -17570,6 +18862,8 @@
                     "invoiceLineId",
                     "invoiceId",
                     "invoiceNumber",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "createdAt",
                     "updatedAt"
@@ -17792,6 +19086,24 @@
                         "null"
                       ]
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -17827,6 +19139,8 @@
                     "invoiceLineId",
                     "invoiceId",
                     "invoiceNumber",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "createdAt",
                     "updatedAt"
@@ -17972,6 +19286,18 @@
                       "string",
                       "number",
                       "null"
+                    ]
+                  },
+                  "bankAccountId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   },
                   "notes": {
@@ -18176,6 +19502,24 @@
                         "null"
                       ]
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -18211,6 +19555,8 @@
                     "invoiceLineId",
                     "invoiceId",
                     "invoiceNumber",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "createdAt",
                     "updatedAt"
@@ -40496,6 +41842,24 @@
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
+                          "bankAccountId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "bankAccountName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "notes": {
                             "type": [
                               "string",
@@ -40561,6 +41925,8 @@
                           "baseCurrency",
                           "exchangeRateToBase",
                           "amountBaseMinor",
+                          "bankAccountId",
+                          "bankAccountName",
                           "notes",
                           "allocations",
                           "createdAt",
@@ -40673,6 +42039,18 @@
                       {
                         "type": "string",
                         "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bankAccountId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       },
                       {
                         "type": "null"
@@ -40810,6 +42188,24 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -40875,6 +42271,8 @@
                     "baseCurrency",
                     "exchangeRateToBase",
                     "amountBaseMinor",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "allocations",
                     "createdAt",
@@ -41004,6 +42402,24 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -41069,6 +42485,8 @@
                     "baseCurrency",
                     "exchangeRateToBase",
                     "amountBaseMinor",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "allocations",
                     "createdAt",
@@ -41155,6 +42573,18 @@
                       {
                         "type": "string",
                         "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bankAccountId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       },
                       {
                         "type": "null"
@@ -41269,6 +42699,24 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -41334,6 +42782,8 @@
                     "baseCurrency",
                     "exchangeRateToBase",
                     "amountBaseMinor",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "allocations",
                     "createdAt",
@@ -41557,6 +43007,24 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -41622,6 +43090,8 @@
                     "baseCurrency",
                     "exchangeRateToBase",
                     "amountBaseMinor",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "allocations",
                     "createdAt",
@@ -41761,6 +43231,24 @@
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
                     },
+                    "bankAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bankAccountName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "notes": {
                       "type": [
                         "string",
@@ -41826,6 +43314,8 @@
                     "baseCurrency",
                     "exchangeRateToBase",
                     "amountBaseMinor",
+                    "bankAccountId",
+                    "bankAccountName",
                     "notes",
                     "allocations",
                     "createdAt",
@@ -45503,1248 +46993,6 @@
                   "required": [
                     "invoiceId",
                     "schedule"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      }
-    },
-    "/bank-accounts": {
-      "get": {
-        "operationId": "bankAccount.list",
-        "summary": "The agency’s accounts, with what is in them and what is still unexplained",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "kind",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "bank",
-                "credit_card",
-                "cash",
-                "paypal",
-                "stripe",
-                "other"
-              ]
-            }
-          },
-          {
-            "name": "currency",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "archived",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "true",
-                    "false"
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "name": "needsAttention",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "true",
-                    "false"
-                  ]
-                }
-              ]
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "bank",
-                              "credit_card",
-                              "cash",
-                              "paypal",
-                              "stripe",
-                              "other"
-                            ]
-                          },
-                          "currency": {
-                            "type": "string",
-                            "minLength": 3,
-                            "maxLength": 3
-                          },
-                          "institution": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "accountIdentifier": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "openingBalanceMinor": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "openingBalanceOn": {
-                            "type": "string",
-                            "format": "date",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                          },
-                          "currentBalanceMinor": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "isDefault": {
-                            "type": "boolean"
-                          },
-                          "unexplainedCount": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "unexplainedMinor": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "oldestUnexplainedOn": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "lastReconciledOn": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "archivedAt": {
-                            "anyOf": [
-                              {},
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "createdAt": {},
-                          "updatedAt": {}
-                        },
-                        "required": [
-                          "id",
-                          "name",
-                          "kind",
-                          "currency",
-                          "institution",
-                          "accountIdentifier",
-                          "openingBalanceMinor",
-                          "openingBalanceOn",
-                          "currentBalanceMinor",
-                          "isDefault",
-                          "unexplainedCount",
-                          "unexplainedMinor",
-                          "oldestUnexplainedOn",
-                          "lastReconciledOn",
-                          "archivedAt",
-                          "createdAt",
-                          "updatedAt"
-                        ]
-                      }
-                    },
-                    "nextCursor": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "nextCursor"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      },
-      "post": {
-        "operationId": "bankAccount.create",
-        "summary": "Add a bank, card, or cash account",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "currency": {
-                    "type": "string"
-                  },
-                  "openingBalanceMinor": {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  "openingBalanceOn": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "bank",
-                      "credit_card",
-                      "cash",
-                      "paypal",
-                      "stripe",
-                      "other"
-                    ]
-                  },
-                  "institution": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 200
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "accountIdentifier": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 60
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "isDefault": {
-                    "type": "boolean"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "bank",
-                        "credit_card",
-                        "cash",
-                        "paypal",
-                        "stripe",
-                        "other"
-                      ]
-                    },
-                    "currency": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 3
-                    },
-                    "institution": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accountIdentifier": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "openingBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "openingBalanceOn": {
-                      "type": "string",
-                      "format": "date",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                    },
-                    "currentBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "isDefault": {
-                      "type": "boolean"
-                    },
-                    "unexplainedCount": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "unexplainedMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "oldestUnexplainedOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "lastReconciledOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "archivedAt": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {},
-                    "updatedAt": {}
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "currency",
-                    "institution",
-                    "accountIdentifier",
-                    "openingBalanceMinor",
-                    "openingBalanceOn",
-                    "currentBalanceMinor",
-                    "isDefault",
-                    "unexplainedCount",
-                    "unexplainedMinor",
-                    "oldestUnexplainedOn",
-                    "lastReconciledOn",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      }
-    },
-    "/bank-accounts/{id}": {
-      "get": {
-        "operationId": "bankAccount.get",
-        "summary": "One account, its balance, and when it last reconciled",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "bank",
-                        "credit_card",
-                        "cash",
-                        "paypal",
-                        "stripe",
-                        "other"
-                      ]
-                    },
-                    "currency": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 3
-                    },
-                    "institution": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accountIdentifier": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "openingBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "openingBalanceOn": {
-                      "type": "string",
-                      "format": "date",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                    },
-                    "currentBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "isDefault": {
-                      "type": "boolean"
-                    },
-                    "unexplainedCount": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "unexplainedMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "oldestUnexplainedOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "lastReconciledOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "archivedAt": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {},
-                    "updatedAt": {}
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "currency",
-                    "institution",
-                    "accountIdentifier",
-                    "openingBalanceMinor",
-                    "openingBalanceOn",
-                    "currentBalanceMinor",
-                    "isDefault",
-                    "unexplainedCount",
-                    "unexplainedMinor",
-                    "oldestUnexplainedOn",
-                    "lastReconciledOn",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      },
-      "patch": {
-        "operationId": "bankAccount.update",
-        "summary": "Rename an account, or change how it is identified",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "openingBalanceMinor": {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  "openingBalanceOn": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "bank",
-                      "credit_card",
-                      "cash",
-                      "paypal",
-                      "stripe",
-                      "other"
-                    ]
-                  },
-                  "institution": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 200
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "accountIdentifier": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 60
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "isDefault": {
-                    "type": "boolean"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "bank",
-                        "credit_card",
-                        "cash",
-                        "paypal",
-                        "stripe",
-                        "other"
-                      ]
-                    },
-                    "currency": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 3
-                    },
-                    "institution": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accountIdentifier": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "openingBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "openingBalanceOn": {
-                      "type": "string",
-                      "format": "date",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                    },
-                    "currentBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "isDefault": {
-                      "type": "boolean"
-                    },
-                    "unexplainedCount": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "unexplainedMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "oldestUnexplainedOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "lastReconciledOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "archivedAt": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {},
-                    "updatedAt": {}
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "currency",
-                    "institution",
-                    "accountIdentifier",
-                    "openingBalanceMinor",
-                    "openingBalanceOn",
-                    "currentBalanceMinor",
-                    "isDefault",
-                    "unexplainedCount",
-                    "unexplainedMinor",
-                    "oldestUnexplainedOn",
-                    "lastReconciledOn",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      }
-    },
-    "/bank-accounts/{id}/archive": {
-      "post": {
-        "operationId": "bankAccount.archive",
-        "summary": "Close an account, keeping everything that went through it",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "bank",
-                        "credit_card",
-                        "cash",
-                        "paypal",
-                        "stripe",
-                        "other"
-                      ]
-                    },
-                    "currency": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 3
-                    },
-                    "institution": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accountIdentifier": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "openingBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "openingBalanceOn": {
-                      "type": "string",
-                      "format": "date",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                    },
-                    "currentBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "isDefault": {
-                      "type": "boolean"
-                    },
-                    "unexplainedCount": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "unexplainedMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "oldestUnexplainedOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "lastReconciledOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "archivedAt": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {},
-                    "updatedAt": {}
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "currency",
-                    "institution",
-                    "accountIdentifier",
-                    "openingBalanceMinor",
-                    "openingBalanceOn",
-                    "currentBalanceMinor",
-                    "isDefault",
-                    "unexplainedCount",
-                    "unexplainedMinor",
-                    "oldestUnexplainedOn",
-                    "lastReconciledOn",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The actor lacks the required permission"
-          },
-          "404": {
-            "description": "No such resource in this organization"
-          },
-          "422": {
-            "description": "The request failed validation"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        }
-      }
-    },
-    "/bank-accounts/{id}/restore": {
-      "post": {
-        "operationId": "bankAccount.restore",
-        "summary": "Reopen an archived account",
-        "tags": [
-          "bankAccount"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "bank",
-                        "credit_card",
-                        "cash",
-                        "paypal",
-                        "stripe",
-                        "other"
-                      ]
-                    },
-                    "currency": {
-                      "type": "string",
-                      "minLength": 3,
-                      "maxLength": 3
-                    },
-                    "institution": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accountIdentifier": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "openingBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "openingBalanceOn": {
-                      "type": "string",
-                      "format": "date",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                    },
-                    "currentBalanceMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "isDefault": {
-                      "type": "boolean"
-                    },
-                    "unexplainedCount": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "unexplainedMinor": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "oldestUnexplainedOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "lastReconciledOn": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "archivedAt": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {},
-                    "updatedAt": {}
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "currency",
-                    "institution",
-                    "accountIdentifier",
-                    "openingBalanceMinor",
-                    "openingBalanceOn",
-                    "currentBalanceMinor",
-                    "isDefault",
-                    "unexplainedCount",
-                    "unexplainedMinor",
-                    "oldestUnexplainedOn",
-                    "lastReconciledOn",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt"
                   ]
                 }
               }

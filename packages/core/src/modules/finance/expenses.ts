@@ -5,6 +5,7 @@ import { DomainError, NotFoundError, type ActorContext } from '../../context.ts'
 import { newId } from '../../ids.ts'
 import { convert, formatDecimal, parseDecimal, percentage, RATE_SCALE, toSafeNumber } from '../../money/money.ts'
 import { defineProcedure } from '../../registry/index.ts'
+import { resolveAccount } from '../banking/accounts.ts'
 import { loadCompany } from '../crm/companies.ts'
 import {
   actingUserId,
@@ -71,6 +72,12 @@ export const expenseOutput = z.object({
   invoiceLineId: z.uuid().nullable(),
   invoiceId: z.uuid().nullable(),
   invoiceNumber: z.string().nullable(),
+  /**
+   * The account it was paid from. Recorded when the expense is, because that is
+   * when it is known. Reconciling later cannot contradict it.
+   */
+  bankAccountId: z.uuid().nullable(),
+  bankAccountName: z.string().nullable(),
   notes: z.string().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -90,6 +97,7 @@ type ExpenseJoin = {
   companyName: string | null
   invoiceId: string | null
   invoiceNumber: string | null
+  bankAccountName: string | null
 }
 
 function presentExpense(row: ExpenseJoin): Expense {
@@ -120,6 +128,8 @@ function presentExpense(row: ExpenseJoin): Expense {
     invoiceLineId: e.invoiceLineId,
     invoiceId: row.invoiceId,
     invoiceNumber: row.invoiceNumber,
+    bankAccountId: e.bankAccountId,
+    bankAccountName: row.bankAccountName,
     notes: e.notes,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
@@ -134,12 +144,14 @@ function selectExpenses(ctx: ActorContext) {
       companyName: schema.companies.name,
       invoiceId: schema.invoiceLines.invoiceId,
       invoiceNumber: schema.invoices.number,
+      bankAccountName: schema.bankAccounts.name,
     })
     .from(schema.expenses)
     .leftJoin(schema.projects, eq(schema.projects.id, schema.expenses.projectId))
     .leftJoin(schema.companies, eq(schema.companies.id, schema.expenses.companyId))
     .leftJoin(schema.invoiceLines, eq(schema.invoiceLines.id, schema.expenses.invoiceLineId))
     .leftJoin(schema.invoices, eq(schema.invoices.id, schema.invoiceLines.invoiceId))
+    .leftJoin(schema.bankAccounts, eq(schema.bankAccounts.id, schema.expenses.bankAccountId))
 }
 
 export async function getExpense(ctx: ActorContext, id: string): Promise<Expense> {
@@ -228,6 +240,11 @@ const expenseFields = {
   billable: z.boolean().optional(),
   /** Added when rebilling: 15 means cost plus 15%. */
   markupPercent: percentInput.nullish(),
+  /**
+   * The account it was paid from. Must be in the expense's own currency.
+   * Recording it does not create a bank transaction.
+   */
+  bankAccountId: z.uuid().nullish(),
   notes: optionalText(10_000),
   exchangeRate: exchangeRateInput.optional(),
 }
@@ -298,6 +315,7 @@ export const expenseCreate = defineProcedure({
       currency,
       amountMinor: input.amountMinor,
       ...(await priceExpense(ctx, currency, input.amountMinor, input.taxRateId ?? null, input.exchangeRate)),
+      bankAccountId: await resolveAccount(ctx, input.bankAccountId, currency),
       billable: input.billable ?? false,
       markupPercent: input.markupPercent ?? null,
       notes: input.notes ?? null,
@@ -336,6 +354,7 @@ export const expenseUpdate = defineProcedure({
       )
     }
     const currency = patch.currency ?? before.currency
+    if ('bankAccountId' in patch) patch.bankAccountId = await resolveAccount(ctx, patch.bankAccountId, currency)
     const amountMinor = patch.amountMinor ?? before.amountMinor
     Object.assign(
       patch,

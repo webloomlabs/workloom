@@ -489,3 +489,56 @@ describe('expenses', () => {
     expect(billable.data).toHaveLength(1)
   })
 })
+
+describe('the account money moved through', () => {
+  const account = async (input: Record<string, unknown> = {}) =>
+    (await run('bankAccount.create', { name: `Account ${unique()}`, openingBalanceOn: '2026-09-01', ...input })).id as string
+
+  it('is recorded on a payment, and named back', async () => {
+    const everyday = await account()
+    const paid = await run('payment.record', { companyId: await company(), amountMinor: 1_320_00, bankAccountId: everyday })
+    expect(paid).toMatchObject({ bankAccountId: everyday, bankAccountName: expect.any(String) })
+    expect(await run('payment.get', { id: paid.id })).toMatchObject({ bankAccountId: everyday })
+  })
+
+  it('is optional, so nothing already recorded has to be revisited', async () => {
+    const paid = await run('payment.record', { companyId: await company(), amountMinor: 500_00 })
+    expect(paid).toMatchObject({ bankAccountId: null, bankAccountName: null })
+  })
+
+  it('does not put a line in the register', async () => {
+    // The register mirrors what the bank reported. Inventing a line here would
+    // collide with the real one when the statement is imported.
+    const everyday = await account()
+    await run('payment.record', { companyId: await company(), amountMinor: 900_00, bankAccountId: everyday })
+    expect(await run('bankTransaction.list', { bankAccountId: everyday })).toMatchObject({ data: [] })
+    expect(await run('bankAccount.get', { id: everyday })).toMatchObject({ currentBalanceMinor: 0 })
+  })
+
+  it('refuses an account in another currency', async () => {
+    const inYen = await account({ currency: 'JPY' })
+    expect(await refusal(run('payment.record', { companyId: await company(), amountMinor: 1_000_00, bankAccountId: inYen }))).toMatch(
+      /is in JPY, and this is in AUD/,
+    )
+  })
+
+  it('refuses a closed account', async () => {
+    const closed = await account()
+    await run('bankAccount.archive', { id: closed })
+    expect(await refusal(run('payment.record', { companyId: await company(), amountMinor: 100_00, bankAccountId: closed }))).toMatch(
+      /is closed/,
+    )
+  })
+
+  it('is recorded on an expense too, and can be corrected', async () => {
+    const [card, everyday] = [await account({ kind: 'credit_card' }), await account()]
+    const spent = await run('expense.create', { description: `Hosting ${unique()}`, amountMinor: 44_00, bankAccountId: card })
+    expect(spent).toMatchObject({ bankAccountId: card })
+
+    await run('expense.update', { id: spent.id, bankAccountId: everyday })
+    expect(await run('expense.get', { id: spent.id })).toMatchObject({ bankAccountId: everyday })
+    // And cleared, for money whose account nobody is sure of.
+    await run('expense.update', { id: spent.id, bankAccountId: null })
+    expect(await run('expense.get', { id: spent.id })).toMatchObject({ bankAccountId: null, bankAccountName: null })
+  })
+})

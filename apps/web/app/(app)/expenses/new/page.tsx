@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
 import { ExpenseForm } from '@/components/finance/expense-forms'
 import { todayIn } from '@/lib/format'
+import { accountChoices } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -22,6 +23,7 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
     viewer.permissions.has('taxRate:read') ? call(taxRateList, {}) : { data: [] },
     call(organizationGet, {}),
   ])
+  const accounts = await accountChoices(organization.baseCurrency, viewer.permissions.has('bankAccount:read'))
 
   return (
     <div className="space-y-6">
@@ -49,8 +51,11 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
               taxRateId: null,
               billable: false,
               markupPercent: null,
+              bankAccountId: null,
               notes: null,
             }}
+            accounts={accounts.choices}
+            defaultAccountId={accounts.defaultId}
           />
         </div>
       </Card>

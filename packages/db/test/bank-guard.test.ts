@@ -379,6 +379,73 @@ describe('what stops a statement being imported twice', () => {
   })
 })
 
+describe('the account money was recorded against', () => {
+  /** A payment recorded as having landed in a particular account. */
+  async function paymentInto(companyId: string, accountId: string | null, amountMinor = 1_000, currency = 'AUD'): Promise<string> {
+    const id = crypto.randomUUID()
+    await admin.query(
+      `insert into payments (id, organization_id, company_id, kind, received_on, currency, amount_minor, base_currency, exchange_rate_to_base, amount_base_minor, bank_account_id)
+       values ($1, $2, $3, 'payment', '2026-09-16', $4, $5, 'AUD', 1, $5, $6)`,
+      [id, ORG, companyId, currency, amountMinor, accountId],
+    )
+    return id
+  }
+
+  it('cannot be contradicted by the line that explains it', async () => {
+    const [everyday, savings] = [await account(), await account()]
+    const paid = await paymentInto(await client(), everyday, 1_000)
+
+    // A line in the wrong account cannot explain it.
+    const wrong = await line(savings, 1_000)
+    expect(await failure(match(ORG, wrong, { kind: 'payment', paymentId: paid }, 1_000))).toMatch(
+      /that payment was recorded against a different account/,
+    )
+    // The right one can.
+    const right = await line(everyday, 1_000)
+    expect(await failure(match(ORG, right, { kind: 'payment', paymentId: paid }, 1_000))).toBe('')
+  })
+
+  it('allows any account when nothing was claimed', async () => {
+    // A payment recorded before anyone knew which account is not a contradiction.
+    const savings = await account()
+    const paid = await paymentInto(await client(), null, 1_000)
+    expect(await failure(match(ORG, await line(savings, 1_000), { kind: 'payment', paymentId: paid }, 1_000))).toBe('')
+  })
+
+  it('cannot be moved out from under a line that already explains it', async () => {
+    const [everyday, savings] = [await account(), await account()]
+    const paid = await paymentInto(await client(), everyday, 1_000)
+    await match(ORG, await line(everyday, 1_000), { kind: 'payment', paymentId: paid }, 1_000)
+
+    expect(await failure(admin.query(`update payments set bank_account_id = $2 where id = $1`, [paid, savings]))).toMatch(
+      /already explained by a statement line in another account/,
+    )
+    // Clearing it is allowed: it claims nothing, so it contradicts nothing.
+    expect(await failure(admin.query(`update payments set bank_account_id = null where id = $1`, [paid]))).toBe('')
+  })
+
+  it('refuses an account in another currency, by foreign key', async () => {
+    const inYen = await account(0, 'JPY')
+    expect(await failure(paymentInto(await client(), inYen, 1_000, 'AUD'))).toMatch(/payments_bank_account_fk/)
+  })
+
+  it('holds the same rule for an expense', async () => {
+    const [card, everyday] = [await account(), await account()]
+    const cost = await expense(1_000, 0)
+    await admin.query(`update expenses set bank_account_id = $2 where id = $1`, [cost, card])
+
+    const wrong = await line(everyday, -1_000)
+    expect(await failure(match(ORG, wrong, { kind: 'expense', expenseId: cost }, -1_000))).toMatch(
+      /that expense was recorded against a different account/,
+    )
+    const right = await line(card, -1_000)
+    expect(await failure(match(ORG, right, { kind: 'expense', expenseId: cost }, -1_000))).toBe('')
+    expect(await failure(admin.query(`update expenses set bank_account_id = $2 where id = $1`, [cost, everyday]))).toMatch(
+      /already explained by a statement line in another account/,
+    )
+  })
+})
+
 describe('an organization leaving', () => {
   it('takes its accounts, lines, and matches with it', async () => {
     const org = crypto.randomUUID()

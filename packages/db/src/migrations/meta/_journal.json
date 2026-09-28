@@ -211,6 +211,20 @@
       "when": 1789702166670,
       "tag": "0029_project_billing_stages_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790556985217,
+      "tag": "0030_payment_expense_account",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790556986217,
+      "tag": "0031_payment_expense_account_guard",
+      "breakpoints": true
     }
   ]
 }
