@@ -150,18 +150,20 @@ describe('what an account holds', () => {
     expect(await balance(acct)).toBe(500)
   })
 
-  it('refuses a currency change, and an opening balance moved under existing lines', async () => {
+  it('refuses a currency change, and lets the opening balance be corrected, the balance following', async () => {
     const acct = await account(1_000)
     expect(await failure(admin.query(`update bank_accounts set opening_balance_minor = 2000 where id = $1`, [acct]))).toBe('')
-    expect(await balance(acct)).toBe(1_000)
+    expect(await balance(acct)).toBe(2_000)
 
     await line(acct, 100)
     expect(await failure(admin.query(`update bank_accounts set currency = 'USD' where id = $1`, [acct]))).toMatch(
       /another currency is another account/,
     )
-    expect(await failure(admin.query(`update bank_accounts set opening_balance_minor = 5000 where id = $1`, [acct]))).toMatch(
-      /rewrites every reconciliation measured from it/,
-    )
+    // Lines, but nothing reconciled: a mistyped opening figure can still be put right.
+    expect(await failure(admin.query(`update bank_accounts set opening_balance_minor = 5000 where id = $1`, [acct]))).toBe('')
+    expect(await balance(acct)).toBe(5_100)
+    // The balance itself is still never set by hand.
+    expect(await failure(admin.query(`update bank_accounts set current_balance_minor = 1 where id = $1`, [acct]))).toMatch(/not set directly/)
   })
 })
 
@@ -297,6 +299,15 @@ describe('what the statement fixes', () => {
     )
     return id
   }
+
+  it('freezes the opening balance once a period is reconciled', async () => {
+    const acct = await account(0)
+    await line(acct, 100)
+    await reconcile(acct, 100)
+    expect(await failure(admin.query(`update bank_accounts set opening_balance_minor = 50 where id = $1`, [acct]))).toMatch(
+      /rewrites every reconciliation measured from it/,
+    )
+  })
 
   it('refuses a reconciliation that does not balance', async () => {
     const acct = await account()

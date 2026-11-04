@@ -506,13 +506,86 @@ describe('the account money moved through', () => {
     expect(paid).toMatchObject({ bankAccountId: null, bankAccountName: null })
   })
 
-  it('does not put a line in the register', async () => {
-    // The register mirrors what the bank reported. Inventing a line here would
-    // collide with the real one when the statement is imported.
+  const register = async (accountId: string) => (await run('bankTransaction.list', { bankAccountId: accountId })).data as Array<{ amountMinor: number; description: string; status: string; bookedOn: string }>
+  const balance = async (accountId: string) => (await run('bankAccount.get', { id: accountId })).currentBalanceMinor as number
+
+  it('puts the payment in the account, explained by it, and moves the balance', async () => {
+    const everyday = await account({ openingBalanceMinor: 21_298_00 })
+    const client = await company()
+    const paid = await run('payment.record', { companyId: client, amountMinor: 24_000_00, bankAccountId: everyday, receivedOn: '2026-11-04' })
+    expect(await register(everyday)).toEqual([expect.objectContaining({ amountMinor: 24_000_00, bookedOn: '2026-11-04', status: 'explained', description: expect.stringMatching(/^Payment from /) })])
+    expect(await balance(everyday)).toBe(45_298_00)
+
+    // Corrected, the line follows; deleted, it goes.
+    await run('payment.update', { id: paid.id, amountMinor: 23_500_00 })
+    expect((await register(everyday)).map((l) => l.amountMinor)).toEqual([23_500_00])
+    await run('payment.delete', { id: paid.id })
+    expect(await register(everyday)).toEqual([])
+    expect(await balance(everyday)).toBe(21_298_00)
+  })
+
+  it('moves the line with the payment to another account, and takes a refund out', async () => {
+    const [first, second] = [await account(), await account()]
+    const paid = await run('payment.record', { companyId: await company(), amountMinor: 900_00, bankAccountId: first })
+    await run('payment.update', { id: paid.id, bankAccountId: second })
+    expect(await register(first)).toEqual([])
+    expect(await balance(second)).toBe(900_00)
+
+    await run('payment.record', { companyId: await company(), kind: 'refund', amountMinor: 100_00, bankAccountId: second })
+    expect(await balance(second)).toBe(800_00)
+  })
+
+  it('leaves out money dated before the opening balance, which already includes it', async () => {
+    const everyday = await account({ openingBalanceMinor: 5_000_00, openingBalanceOn: '2026-10-01' })
+    await run('payment.record', { companyId: await company(), amountMinor: 700_00, bankAccountId: everyday, receivedOn: '2026-09-15' })
+    expect(await register(everyday)).toEqual([])
+    expect(await balance(everyday)).toBe(5_000_00)
+    // Moving the opening date back brings it in.
+    await run('bankAccount.update', { id: everyday, openingBalanceOn: '2026-09-01' })
+    expect(await balance(everyday)).toBe(5_700_00)
+  })
+
+  it('takes a confirmed expense out of the account it was paid from, tax and all, and not a draft', async () => {
+    const card = await account()
+    const draft = await run('expense.create', { description: `Domain ${unique()}`, amountMinor: 30_00, bankAccountId: card, status: 'draft' })
+    expect(await register(card)).toEqual([])
+    await run('expense.confirm', { id: draft.id })
+    expect((await register(card)).map((l) => l.amountMinor)).toEqual([-30_00])
+    await run('expense.delete', { id: draft.id })
+    expect(await balance(card)).toBe(0)
+  })
+
+  it('lets the opening balance be corrected after money has moved, the balance following', async () => {
+    const everyday = await account({ openingBalanceMinor: 1_000_00 })
+    await run('payment.record', { companyId: await company(), amountMinor: 500_00, bankAccountId: everyday })
+    await run('bankAccount.update', { id: everyday, openingBalanceMinor: 2_000_00 })
+    expect(await balance(everyday)).toBe(2_500_00)
+  })
+
+  it('adjusts to the balance the bank shows, with a line for the difference and its reason', async () => {
+    const everyday = await account({ openingBalanceMinor: 1_000_00 })
+    await run('payment.record', { companyId: await company(), amountMinor: 500_00, bankAccountId: everyday, receivedOn: '2026-10-10' })
+    const adjusted = await run('bankAccount.adjustBalance', { id: everyday, balanceMinor: 1_480_00, on: '2026-10-31', reason: 'Bank charges for October' })
+    expect(adjusted.currentBalanceMinor).toBe(1_480_00)
+    expect(await register(everyday)).toContainEqual(expect.objectContaining({ amountMinor: -20_00, status: 'ignored', description: 'Balance adjustment: Bank charges for October' }))
+    expect(await refusal(run('bankAccount.adjustBalance', { id: everyday, balanceMinor: 1_480_00, on: '2026-10-31', reason: 'Again' }))).toMatch(/already matches/)
+  })
+
+  it('places payments recorded before lines were kept, once', async () => {
     const everyday = await account()
-    await run('payment.record', { companyId: await company(), amountMinor: 900_00, bankAccountId: everyday })
-    expect(await run('bankTransaction.list', { bankAccountId: everyday })).toMatchObject({ data: [] })
-    expect(await run('bankAccount.get', { id: everyday })).toMatchObject({ currentBalanceMinor: 0 })
+    const paid = await run('payment.record', { companyId: await company(), amountMinor: 300_00, bankAccountId: everyday })
+    // As it was before: the payment recorded, nothing in the register.
+    await mod.withTenant(ORG_A, async (tx) => {
+      await tx.execute(sql`delete from bank_transaction_matches where payment_id = ${paid.id}::uuid`)
+      await tx.execute(sql`delete from bank_transactions where fingerprint = ${`recorded:payment:${paid.id}`}`)
+    })
+    expect(await balance(everyday)).toBe(0)
+    const sweep = () =>
+      mod.withTenant(ORG_A, (tx) => modules.placeRecordedMoney(registry.buildContext({ organizationId: ORG_A, actor: { type: 'job', label: 'bank lines' }, role: null, permissions: new Set() }, tx)))
+    expect(await sweep()).toBeGreaterThanOrEqual(1)
+    expect(await balance(everyday)).toBe(300_00)
+    await sweep()
+    expect(await register(everyday)).toHaveLength(1)
   })
 
   it('refuses an account in another currency', async () => {

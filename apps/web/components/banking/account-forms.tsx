@@ -3,6 +3,7 @@
 import { Checkbox, Label } from '@workloom/ui'
 import { useActionState } from 'react'
 import {
+  adjustBalanceAction,
   archiveBankAccountAction,
   createBankAccountAction,
   restoreBankAccountAction,
@@ -24,7 +25,7 @@ type Account = {
   openingBalanceMinor: number
   openingBalanceOn: string
   isDefault: boolean
-  hasTransactions: boolean
+  hasReconciled: boolean
 }
 
 /** Minor units as the decimal string the form edits, sign and all. */
@@ -67,7 +68,7 @@ function AccountFields({ state, account, baseCurrency }: { state: ActionState<un
           type="date"
           required
           defaultValue={account?.openingBalanceOn ?? ''}
-          disabled={account?.hasTransactions}
+          disabled={account?.hasReconciled}
         />
         <TextField
           state={state}
@@ -75,11 +76,11 @@ function AccountFields({ state, account, baseCurrency }: { state: ActionState<un
           label="Opening balance"
           defaultValue={account ? decimal(account.openingBalanceMinor) : ''}
           placeholder="10000.00"
-          disabled={account?.hasTransactions}
+          disabled={account?.hasReconciled}
           hint={
-            account?.hasTransactions
-              ? 'Locked: every reconciliation on this account is measured from it.'
-              : 'What the statement said on that date. A credit card opens negative.'
+            account?.hasReconciled
+              ? 'Locked: every reconciliation on this account is measured from it. Use Adjust balance instead.'
+              : 'What the statement said at the end of that date. Payments and expenses after it move the balance from here. A credit card opens negative.'
           }
         />
       </div>
@@ -133,6 +134,30 @@ export function AccountArchiveControl({ id, archived }: { id: string; archived: 
       <SubmitButton variant="secondary" size="sm" pendingLabel={archived ? 'Reopening…' : 'Closing…'}>
         {archived ? 'Reopen account' : 'Close account'}
       </SubmitButton>
+    </form>
+  )
+}
+
+/**
+ * When the balance here and the bank's differ -- money that moved without
+ * being recorded, bank charges, interest -- set it to what the bank shows. The
+ * difference is added as a line, set aside with the reason given.
+ */
+export function AdjustBalanceForm({ accountId, currency, today }: { accountId: string; currency: string; today: string }) {
+  const [state, action] = useActionState(adjustBalanceAction, idle)
+  return (
+    <form action={action} className="space-y-3" noValidate>
+      <input type="hidden" name="id" value={accountId} />
+      <input type="hidden" name="currency" value={currency} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <TextField state={state} id="adjust-balance" name="balance" label={`Balance the bank shows (${currency})`} placeholder="45298.00" required />
+        <TextField state={state} id="adjust-on" name="on" type="date" label="On" defaultValue={today} />
+        <TextField state={state} id="adjust-reason" name="reason" label="Why they differ" placeholder="Bank charges for October" required />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton variant="secondary" size="sm" pendingLabel="Adjusting…">Adjust balance</SubmitButton>
+        <FormMessage state={state} />
+      </div>
     </form>
   )
 }

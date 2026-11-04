@@ -23,6 +23,7 @@ import {
 import { exchangeRateInput, today } from './documents.ts'
 import { getInvoice, loadInvoice } from './invoices.ts'
 import { paidAt, settlementEvent, settlementStatus } from './settlement.ts'
+import { dropRecordedLine, syncPaymentLine } from '../banking/recorded.ts'
 
 /**
  * Money received, and money given back.
@@ -442,6 +443,8 @@ export const paymentRecord = defineProcedure({
       remaining -= await allocate(ctx, payment, request, remaining, `allocations.${i}`)
     }
     await settleAll(ctx, input.allocations.map((a) => a.invoiceId))
+    // Into the account it was received in: the balance moves now, not at the next statement.
+    await syncPaymentLine(ctx, id)
 
     const recorded = await getPayment(ctx, id)
     await ctx.audit({
@@ -490,7 +493,10 @@ export const paymentUpdate = defineProcedure({
     // the database refuses an amount that no longer covers what was allocated.
     // Turning a payment into a refund is not a correction -- delete it and
     // record the refund, so both movements of money stay on the record.
+    // Its line in the account is taken out first -- it may no longer fit -- and put back as corrected.
+    await dropRecordedLine(ctx, 'payment', id)
     await ctx.tx.update(schema.payments).set({ ...patch, updatedAt: ctx.now }).where(eq(schema.payments.id, id))
+    await syncPaymentLine(ctx, id)
 
     const payment = await getPayment(ctx, id)
     await ctx.audit({ action: 'payment.updated', entityType: 'payment', entityId: id, entityLabel: `${payment.amountMinor} ${payment.currency}`, changes })
@@ -510,6 +516,7 @@ export const paymentDelete = defineProcedure({
   async handler(ctx, input) {
     const payment = await getPayment(ctx, input.id)
     await loadPayment(ctx, input.id, { lock: true })
+    await dropRecordedLine(ctx, 'payment', input.id)
     // The allocations cascade, and the trigger re-settles each invoice as they go.
     await ctx.tx.delete(schema.payments).where(eq(schema.payments.id, input.id))
     await settleAll(ctx, payment.allocations.map((a) => a.invoiceId))
@@ -542,6 +549,7 @@ export const paymentAllocate = defineProcedure({
     await allocate(ctx, payment, request, payment.amountMinor - allocated, 'allocation')
     await settleInvoice(ctx, request.invoiceId)
 
+    await syncPaymentLine(ctx, id)
     const updated = await getPayment(ctx, id)
     const invoice = updated.allocations.find((a) => a.invoiceId === request.invoiceId)
     await ctx.audit({
@@ -576,6 +584,7 @@ export const paymentUnallocate = defineProcedure({
     await ctx.tx.delete(a).where(eq(a.id, allocation.id))
     await settleInvoice(ctx, allocation.invoiceId)
 
+    await syncPaymentLine(ctx, allocation.paymentId)
     const updated = await getPayment(ctx, allocation.paymentId)
     await ctx.audit({
       action: 'payment.updated',

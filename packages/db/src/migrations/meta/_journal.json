@@ -330,6 +330,13 @@
       "when": 1793759737967,
       "tag": "0046_telegram_groups_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793765565517,
+      "tag": "0047_bank_opening_balance",
+      "breakpoints": true
     }
   ]
 }

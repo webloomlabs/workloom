@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
 import { BankStatusBadge } from '@/components/banking/badges'
-import { AccountArchiveControl } from '@/components/banking/account-forms'
+import { AccountArchiveControl, AdjustBalanceForm } from '@/components/banking/account-forms'
 import { BANK_ACCOUNT_KIND_LABELS } from '@/lib/banking-labels'
 import { label } from '@/lib/crm-labels'
 import { formatDate } from '@/lib/format'
@@ -93,7 +93,7 @@ export default async function BankAccountPage({ params, searchParams }: PageProp
           <div className="mt-1 text-2xl font-semibold">
             {account.lastReconciledOn ? formatDate(account.lastReconciledOn) : 'Never'}
           </div>
-          <div className="mt-1 text-xs text-muted">Reconciling to a statement arrives in S12d.</div>
+          <div className="mt-1 text-xs text-muted">Reconciling to a bank statement is not available yet.</div>
         </Card>
       </div>
 
@@ -179,8 +179,17 @@ export default async function BankAccountPage({ params, searchParams }: PageProp
               </Link>
             }
           />
+          {!account.archivedAt && (
+            <div className="space-y-2 border-b border-line p-5">
+              <p className="text-sm font-medium">Adjust balance</p>
+              <p className="text-sm text-muted">
+                Payments and expenses recorded against this account move its balance. If it still differs from your bank — bank charges, interest, money not recorded here — set it to what the bank shows.
+              </p>
+              <AdjustBalanceForm accountId={account.id} currency={account.currency} today={new Date().toISOString().slice(0, 10)} />
+            </div>
+          )}
           {viewer.permissions.has('bankAccount:archive') && (
-            <div className="p-5 pt-0">
+            <div className="p-5">
               <AccountArchiveControl id={account.id} archived={Boolean(account.archivedAt)} />
             </div>
           )}

@@ -161,8 +161,14 @@ export function budgetAlertEmail(options: {
 }): Email {
   const show = (v: { minor: number; currency: string } | { hours: number }) => ('hours' in v ? `${v.hours} h` : formatAmount(v.minor, v.currency))
   const what = options.measure === 'cost' ? 'its cost budget' : 'its hours budget'
-  const over = options.threshold >= 100
-  const headline = over ? `${options.project} is over ${what}` : `${options.project} has used ${options.percent}% of ${what}`
+  // At the 100% threshold the budget is used up; past it, overspent.
+  const over = options.threshold >= 100 && options.percent > 100
+  const full = options.threshold >= 100 && !over
+  const headline = over
+    ? `${options.project} is over ${what}`
+    : full
+      ? `${options.project} has used all of ${what}`
+      : `${options.project} has used ${options.percent}% of ${what}`
   const when = options.period ? ` for ${options.period}` : ''
   const sentence = `${show(options.used)} of ${show(options.limit)}${when} (${options.percent}%).`
   return {
@@ -173,7 +179,7 @@ export function budgetAlertEmail(options: {
       body: `
         <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">${escapeHtml(sentence)}</p>
         <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
-          ${over ? 'Raise a revision, renegotiate, or decide to absorb it.' : 'There is still room to act: check the scope and the time being logged.'}
+          ${over ? 'Raise a revision, renegotiate, or decide to absorb it.' : full ? 'Anything more goes over it. Raise a revision or renegotiate before it does.' : 'There is still room to act: check the scope and the time being logged.'}
         </p>
         <p style="margin:0 0 24px;">${button(options.url, 'Open the project')}</p>`,
     }),

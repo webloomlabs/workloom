@@ -1,6 +1,7 @@
 'use server'
 
 import {
+  bankAccountAdjustBalance,
   bankAccountArchive,
   bankAccountCreate,
   bankAccountRestore,
@@ -54,12 +55,12 @@ function failed(error: unknown, form: FormData): ActionState<never> {
   return state.status === 'error' ? { ...state, values } : state
 }
 
-/** "500.00" in the given currency, as integer minor units. */
+/** "500.00" in the given currency, as integer minor units. A leading minus is kept: a credit card's balance is negative. */
 function amount(form: FormData, name: string, currency: string): number {
   const raw = text(form, name)
   if (raw === '') return 0
   try {
-    return parseAmount(raw, currency)
+    return raw.startsWith('-') ? -parseAmount(raw.slice(1), currency) : parseAmount(raw, currency)
   } catch (error) {
     if (error instanceof AmountFormatError) throw new FieldError(name, error.message)
     throw error
@@ -227,4 +228,22 @@ export async function unignoreBankTransactionAction(_: ActionState, form: FormDa
   revalidatePath(`/banking/${accountId}`)
   revalidatePath('/banking')
   return { status: 'success', message: 'Back on the list.' }
+}
+
+/** Brings the account to the balance the bank shows; the difference becomes a line with its reason. */
+export async function adjustBalanceAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const accountId = id(form)
+  try {
+    await call(bankAccountAdjustBalance, {
+      id: accountId,
+      balanceMinor: amount(form, 'balance', text(form, 'currency')),
+      on: text(form, 'on') || undefined,
+      reason: text(form, 'reason'),
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(`/banking/${accountId}`)
+  revalidatePath('/banking')
+  return { status: 'success', message: 'Balance adjusted. The difference is a line in the register, with your reason.' }
 }

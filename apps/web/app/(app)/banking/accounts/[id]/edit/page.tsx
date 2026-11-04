@@ -1,4 +1,4 @@
-import { bankAccountGet, bankTransactionList } from '@workloom/core/modules'
+import { bankAccountGet } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -12,12 +12,7 @@ export const metadata: Metadata = { title: 'Edit account · Workloom' }
 export default async function EditBankAccountPage({ params }: PageProps<'/banking/accounts/[id]/edit'>) {
   const { id } = await params
   await requireViewer()
-  const [account, settings, lines] = await Promise.all([
-    call(bankAccountGet, { id }),
-    organizationSettings(),
-    // One row is enough to know whether the opening balance is still movable.
-    call(bankTransactionList, { bankAccountId: id, limit: 1 }),
-  ])
+  const [account, settings] = await Promise.all([call(bankAccountGet, { id }), organizationSettings()])
 
   return (
     <div className="space-y-6">
@@ -43,7 +38,8 @@ export default async function EditBankAccountPage({ params }: PageProps<'/bankin
               openingBalanceMinor: account.openingBalanceMinor,
               openingBalanceOn: account.openingBalanceOn,
               isDefault: account.isDefault,
-              hasTransactions: lines.data.length > 0,
+              // Movable until a period is reconciled against it.
+              hasReconciled: account.lastReconciledOn !== null,
             }}
             baseCurrency={settings.baseCurrency}
           />

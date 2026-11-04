@@ -976,6 +976,7 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
 
   'bankAccount.create': async () => ({ name: `Everyday ${unique()}`, kind: 'bank', openingBalanceOn: '2026-09-01', openingBalanceMinor: 10_000_00 }),
   'bankAccount.update': async () => ({ id: await createBankAccount(), institution: `Bank ${unique()}`, accountIdentifier: '\u20266789' }),
+  'bankAccount.adjustBalance': async () => ({ id: await createBankAccount(), balanceMinor: 12_345_00, on: '2026-10-31', reason: 'Bank charges' }),
   'bankAccount.archive': async () => ({ id: await createBankAccount() }),
   'bankAccount.restore': async () => {
     const id = await createBankAccount()

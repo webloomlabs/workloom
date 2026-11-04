@@ -158,7 +158,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
                   </Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{b.costPercent === null ? '—' : `${b.costPercent}%`}</Td>
                   <Td className="whitespace-nowrap text-right tabular-nums">{b.hoursPercent === null ? '—' : `${b.hoursPercent}%`}</Td>
-                  <Td className="text-right">{b.level === 'over' ? <Badge tone="critical">Over</Badge> : <Badge tone="caution">Near</Badge>}</Td>
+                  <Td className="text-right">{b.level === 'over' ? <Badge tone="critical">Over</Badge> : Math.max(b.costPercent ?? 0, b.hoursPercent ?? 0) >= 100 ? <Badge tone="caution">Used up</Badge> : <Badge tone="caution">Near</Badge>}</Td>
                 </Tr>
               ))}
             </tbody>

@@ -25,6 +25,7 @@ import {
 import { loadProject } from '../projects/projects.ts'
 import { exchangeRateInput, taxSnapshot, today } from './documents.ts'
 import { issueNumber } from './numbering.ts'
+import { dropRecordedLine, syncExpenseLine } from '../banking/recorded.ts'
 import { fromNumeric, percentInput } from './shared.ts'
 
 /**
@@ -471,6 +472,8 @@ export async function createExpense(ctx: ActorContext, input: ExpenseCreateInput
     createdBy: actingUserId(ctx),
     ...(status === 'confirmed' ? await confirmation(ctx) : { status: 'draft' }),
   })
+  // Out of the account it was paid from, once confirmed.
+  await syncExpenseLine(ctx, id)
   const expense = await getExpense(ctx, id)
   await ctx.audit({ action: 'expense.created', entityType: 'expense', entityId: id, entityLabel: expense.number ? `${expense.number} ${expense.description}` : expense.description, snapshot: expense })
   await ctx.emit('expense.created', expense)
@@ -496,6 +499,7 @@ export const expenseConfirm = defineProcedure({
     await activeCategory(ctx, before.category)
     const confirmed = await confirmation(ctx)
     await ctx.tx.update(schema.expenses).set({ ...confirmed, updatedAt: ctx.now }).where(eq(schema.expenses.id, input.id))
+    await syncExpenseLine(ctx, input.id)
     const expense = await getExpense(ctx, input.id)
     await ctx.audit({
       action: 'expense.confirmed',
@@ -556,7 +560,10 @@ export const expenseUpdate = defineProcedure({
     const changes = diff(comparable as Record<string, unknown>, patch)
     if (!changes) return getExpense(ctx, id)
 
+    // Its line in the account is taken out first -- it may no longer fit -- and put back as corrected.
+    await dropRecordedLine(ctx, 'expense', id)
     await ctx.tx.update(schema.expenses).set({ ...patch, updatedAt: ctx.now }).where(eq(schema.expenses.id, id))
+    await syncExpenseLine(ctx, id)
     const expense = await getExpense(ctx, id)
     await ctx.audit({ action: 'expense.updated', entityType: 'expense', entityId: id, entityLabel: expense.description, changes })
     await ctx.emit('expense.updated', expense)
@@ -577,6 +584,7 @@ export const expenseDelete = defineProcedure({
     if (!(row.status === 'draft' && row.createdBy === actingUserId(ctx))) ctx.require('expense:delete')
     const expense = await getExpense(ctx, input.id)
     const receipts = await ctx.tx.select({ key: schema.expenseReceipts.storageKey }).from(schema.expenseReceipts).where(eq(schema.expenseReceipts.expenseId, input.id))
+    await dropRecordedLine(ctx, 'expense', input.id)
     await ctx.tx.delete(schema.expenses).where(eq(schema.expenses.id, input.id))
     // The receipts' rows go with the expense; their files go once that has committed.
     ctx.afterCommit(async () => {

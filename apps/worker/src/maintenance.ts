@@ -1,5 +1,5 @@
 import { pruneRateLimits } from '@workloom/core'
-import { expireDueQuotes, generateDueInvoices, markOverdueInvoices, sealAuditLog, sweepExpiringAssets, sweepProjectBudgets } from '@workloom/core/modules'
+import { expireDueQuotes, generateDueInvoices, markOverdueInvoices, placeRecordedMoney, sealAuditLog, sweepExpiringAssets, sweepProjectBudgets } from '@workloom/core/modules'
 import { buildContext, type TransactionHooks } from '@workloom/core/registry'
 import { db, lt, schema, withTenant } from '@workloom/db'
 
@@ -35,6 +35,8 @@ export async function runMaintenance(now = new Date()): Promise<void> {
     await sweep(id, 'expiring infrastructure', sweepExpiringAssets, 'announced %n asset(s) approaching renewal', now)
     // Once per threshold per budget period: a retainer over in March hears it once in March.
     await sweep(id, 'project budgets', (ctx) => sweepProjectBudgets(ctx), 'raised %n budget alert(s)', now)
+    // Payments and expenses recorded against an account before their lines were kept: placed once.
+    await sweep(id, 'bank lines', placeRecordedMoney, 'placed %n recorded payment(s) and expense(s) in their accounts', now)
     // Each finished day of the audit log, sealed so a later edit shows.
     await sweep(id, 'audit seals', sealAuditLog, 'sealed %n day(s) of the audit log', now)
   }

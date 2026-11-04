@@ -1100,7 +1100,11 @@ function BudgetCard({ budget }: { budget: Awaited<ReturnType<typeof call<typeof 
       )}
       {budget.level === 'warning' && (
         <div className="px-5 pb-5">
-          <Alert tone="warning">Past 80% of the budget. Act while there is still room.</Alert>
+          <Alert tone="warning">
+            {(budget.costPercent ?? 0) >= 100 || (budget.hoursPercent ?? 0) >= 100
+              ? 'The whole budget is used. Anything more goes over it: raise a revision or renegotiate first.'
+              : 'Past 80% of the budget. Act while there is still room.'}
+          </Alert>
         </div>
       )}
     </Card>

@@ -323,14 +323,15 @@ export const bankAccountUpdate = defineProcedure({
       (patch.openingBalanceMinor !== undefined && patch.openingBalanceMinor !== before.openingBalanceMinor) ||
       (patch.openingBalanceOn !== undefined && patch.openingBalanceOn !== before.openingBalanceOn)
     if (movesAnchor) {
-      const [line] = await ctx.tx
+      // Correctable until a period is reconciled against it; after that it is what the reconciliation was measured from.
+      const [reconciled] = await ctx.tx
         .select({ id: schema.bankTransactions.id })
         .from(schema.bankTransactions)
-        .where(eq(schema.bankTransactions.bankAccountId, id))
+        .where(and(eq(schema.bankTransactions.bankAccountId, id), isNotNull(schema.bankTransactions.reconciliationId)))
         .limit(1)
-      if (line) {
+      if (reconciled) {
         throw new DomainError(
-          'This account has transactions. The opening balance is what every reconciliation is measured from, so it can no longer be moved.',
+          'This account has reconciled periods. The opening balance is what they were measured from, so it can no longer be moved. Use Adjust balance instead.',
           'opening_balance_locked',
           'openingBalanceMinor',
         )
@@ -354,6 +355,12 @@ export const bankAccountUpdate = defineProcedure({
       .set({ ...(patch as Partial<AccountRow>), updatedAt: ctx.now })
       .where(eq(schema.bankAccounts.id, id))
 
+    // A new opening date changes which recorded payments and expenses the opening figure already includes.
+    if (patch.openingBalanceOn !== undefined && patch.openingBalanceOn !== before.openingBalanceOn) {
+      const { resyncAccount } = await import('./recorded.ts')
+      await resyncAccount(ctx, id)
+    }
+
     const account = await getBankAccount(ctx, id)
     await ctx.audit({
       action: 'bank_account.updated',
@@ -364,6 +371,68 @@ export const bankAccountUpdate = defineProcedure({
     })
     await ctx.emit('bank_account.updated', account)
     return account
+  },
+})
+
+export const bankAccountAdjustBalance = defineProcedure({
+  name: 'bankAccount.adjustBalance',
+  summary: "Bring the account's balance to what the bank shows, with a line for the difference and the reason for it",
+  permission: 'bankAccount:update',
+  input: z.object({
+    id: z.uuid(),
+    /** What the bank says the balance is. */
+    balanceMinor: z.number().int(),
+    /** The day the bank shows that balance. Defaults to today. */
+    on: z.iso.date().optional(),
+    /** Required: an adjustment nobody can explain later is not one an auditor accepts. */
+    reason: requiredText(500, 'Reason'),
+  }),
+  output: bankAccountOutput,
+  http: { method: 'POST', path: '/bank-accounts/{id}/adjust-balance' },
+  emits: ['bank_transaction.created'],
+  async handler(ctx, input) {
+    const account = await loadBankAccount(ctx, input.id, { lock: true })
+    refuseArchivedAccount(account)
+    const on: string = input.on ?? (await (await import('../finance/documents.ts')).today(ctx))
+    if (on <= account.openingBalanceOn) {
+      throw new DomainError(`Adjust a balance after the opening date (${account.openingBalanceOn}), or edit the opening balance instead.`, 'adjust_before_opening', 'on')
+    }
+    // The balance as of that day: the opening figure and every line up to it.
+    const [upTo] = await ctx.tx
+      .select({ total: sql<string>`coalesce(sum(${schema.bankTransactions.amountMinor}), 0)` })
+      .from(schema.bankTransactions)
+      .where(and(eq(schema.bankTransactions.bankAccountId, account.id), sql`${schema.bankTransactions.bookedOn} <= ${on}`))
+    const difference = input.balanceMinor - (account.openingBalanceMinor + Number(upTo?.total ?? 0))
+    if (difference === 0) throw new DomainError('The balance already matches. Nothing to adjust.', 'balance_matches', 'balanceMinor')
+
+    const lineId = newId()
+    await ctx.tx.insert(schema.bankTransactions).values({
+      id: lineId,
+      organizationId: ctx.organizationId,
+      bankAccountId: account.id,
+      currency: account.currency,
+      amountMinor: difference,
+      bookedOn: on,
+      description: `Balance adjustment: ${input.reason}`,
+      // Set aside with its reason: it is explained by being an adjustment, not by a payment or expense.
+      status: 'ignored',
+      ignoredAt: ctx.now,
+      ignoredReason: input.reason,
+      fingerprint: `adjustment:${lineId}`,
+      notes: 'Balance adjusted to match the bank',
+      createdBy: actingUserId(ctx),
+    })
+    const { getBankTransaction } = await import('./transactions.ts')
+    const line = await getBankTransaction(ctx, lineId)
+    await ctx.audit({
+      action: 'bank_account.balance_adjusted',
+      entityType: 'bank_account',
+      entityId: account.id,
+      entityLabel: input.reason,
+      changes: { balance: { from: input.balanceMinor - difference, to: input.balanceMinor } },
+    })
+    await ctx.emit('bank_transaction.created', line)
+    return getBankAccount(ctx, account.id)
   },
 })
 

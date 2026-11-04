@@ -22,15 +22,19 @@ describe('the budget window', () => {
 })
 
 describe('budget status', () => {
-  it('warns at 80% and is over at 100%, exactly', () => {
+  it('warns from 80%, and is over only once more than the budget is spent', () => {
     expect(budgetStatus({ budgetMinor: 100_000, costMinor: 79_999, budgetHours: null, loggedSeconds: 0 }).level).toBe('ok')
     expect(budgetStatus({ budgetMinor: 100_000, costMinor: 80_000, budgetHours: null, loggedSeconds: 0 }).level).toBe('warning')
-    expect(budgetStatus({ budgetMinor: 100_000, costMinor: 100_000, budgetHours: null, loggedSeconds: 0 }).level).toBe('over')
+    // All of it used, none overspent.
+    expect(budgetStatus({ budgetMinor: 100_000, costMinor: 100_000, budgetHours: null, loggedSeconds: 0 })).toMatchObject({ costPercent: 100, level: 'warning' })
+    // A cent over, though the percentage still rounds down to 100.
+    expect(budgetStatus({ budgetMinor: 100_000, costMinor: 100_001, budgetHours: null, loggedSeconds: 0 })).toMatchObject({ costPercent: 100, level: 'over' })
   })
 
   it('takes the worse of money and hours, and lists every threshold reached', () => {
     const status = budgetStatus({ budgetMinor: 100_000, costMinor: 50_000, budgetHours: 10, loggedSeconds: 10 * 3600 })
-    expect(status).toMatchObject({ costPercent: 50, hoursPercent: 100, level: 'over' })
+    expect(status).toMatchObject({ costPercent: 50, hoursPercent: 100, level: 'warning' })
+    expect(budgetStatus({ budgetMinor: 100_000, costMinor: 50_000, budgetHours: 10, loggedSeconds: 10 * 3600 + 60 }).level).toBe('over')
     expect(status.crossed).toEqual([
       { measure: 'hours', threshold: 80, percent: 100 },
       { measure: 'hours', threshold: 100, percent: 100 },

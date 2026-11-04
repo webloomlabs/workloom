@@ -70,13 +70,20 @@ export type BudgetStatus = {
   crossed: Array<{ measure: 'cost' | 'hours'; threshold: number; percent: number }>
 }
 
-function levelOf(percent: number | null, thresholds: readonly number[]): BudgetLevel {
+/**
+ * Over means more was spent than the budget allows -- not that all of it was.
+ * Spending exactly the budget is a warning: there is nothing left, but nothing
+ * has been overspent. Decided on the amounts themselves, since the percentage
+ * is rounded down and 100.4% would otherwise read as exactly 100.
+ */
+function levelOf(percent: number | null, exceeded: boolean, thresholds: readonly number[]): BudgetLevel {
   if (percent === null) return 'none'
-  const over = thresholds[thresholds.length - 1] ?? 100
-  if (percent >= over) return 'over'
-  if (thresholds.some((t) => t < over && percent >= t)) return 'warning'
+  if (exceeded) return 'over'
+  if (thresholds.some((t) => percent >= t)) return 'warning'
   return 'ok'
 }
+
+const exceeds = (used: number, limit: number | null) => limit !== null && used > Math.max(limit, 0)
 
 const RANK: Record<BudgetLevel, number> = { none: 0, ok: 1, warning: 2, over: 3 }
 
@@ -92,7 +99,10 @@ export function budgetStatus(input: BudgetInput): BudgetStatus {
     if (percent === null) continue
     for (const threshold of thresholds) if (percent >= threshold) crossed.push({ measure, threshold, percent })
   }
-  const levels = [levelOf(costPercent, thresholds), levelOf(hoursPercent, thresholds)]
+  const levels = [
+    levelOf(costPercent, exceeds(input.costMinor, input.budgetMinor), thresholds),
+    levelOf(hoursPercent, input.budgetHours !== null && exceeds(input.loggedSeconds, Math.round(input.budgetHours * 3600)), thresholds),
+  ]
   const level = levels.reduce((worst, l) => (RANK[l] > RANK[worst] ? l : worst), 'none' as BudgetLevel)
   return { costPercent, hoursPercent, level, crossed }
 }
