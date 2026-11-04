@@ -114,8 +114,8 @@ function photo(from: Person, caption?: string, bytes = jpeg()) {
   telegram.queue.push(update)
   return update
 }
-function press(from: Person, data: string) {
-  const update = { update_id: nextUpdate++, callback_query: { id: `cb-${nextUpdate}`, from, data, message: { message_id: 1, chat: { id: from.id, type: 'private' }, date: 0 } } }
+function press(from: Person, data: string, text?: string) {
+  const update = { update_id: nextUpdate++, callback_query: { id: `cb-${nextUpdate}`, from, data, message: { message_id: 1, chat: { id: from.id, type: 'private' }, date: 0, ...(text ? { text } : {}) } } }
   telegram.queue.push(update)
   return update
 }
@@ -500,5 +500,111 @@ describe('a group', () => {
     photoInGroup(upgraded, shakil)
     await deliver()
     expect(await telegramExpenses()).toHaveLength(before + 1)
+  })
+})
+
+// Last: the projects made here would change what every receipt above is asked.
+describe('the project of a receipt', () => {
+  let website: { id: string; name: string }
+  let app: { id: string; name: string }
+  beforeAll(async () => {
+    website = await run('project.create', { name: 'Acme Website', status: 'in_progress' })
+    app = await run('project.create', { name: 'Kyla App' })
+    await run('project.create', { name: 'Old Cancelled Thing', status: 'cancelled' })
+    const done = await run('project.create', { name: 'Finished Work' })
+    await mod.withTenant(ORG, (tx) => tx.execute(sql`update projects set status = 'completed', completed_at = now() where id = ${done.id}::uuid`))
+  })
+
+  const projectOf = async (expenseId: string) =>
+    (await mod.withTenant(ORG, (tx) => tx.execute<{ project_id: string | null; notes: string | null; description: string }>(sql`select project_id, notes, description from expenses where id = ${expenseId}::uuid`))).rows[0]!
+  const lastReply = () => telegram.calls('sendMessage').at(-1)!.body
+  const buttons = (body: any) => (body.reply_markup.inline_keyboard as any[][]).flat()
+
+  it('is asked for, from the active projects, when the caption names none', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil, 'Bus to the client')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    expect((await projectOf(id)).project_id).toBeNull()
+
+    const reply = lastReply()
+    expect(reply.text).toMatch(/Which project is this for\?$/)
+    const labels = buttons(reply).map((b: any) => b.text)
+    expect(labels).toEqual(['Acme Website', 'Kyla App', 'No project', 'Discard', 'Open in Workloom'])
+    // No Confirm until a project is chosen.
+    expect(labels).not.toContain('Confirm')
+
+    const choice = buttons(reply).find((b: any) => b.text === 'Acme Website')
+    press(shakil, choice.callback_data, reply.text)
+    await deliver()
+    expect((await projectOf(id)).project_id).toBe(website.id)
+    expect(telegram.calls('answerCallbackQuery').at(-1)!.body.text).toBe('Filed under Acme Website')
+    const edited = telegram.calls('editMessageText').at(-1)!.body
+    expect(edited.text).toMatch(/^Draft expense started: Web hosting/)
+    expect(edited.text).toMatch(/\nProject: Acme Website$/)
+    expect(edited.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+
+    press(shakil, `x:c:${id}`)
+    await deliver()
+    expect((await telegramExpenses()).find((e) => e.id === id)!.status).toBe('confirmed')
+  })
+
+  it('can be left empty', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil)
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    const none = buttons(lastReply()).find((b: any) => b.text === 'No project')
+    press(shakil, none.callback_data, lastReply().text)
+    await deliver()
+    expect((await projectOf(id)).project_id).toBeNull()
+    const edited = telegram.calls('editMessageText').at(-1)!.body
+    expect(edited.text).toMatch(/\nProject: none$/)
+    expect(edited.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+  })
+
+  it('is taken from the caption, and not asked', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil, 'Taxi for the kyla app launch')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    expect(await projectOf(id)).toMatchObject({ project_id: app.id, notes: 'Taxi for the kyla app launch' })
+    expect(lastReply().text).toMatch(/\nProject: Kyla App$/)
+    expect(lastReply().reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+
+    // A caption that is only the project's name is not kept as a note.
+    extractor.answer = null
+    photo(shakil, 'Acme Website')
+    await deliver()
+    const second = (await telegramExpenses()).at(-1)!.id
+    expect(await projectOf(second)).toMatchObject({ project_id: website.id, notes: null, description: 'Receipt' })
+  })
+
+  it('is asked for when the caption names two, or a finished one', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil, 'Split between Acme Website and Kyla App')
+    photo(shakil, 'Finished Work')
+    await deliver()
+    for (const e of (await telegramExpenses()).slice(-2)) expect((await projectOf(e.id)).project_id).toBeNull()
+    for (const m of telegram.messages(shakil.id).slice(-2)) expect(m).toMatch(/Which project is this for\?$/)
+  })
+
+  it('is set only by someone allowed to change the expense', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil)
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    const choice = buttons(lastReply()).find((b: any) => b.text === 'Kyla App')
+    const colleague = person()
+    await linkAs(colleague, manager, 'manager')
+    press(colleague, choice.callback_data)
+    await deliver()
+    expect(telegram.calls('answerCallbackQuery').at(-1)!.body.text).toBe('You are not allowed to do that.')
+    expect((await projectOf(id)).project_id).toBeNull()
   })
 })

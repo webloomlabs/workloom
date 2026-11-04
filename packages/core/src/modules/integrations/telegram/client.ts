@@ -93,8 +93,8 @@ export class TelegramClient {
     return this.call<TelegramMessage>('sendMessage', { chat_id: chatId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) })
   }
 
-  editMessageText(chatId: number | string, messageId: number, text: string) {
-    return this.call<TelegramMessage | boolean>('editMessageText', { chat_id: chatId, message_id: messageId, text })
+  editMessageText(chatId: number | string, messageId: number, text: string, replyMarkup?: InlineKeyboard) {
+    return this.call<TelegramMessage | boolean>('editMessageText', { chat_id: chatId, message_id: messageId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) })
   }
 
   answerCallbackQuery(id: string, text?: string) {
@@ -120,19 +120,40 @@ export class TelegramClient {
 }
 
 /**
- * What a button carries back: an action and the expense it acts on. Telegram
- * allows 64 bytes; "x:c:" and a UUID take 40.
+ * What a button carries back: an action, the expense it acts on, and for a
+ * project choice the project. Telegram allows 64 bytes. "x:c:" and a UUID
+ * take 40; a project choice carries two UUIDs, so they go as base64url
+ * (22 characters each) to fit: "x:p:" + 22 + ":" + 22 is 49.
  */
-export type CallbackAction = { action: 'confirm' | 'discard'; expenseId: string }
+export type CallbackAction =
+  | { action: 'confirm' | 'discard' | 'noProject'; expenseId: string }
+  | { action: 'project'; expenseId: string; projectId: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const LETTERS = { confirm: 'c', discard: 'd', noProject: 'n' } as const
+
+const packUuid = (uuid: string) => Buffer.from(uuid.replace(/-/g, ''), 'hex').toString('base64url')
+
+function unpackUuid(packed: string): string | null {
+  if (!/^[A-Za-z0-9_-]{22}$/.test(packed)) return null
+  const hex = Buffer.from(packed, 'base64url').toString('hex')
+  const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  return UUID.test(uuid) ? uuid : null
+}
 
 export function encodeCallback(value: CallbackAction): string {
-  return `x:${value.action === 'confirm' ? 'c' : 'd'}:${value.expenseId}`
+  if (value.action === 'project') return `x:p:${packUuid(value.expenseId)}:${packUuid(value.projectId)}`
+  return `x:${LETTERS[value.action]}:${value.expenseId}`
 }
 
 export function decodeCallback(data: string | undefined): CallbackAction | null {
-  const match = /^x:([cd]):(.+)$/.exec(data ?? '')
+  const project = /^x:p:([^:]+):([^:]+)$/.exec(data ?? '')
+  if (project) {
+    const expenseId = unpackUuid(project[1]!)
+    const projectId = unpackUuid(project[2]!)
+    return expenseId && projectId ? { action: 'project', expenseId, projectId } : null
+  }
+  const match = /^x:([cdn]):(.+)$/.exec(data ?? '')
   if (!match || !UUID.test(match[2]!)) return null
-  return { action: match[1] === 'c' ? 'confirm' : 'discard', expenseId: match[2]! }
+  return { action: match[1] === 'c' ? 'confirm' : match[1] === 'd' ? 'discard' : 'noProject', expenseId: match[2]! }
 }

@@ -36,7 +36,11 @@ how messages arrive:
 Each person then links their own Telegram account: **Link my Telegram** shows
 a one-time code (ten minutes) to send the bot. After that, a photo or PDF they
 send becomes a **draft** expense with the receipt attached, made as them, with
-Confirm and Discard buttons under the bot's reply. Anyone else who messages the
+Confirm and Discard buttons under the bot's reply. If the caption names an
+active project (one not completed, cancelled or archived), the expense is filed
+under it; otherwise the bot first asks which project it is for, with a button
+for each of the ten newest active projects and one for **No project**, and
+shows Confirm once they have chosen. Anyone else who messages the
 bot only gets told how to link; nothing they send is stored as an expense.
 
 **In a group.** An owner or admin chooses **Add the bot to a group** in

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, ne, schema, withTenant } from '@workloom/db'
+import { and, desc, eq, gt, isNull, ne, notInArray, schema, withTenant } from '@workloom/db'
 import { isOneOf } from '@workloom/storage'
 import { DomainError, ForbiddenError, NotFoundError, type Actor } from '../../../context.ts'
 import { newId } from '../../../ids.ts'
@@ -18,7 +18,9 @@ import { decodeCallback, encodeCallback, TelegramError, type InlineKeyboard, typ
  *   who made the code.
  * - From a linked member: a photo or PDF becomes a draft expense, read by
  *   AI when the organization has turned that on, with buttons to confirm
- *   or discard it. Anything else gets a line of help.
+ *   or discard it. A project named in the caption files it there; otherwise,
+ *   when there are active projects, the bot asks which one before offering
+ *   Confirm. Anything else gets a line of help.
  * - From anyone else: how to link, and nothing more. Nothing they send is
  *   stored as an expense.
  * - In a group: nothing at all, unless an owner or admin approved the group
@@ -172,6 +174,88 @@ async function link(context: UpdateContext, message: TelegramMessage, code: stri
   await context.client.sendMessage(message.chat.id, `Linked to Workloom as ${(request.actor as { label: string }).label}. ${HELP}`)
 }
 
+/** A project the bot can offer: one still in play. */
+type ProjectChoice = { id: string; name: string; companyName: string | null }
+
+/** How many projects the bot lists as buttons. More than this, and the rest are chosen in Workloom. */
+const PROJECT_CHOICES = 10
+const PROJECT_QUESTION = 'Which project is this for?'
+
+/** Projects still in play -- not completed, cancelled or archived -- newest first. None for a member who cannot see projects. */
+async function activeProjects(member: Member): Promise<ProjectChoice[]> {
+  if (!member.request.permissions.has('project:read')) return []
+  const p = schema.projects
+  return withTenant(member.request.organizationId, (tx) =>
+    tx
+      .select({ id: p.id, name: p.name, companyName: schema.companies.name })
+      .from(p)
+      .leftJoin(schema.companies, eq(schema.companies.id, p.companyId))
+      .where(and(isNull(p.archivedAt), notInArray(p.status, ['completed', 'cancelled'])))
+      .orderBy(desc(p.id)),
+  )
+}
+
+const comparable = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+
+/** Whether `name` appears in `text` as whole words. */
+function mentions(text: string, name: string): boolean {
+  const pattern = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')
+  return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'u').test(text)
+}
+
+/**
+ * The project a caption names, if it names exactly one. A name inside a
+ * longer one that also matched ("Acme" in "Acme Website") gives way to it;
+ * two different projects named is a question for the person, not a guess.
+ */
+function projectInCaption(caption: string | undefined, projects: ProjectChoice[]): ProjectChoice | null {
+  if (!caption?.trim()) return null
+  const text = comparable(caption)
+  const found = projects.map((p) => ({ p, name: comparable(p.name) })).filter(({ name }) => name.length >= 3 && mentions(text, name))
+  const best = found.filter((a) => !found.some((b) => b.name.length > a.name.length && b.name.includes(a.name)))
+  // Two projects with the same name, for different clients, leave two here: ask.
+  return best.length === 1 ? best[0]!.p : null
+}
+
+/** A caption that is only the project's name says nothing more about the expense. */
+function captionNote(caption: string | undefined, project: ProjectChoice | undefined): string | null {
+  const note = caption?.trim() || null
+  if (!note || !project) return note
+  return comparable(note.replace(/^[\s#:\-–—]+|[\s.:\-–—]+$/g, '')) === comparable(project.name) ? null : note
+}
+
+const openRow = (url: string) => (url.startsWith('https://') ? [[{ text: 'Open in Workloom', url }]] : [])
+
+/** Confirm and Discard, under a draft that is ready for them. */
+function draftKeyboard(expenseId: string, url: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: 'Confirm', callback_data: encodeCallback({ action: 'confirm', expenseId }) },
+        { text: 'Discard', callback_data: encodeCallback({ action: 'discard', expenseId }) },
+      ],
+      ...openRow(url),
+    ],
+  }
+}
+
+/** One button per project, the newest few, in name order; then no project, or discard. */
+function projectKeyboard(expenseId: string, projects: ProjectChoice[], url: string): InlineKeyboard {
+  const listed = projects.slice(0, PROJECT_CHOICES).sort((a, b) => a.name.localeCompare(b.name))
+  return {
+    inline_keyboard: [
+      ...listed.map((p) => [
+        { text: (p.companyName ? `${p.name} · ${p.companyName}` : p.name).slice(0, 60), callback_data: encodeCallback({ action: 'project', expenseId, projectId: p.id }) },
+      ]),
+      [
+        { text: 'No project', callback_data: encodeCallback({ action: 'noProject', expenseId }) },
+        { text: 'Discard', callback_data: encodeCallback({ action: 'discard', expenseId }) },
+      ],
+      ...openRow(url),
+    ],
+  }
+}
+
 /** The file in a message: the largest size of a photo, or a document. */
 function attachment(message: TelegramMessage): { fileId: string; name: string | undefined; size: number | undefined } | null {
   if (message.photo?.length) {
@@ -218,25 +302,32 @@ async function receipt(context: UpdateContext, message: TelegramMessage, member:
     return
   }
 
-  // Read once: a retry after a crash reuses what was read, so the expense it
-  // replays is the same one, and the receipt is not sent to be read twice.
+  // Read once: a retry after a crash reuses what was read -- and the project
+  // the caption named -- so the expense it replays is the same one, and the
+  // receipt is not sent to be read twice.
   const reading = await receiptReadingOn(organizationId)
+  const projects = await activeProjects(member)
   let draft: ReceiptDraft | null
+  let projectId: string | null
   if (row.extraction !== null) {
-    draft = (row.extraction as { draft: unknown }).draft === null ? null : receiptDraftSchema.parse((row.extraction as { draft: unknown }).draft)
+    const saved = row.extraction as { draft: unknown; projectId?: string | null }
+    draft = saved.draft === null ? null : receiptDraftSchema.parse(saved.draft)
+    projectId = saved.projectId !== undefined ? saved.projectId : (projectInCaption(message.caption, projects)?.id ?? null)
   } else {
     draft = reading ? await readReceipt({ bytes, contentType: type }, await receiptHintsFor(member.request), context.extractor === undefined ? undefined : context.extractor) : null
-    await withTenant(organizationId, (tx) => tx.update(schema.telegramUpdates).set({ extraction: { draft } }).where(eq(schema.telegramUpdates.id, row.id)))
+    projectId = projectInCaption(message.caption, projects)?.id ?? null
+    await withTenant(organizationId, (tx) => tx.update(schema.telegramUpdates).set({ extraction: { draft, projectId } }).where(eq(schema.telegramUpdates.id, row.id)))
   }
 
-  let created: { expense: { id: string; description: string; currency: string }; duplicateOf: { number: string | null; description: string } | null }
+  let created: { expense: { id: string; description: string; currency: string; projectName: string | null }; duplicateOf: { number: string | null; description: string } | null }
   try {
     created = (await executeProcedure('expense.createFromReceipt', {
       ...member.request,
       input: {
         file: new File([new Uint8Array(bytes)], receiptFilename(file.name, type), { type }),
         draft,
-        note: message.caption?.trim() || null,
+        note: captionNote(message.caption, projects.find((p) => p.id === projectId)),
+        projectId,
       },
       idempotencyKey: `telegram:${bot.id}:${row.updateId}`,
     })) as typeof created
@@ -253,22 +344,18 @@ async function receipt(context: UpdateContext, message: TelegramMessage, member:
   }
 
   const url = `${appUrl}/expenses/${created.expense.id}`
+  // No project named, and some to choose from: ask before offering Confirm.
+  const ask = !created.expense.projectName && projects.length > 0
   const lines = [
     `Draft expense started: ${created.expense.description}`,
     reading ? describeDraft(draft, created.expense.currency) : 'Fill in the amount in Workloom, then confirm it.',
+    created.expense.projectName ? `Project: ${created.expense.projectName}` : null,
     created.duplicateOf ? `This looks like the same receipt as ${created.duplicateOf.number ?? created.duplicateOf.description}.` : null,
+    ask ? (projects.length > PROJECT_CHOICES ? `${PROJECT_QUESTION} Only the ${PROJECT_CHOICES} newest are listed; choose another in Workloom.` : PROJECT_QUESTION) : null,
     // Telegram only opens HTTPS links from a button; otherwise the link is in the text.
     appUrl.startsWith('https://') ? null : url,
   ].filter(Boolean)
-  const keyboard: InlineKeyboard = {
-    inline_keyboard: [
-      [
-        { text: 'Confirm', callback_data: encodeCallback({ action: 'confirm', expenseId: created.expense.id }) },
-        { text: 'Discard', callback_data: encodeCallback({ action: 'discard', expenseId: created.expense.id }) },
-      ],
-      ...(appUrl.startsWith('https://') ? [[{ text: 'Open in Workloom', url }]] : []),
-    ],
-  }
+  const keyboard = ask ? projectKeyboard(created.expense.id, projects, url) : draftKeyboard(created.expense.id, url)
   await client.sendMessage(chat, lines.join('\n'), keyboard)
   if (group) await client.sendMessage(group.id, `Draft expense started for ${member.userName}. The details are in your private chat with me.`)
 }
@@ -370,7 +457,7 @@ async function membershipChanged(context: UpdateContext, change: NonNullable<Tel
   )
 }
 
-/** A Confirm or Discard press, done as -- and only if allowed for -- the person who pressed it. */
+/** A Confirm, Discard or project press, done as -- and only if allowed for -- the person who pressed it. */
 async function handleButton(context: UpdateContext, query: NonNullable<TelegramUpdate['callback_query']>) {
   const { client, organizationId, now } = context
   const action = decodeCallback(query.data)
@@ -385,8 +472,24 @@ async function handleButton(context: UpdateContext, query: NonNullable<TelegramU
   }
   let reply: string
   let edit: string | null = null
+  let keyboard: InlineKeyboard | undefined
   try {
-    if (action.action === 'confirm') {
+    if (action.action === 'project' || action.action === 'noProject') {
+      const expense = (await executeProcedure('expense.update', {
+        ...member.request,
+        input: { id: action.expenseId, projectId: action.action === 'project' ? action.projectId : null },
+      })) as { id: string; description: string; projectName: string | null }
+      const line = `Project: ${expense.projectName ?? 'none'}`
+      reply = expense.projectName ? `Filed under ${expense.projectName}` : 'No project'
+      // The question's line becomes the answer; the rest of the message stays as it was.
+      const before = query.message?.text?.split('\n') ?? [`Draft expense: ${expense.description}`]
+      const asked = before.findIndex((l) => l.startsWith(PROJECT_QUESTION))
+      if (asked >= 0) before[asked] = line
+      else before.push(line)
+      edit = before.join('\n')
+      const { appUrl } = await telegramSettings()
+      keyboard = draftKeyboard(expense.id, `${appUrl}/expenses/${expense.id}`)
+    } else if (action.action === 'confirm') {
       const expense = (await executeProcedure('expense.confirm', { ...member.request, input: { id: action.expenseId } })) as { number: string | null; description: string }
       reply = `Confirmed ${expense.number ?? ''}`.trim()
       edit = `Confirmed as ${expense.number}: ${expense.description}`
@@ -402,5 +505,5 @@ async function handleButton(context: UpdateContext, query: NonNullable<TelegramU
     else throw error
   }
   await client.answerCallbackQuery(query.id, reply.slice(0, 200))
-  if (edit && query.message) await client.editMessageText(query.message.chat.id, query.message.message_id, edit).catch(() => undefined)
+  if (edit && query.message) await client.editMessageText(query.message.chat.id, query.message.message_id, edit, keyboard).catch(() => undefined)
 }
