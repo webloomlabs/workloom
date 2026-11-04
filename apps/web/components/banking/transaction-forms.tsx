@@ -24,6 +24,7 @@ type Line = {
   reference: string | null
   notes: string | null
   matchedMinor: number
+  transferId: string | null
 }
 
 /**
@@ -40,7 +41,8 @@ function magnitude(minor: number): string {
 }
 
 function LineFields({ state, line, today }: { state: ActionState<unknown>; line?: Line; today: string }) {
-  const locked = (line?.matchedMinor ?? 0) !== 0
+  const transfer = Boolean(line?.transferId)
+  const locked = (line?.matchedMinor ?? 0) !== 0 || transfer
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -70,7 +72,13 @@ function LineFields({ state, line, today }: { state: ActionState<unknown>; line?
           defaultValue={line ? magnitude(line.amountMinor) : ''}
           placeholder="1320.00"
           disabled={locked}
-          hint={locked ? 'Locked: this line explains a payment or an expense.' : undefined}
+          hint={
+            transfer
+              ? 'Locked: this is one side of a transfer. Delete the transfer and record it again to change it.'
+              : locked
+                ? 'Locked: this line explains a payment or an expense.'
+                : undefined
+          }
         />
         <TextField state={state} name="counterparty" label="Counterparty" defaultValue={line?.counterparty} placeholder="Acme Pty Ltd" />
         <TextField state={state} name="reference" label="Reference" defaultValue={line?.reference} placeholder="INV-0042" />

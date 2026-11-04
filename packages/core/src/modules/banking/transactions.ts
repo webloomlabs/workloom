@@ -31,6 +31,21 @@ import { explainedStatus, unexplainedMinor } from './explained.ts'
 
 type TransactionRow = typeof schema.bankTransactions.$inferSelect
 
+/** The fingerprint of one side of a transfer between two of the agency's accounts. */
+export const transferFingerprint = (transferId: string, side: 'out' | 'in') => `transfer:${transferId}:${side}`
+
+/** The transfer a line is one side of, if it is. */
+export function transferIdOf(fingerprint: string): string | null {
+  return /^transfer:([0-9a-f-]{36}):(?:in|out)$/.exec(fingerprint)?.[1] ?? null
+}
+
+/** One side of a transfer moves only with the other: it is changed or removed as the transfer. */
+function refuseTransferLeg(line: TransactionRow, doing: string): void {
+  if (transferIdOf(line.fingerprint)) {
+    throw new DomainError(`This is one side of a transfer between your accounts. ${doing}`, 'transfer_leg')
+  }
+}
+
 export const bankTransactionOutput = z.object({
   id: z.uuid(),
   bankAccountId: z.uuid(),
@@ -50,6 +65,8 @@ export const bankTransactionOutput = z.object({
   balanceAfterMinor: z.number().int().nullable(),
   status: z.enum(schema.BANK_TRANSACTION_STATUSES),
   ignoredReason: z.string().nullable(),
+  /** The transfer between two of the agency's accounts this line is one side of. */
+  transferId: z.uuid().nullable(),
   /**
    * The account balance up to and including this line. Null unless the list was
    * scoped to one account without an amount or text filter -- a running balance
@@ -89,6 +106,7 @@ function presentTransaction(row: TransactionJoin): BankTransaction {
     balanceAfterMinor: t.balanceAfterMinor,
     status: t.status as BankTransaction['status'],
     ignoredReason: t.ignoredReason,
+    transferId: transferIdOf(t.fingerprint),
     runningBalanceMinor: row.runningBalanceMinor,
     reconciliationId: t.reconciliationId,
     importId: t.importId,
@@ -325,6 +343,7 @@ export const bankTransactionUpdate = defineProcedure({
     const movesMoney =
       (patch.amountMinor !== undefined && patch.amountMinor !== before.amountMinor) ||
       (patch.bookedOn !== undefined && patch.bookedOn !== before.bookedOn)
+    if (movesMoney) refuseTransferLeg(before, 'Delete the transfer and record it again to change its amount or date.')
     if (movesMoney && before.matchedMinor !== 0) {
       throw new DomainError(
         'This transaction explains a payment or an expense. Unmatch it before changing what it says.',
@@ -368,6 +387,7 @@ export const bankTransactionDelete = defineProcedure({
   async handler(ctx, input) {
     const line = await loadBankTransaction(ctx, input.id, { lock: true })
     refuseReconciled(line)
+    refuseTransferLeg(line, 'Delete the transfer, which removes both sides.')
     if (line.matchedMinor !== 0) {
       throw new DomainError(
         'This transaction explains a payment or an expense. Unmatch it before deleting it.',
@@ -402,6 +422,7 @@ export const bankTransactionIgnore = defineProcedure({
   async handler(ctx, input) {
     const before = await loadBankTransaction(ctx, input.id, { lock: true })
     refuseReconciled(before)
+    refuseTransferLeg(before, 'The transfer is what accounts for it.')
     if (before.ignoredAt) throw new DomainError('That transaction is already set aside.', 'already_ignored')
 
     await ctx.tx
@@ -437,6 +458,7 @@ export const bankTransactionUnignore = defineProcedure({
   async handler(ctx, input) {
     const before = await loadBankTransaction(ctx, input.id, { lock: true })
     refuseReconciled(before)
+    refuseTransferLeg(before, 'The transfer is what accounts for it.')
     if (!before.ignoredAt) throw new DomainError('That transaction is not set aside.', 'not_ignored')
 
     await ctx.tx

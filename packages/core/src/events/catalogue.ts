@@ -172,6 +172,8 @@ const definitions = {
   'bank_transaction.matched': { description: 'A statement line was explained by a payment or an expense', since: 'S12' },
   'bank_transaction.unmatched': { description: 'An explanation was removed from a statement line', since: 'S12' },
   'bank_transaction.ignored': { description: 'A statement line was set aside with a reason', since: 'S12' },
+  'bank_transfer.created': { description: 'Money was moved between two of the agency\'s accounts', since: 'S12' },
+  'bank_transfer.deleted': { description: 'A transfer between two accounts was deleted, both sides', since: 'S12' },
 
   'bank_reconciliation.completed': { description: 'An account was reconciled to a statement', since: 'S12' },
   'bank_reconciliation.undone': { description: 'A completed reconciliation was re-opened', since: 'S12' },

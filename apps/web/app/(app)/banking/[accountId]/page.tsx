@@ -61,9 +61,14 @@ export default async function BankAccountPage({ params, searchParams }: PageProp
         actions={
           viewer.permissions.has('bankTransaction:create') &&
           !account.archivedAt && (
-            <Link href={`${base}/transactions/new`} className={buttonStyles()}>
-              Add transaction
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/banking/transfers/new?from=${accountId}`} className={buttonStyles({ variant: 'secondary' })}>
+                Transfer
+              </Link>
+              <Link href={`${base}/transactions/new`} className={buttonStyles()}>
+                Add transaction
+              </Link>
+            </div>
           )
         }
       />

@@ -1,4 +1,4 @@
-import { bankTransactionGet } from '@workloom/core/modules'
+import { bankTransactionGet, bankTransferGet } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -8,6 +8,7 @@ import {
   EditTransactionForm,
   IgnoreTransactionControl,
 } from '@/components/banking/transaction-forms'
+import { DeleteTransferButton } from '@/components/banking/transfer-forms'
 import { formatDate } from '@/lib/format'
 import { todayIn } from '@/lib/format'
 import { money, organizationSettings } from '@/lib/server/crm'
@@ -21,6 +22,8 @@ export default async function BankTransactionPage({ params }: PageProps<'/bankin
   const viewer = await requireViewer()
   const [line, settings] = await Promise.all([call(bankTransactionGet, { id }), organizationSettings()])
   const reconciled = line.status === 'reconciled'
+  const transfer = line.transferId ? await call(bankTransferGet, { id: line.transferId }) : null
+  const other = transfer ? (transfer.from.id === line.id ? transfer.to : transfer.from) : null
 
   return (
     <div className="space-y-6">
@@ -57,6 +60,27 @@ export default async function BankTransactionPage({ params }: PageProps<'/bankin
         </Card>
       </div>
 
+      {transfer && other && (
+        <Card>
+          <CardHeader
+            title={line.amountMinor < 0 ? 'Transfer out' : 'Transfer in'}
+            description={`Money moved between your own accounts on ${formatDate(transfer.bookedOn)}. It is neither income nor spending: each side accounts for the other.`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <p className="text-sm">
+              {line.amountMinor < 0 ? 'Arrived in ' : 'Came from '}
+              <Link href={`/banking/transactions/${other.id}`} className="font-medium hover:underline">
+                {other.bankAccountName}
+              </Link>{' '}
+              as <span className="tabular-nums">{money(Math.abs(other.amountMinor), other.currency)}</span>.
+            </p>
+            {!reconciled && viewer.permissions.has('bankTransaction:delete') && (
+              <DeleteTransferButton id={transfer.id} bankAccountId={line.bankAccountId} />
+            )}
+          </div>
+        </Card>
+      )}
+
       {reconciled ? (
         <Card>
           <CardHeader
@@ -83,6 +107,7 @@ export default async function BankTransactionPage({ params }: PageProps<'/bankin
                     reference: line.reference,
                     notes: line.notes,
                     matchedMinor: line.matchedMinor,
+                    transferId: line.transferId,
                   }}
                   today={todayIn(settings.timezone)}
                 />
@@ -90,7 +115,7 @@ export default async function BankTransactionPage({ params }: PageProps<'/bankin
             </Card>
           )}
 
-          {viewer.permissions.has('bankTransaction:reconcile') && (
+          {!transfer && viewer.permissions.has('bankTransaction:reconcile') && (
             <Card>
               <CardHeader
                 title="Set aside"
@@ -107,7 +132,7 @@ export default async function BankTransactionPage({ params }: PageProps<'/bankin
             </Card>
           )}
 
-          {viewer.permissions.has('bankTransaction:delete') && line.matchedMinor === 0 && (
+          {!transfer && viewer.permissions.has('bankTransaction:delete') && line.matchedMinor === 0 && (
             <Card>
               <CardHeader
                 title="Delete"

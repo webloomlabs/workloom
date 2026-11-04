@@ -42,11 +42,18 @@ export default async function BankingPage({ searchParams }: PageProps<'/banking'
         title="Banking"
         description="The agency's own accounts, what is in them, and what the bank says moved that nobody has explained yet."
         actions={
-          viewer.permissions.has('bankAccount:create') && (
-            <Link href="/banking/accounts/new" className={buttonStyles()}>
-              Add account
-            </Link>
-          )
+          <div className="flex flex-wrap gap-2">
+            {viewer.permissions.has('bankTransaction:create') && (
+              <Link href="/banking/transfers/new" className={buttonStyles({ variant: 'secondary' })}>
+                Transfer between accounts
+              </Link>
+            )}
+            {viewer.permissions.has('bankAccount:create') && (
+              <Link href="/banking/accounts/new" className={buttonStyles()}>
+                Add account
+              </Link>
+            )}
+          </div>
         }
       />
       <Card>

@@ -11,6 +11,8 @@ import {
   bankTransactionIgnore,
   bankTransactionUnignore,
   bankTransactionUpdate,
+  bankTransferCreate,
+  bankTransferDelete,
 } from '@workloom/core/modules'
 import { AmountFormatError, parseAmount } from '@workloom/core'
 import { revalidatePath } from 'next/cache'
@@ -246,4 +248,47 @@ export async function adjustBalanceAction(_: ActionState, form: FormData): Promi
   revalidatePath(`/banking/${accountId}`)
   revalidatePath('/banking')
   return { status: 'success', message: 'Balance adjusted. The difference is a line in the register, with your reason.' }
+}
+
+// Transfers between the agency's own accounts
+
+/** The procedure names amounts in minor units; the form's fields hold decimals. */
+const TRANSFER_FIELDS: Record<string, string> = { amountMinor: 'amount', receivedMinor: 'received' }
+
+export async function createBankTransferAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const fromAccountId = text(form, 'fromAccountId')
+  const toAccountId = text(form, 'toAccountId')
+  const received = text(form, 'received')
+  try {
+    await call(bankTransferCreate, {
+      fromAccountId,
+      toAccountId,
+      amountMinor: amount(form, 'amount', text(form, 'fromCurrency') || 'AUD'),
+      // Only sent when the two accounts differ in currency; the form hides it otherwise.
+      receivedMinor: received === '' ? undefined : amount(form, 'received', text(form, 'toCurrency') || 'AUD'),
+      bookedOn: text(form, 'bookedOn'),
+      reference: text(form, 'reference'),
+      notes: text(form, 'notes'),
+    })
+  } catch (error) {
+    const state = failed(error, form)
+    if (state.status !== 'error' || !state.fieldErrors) return state
+    const fieldErrors = Object.fromEntries(Object.entries(state.fieldErrors).map(([key, message]) => [TRANSFER_FIELDS[key] ?? key, message]))
+    return { ...state, fieldErrors }
+  }
+  revalidatePath(`/banking/${fromAccountId}`)
+  revalidatePath(`/banking/${toAccountId}`)
+  revalidatePath('/banking')
+  redirect(`/banking/${fromAccountId}?view=all`)
+}
+
+export async function deleteBankTransferAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const accountId = id(form, 'bankAccountId')
+  try {
+    await call(bankTransferDelete, { id: id(form) })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/banking', 'layout')
+  redirect(`/banking/${accountId}?view=all`)
 }

@@ -364,6 +364,16 @@ async function createBankTransaction(input: Record<string, unknown> = {}): Promi
   return line.id
 }
 
+async function createBankTransfer(): Promise<string> {
+  const transfer = (await run('bankTransfer.create', ownerOfA(), {
+    fromAccountId: await createBankAccount(),
+    toAccountId: await createBankAccount(),
+    amountMinor: 500_00,
+    bookedOn: '2026-09-20',
+  })) as { id: string }
+  return transfer.id
+}
+
 async function createDocument(input: Record<string, unknown> = {}): Promise<string> {
   const document = (await run('document.upload', ownerOfA(), {
     companyId: await createCompany(),
@@ -999,6 +1009,14 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     await run('bankTransaction.ignore', ownerOfA(), { id, reason: 'Set aside' })
     return { id }
   },
+  'bankTransfer.create': async () => ({
+    fromAccountId: await createBankAccount(),
+    toAccountId: await createBankAccount(),
+    amountMinor: 500_00,
+    bookedOn: '2026-09-20',
+    reference: `Top up ${unique()}`,
+  }),
+  'bankTransfer.delete': async () => ({ id: await createBankTransfer() }),
 
   'document.upload': async () => ({ companyId: await createCompany(), file: aFile(), title: `Signed contract ${unique()}`, category: 'contract' }),
   'document.update': async () => ({ id: await createDocument(), notes: `Countersigned ${unique()}`, clientVisible: true }),
@@ -1105,6 +1123,7 @@ const READS: Record<string, Fixture> = {
   'project.billingSummary': async () => ({ id: await createPricedProject() }),
   'bankAccount.get': async () => ({ id: await createBankAccount() }),
   'bankTransaction.get': async () => ({ id: await createBankTransaction() }),
+  'bankTransfer.get': async () => ({ id: await createBankTransfer() }),
   'document.get': async () => ({ id: await createDocument() }),
   'document.download': async () => ({ id: await createDocument() }),
   'billingSchedule.get': async () => ({ id: (await createSchedule()).id }),
@@ -1188,7 +1207,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['expenseId', 'deductsInvoiceId', 'lineId', 'id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId', 'revisionId', 'stageId']
+const REFERENCE_KEYS = ['fromAccountId', 'expenseId', 'deductsInvoiceId', 'lineId', 'id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId', 'revisionId', 'stageId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {
