@@ -102,6 +102,7 @@ describe('tenant tables', () => {
         'messaging_identities',
         'messaging_link_codes',
         'telegram_updates',
+        'telegram_groups',
         'tax_packs',
         'audit_seals',
       ]),

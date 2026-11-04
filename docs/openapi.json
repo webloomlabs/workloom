@@ -69145,6 +69145,202 @@
         }
       }
     },
+    "/integrations/telegram/group-codes": {
+      "post": {
+        "operationId": "telegramGroup.createLinkCode",
+        "summary": "A one-time code, good for ten minutes, that lets the bot work in a Telegram group",
+        "tags": [
+          "telegramGroup"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {},
+                    "botUsername": {
+                      "type": "string"
+                    },
+                    "addToGroupLink": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "expiresAt",
+                    "botUsername",
+                    "addToGroupLink"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/integrations/telegram/groups": {
+      "get": {
+        "operationId": "telegramGroup.list",
+        "summary": "The Telegram groups the bot works in",
+        "tags": [
+          "telegramGroup"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "title": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "approvedAt": {}
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "approvedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/integrations/telegram/groups/{id}/revoke": {
+      "post": {
+        "operationId": "telegramGroup.revoke",
+        "summary": "Stop the bot working in a group. It stays silent there from now on.",
+        "tags": [
+          "telegramGroup"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
     "/books": {
       "get": {
         "operationId": "books.get",

@@ -407,6 +407,18 @@ async function ensureBot(): Promise<void> {
   } else botPaused = bot.status === 'paused'
 }
 
+/** A Telegram group approved for org A's bot, as approving it from the group would leave it. */
+async function approvedGroup(): Promise<string> {
+  await ensureBot()
+  const id = core.newId()
+  const chatId = `-100${Date.now()}${Math.floor(Math.random() * 1000)}`
+  await mod.withTenant(ORG_A, (tx) =>
+    tx.execute(sql`insert into telegram_groups (id, organization_id, bot_id, chat_id, title)
+                   select ${id}::uuid, ${ORG_A}::uuid, id, ${chatId}, 'Team' from telegram_bots limit 1`),
+  )
+  return id
+}
+
 /** A Telegram account linked to org A's owner, as linking it from the chat would leave it. */
 async function linkedIdentity(): Promise<string> {
   const id = core.newId()
@@ -869,6 +881,11 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     return {}
   },
   'messagingIdentity.revoke': async () => ({ id: await linkedIdentity() }),
+  'telegramGroup.createLinkCode': async () => {
+    await ensureBot()
+    return {}
+  },
+  'telegramGroup.revoke': async () => ({ id: await approvedGroup() }),
   // Far in the past, a day further each time: nothing else in this file is dated then.
   'books.lock': async () => ({ through: lockDay(), reason: 'Year closed' }),
   'books.unlock': async () => {

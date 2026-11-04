@@ -3,7 +3,7 @@
 import { Button, Field, Select } from '@workloom/ui'
 import { useActionState } from 'react'
 import { idle } from '@/lib/actions/state'
-import { connectBotAction, createLinkCodeAction, disconnectBotAction, setReceiptReadingAction, updateBotAction } from '@/lib/actions/telegram'
+import { connectBotAction, createGroupCodeAction, createLinkCodeAction, disconnectBotAction, setReceiptReadingAction, updateBotAction } from '@/lib/actions/telegram'
 import { FormMessage, SubmitButton } from './form-bits'
 import { TextField } from './crm/fields'
 
@@ -84,6 +84,29 @@ export function LinkMyTelegram() {
             Open <a className="font-medium underline" href={link.deepLink} target="_blank" rel="noreferrer">@{link.botUsername}</a> on this phone or computer and press Start — or send it:
           </p>
           <p className="font-mono text-base select-all">/start {link.code}</p>
+          <p className="text-xs text-muted">The code works once, for ten minutes.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function AddToGroup() {
+  const [state, action] = useActionState(createGroupCodeAction, idle)
+  const link = state.status === 'success' ? state.data : undefined
+  return (
+    <div className="space-y-3">
+      <form action={action} className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Making a code…">{link ? 'Make a new code' : 'Add the bot to a group'}</SubmitButton>
+        {state.status === 'error' && <FormMessage state={state} />}
+      </form>
+      {link && (
+        <div className="space-y-2 rounded-md border border-line p-4 text-sm">
+          <p>
+            <a className="font-medium underline" href={link.addToGroupLink} target="_blank" rel="noreferrer">Open Telegram and pick the group</a> — the bot joins it and the group is approved.
+          </p>
+          <p>If the bot is already in the group, send this there instead:</p>
+          <p className="font-mono text-base select-all">/link {link.code}</p>
           <p className="text-xs text-muted">The code works once, for ten minutes.</p>
         </div>
       )}

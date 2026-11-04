@@ -1,4 +1,5 @@
 export * from './client.ts'
 export * from './bots.ts'
+export * from './groups.ts'
 export * from './inbox.ts'
 export { processUpdate } from './process-update.ts'

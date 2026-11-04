@@ -39,6 +39,21 @@ send becomes a **draft** expense with the receipt attached, made as them, with
 Confirm and Discard buttons under the bot's reply. Anyone else who messages the
 bot only gets told how to link; nothing they send is stored as an expense.
 
+**In a group.** An owner or admin chooses **Add the bot to a group** in
+Settings → Telegram, which gives Telegram's "add to group" link and a
+one-time code. Once a group is approved:
+
+- A photo or PDF posted by someone who has linked their Telegram becomes their
+  draft expense. The group sees one line ("Draft expense started for…"); the
+  amounts and the Confirm/Discard buttons go to them privately.
+- Everyone else in the group is ignored, and in groups that are not approved
+  the bot says nothing at all.
+- Taking the bot out of the group, or **Remove** in settings, ends it.
+
+Telegram only shows a bot the photos in a group if its **privacy mode is
+off** (in @BotFather: `/setprivacy`, choose the bot, Disable) or it is an
+admin of the group. Otherwise it sees only commands.
+
 Messages are stored first and handled by the worker, so the worker must be
 running. Telegram's update id makes a message delivered twice create one
 expense, not two.

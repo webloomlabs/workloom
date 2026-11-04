@@ -316,6 +316,20 @@
       "when": 1793755369537,
       "tag": "0044_books_lock_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793759736617,
+      "tag": "0045_telegram_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793759737967,
+      "tag": "0046_telegram_groups_rls",
+      "breakpoints": true
     }
   ]
 }

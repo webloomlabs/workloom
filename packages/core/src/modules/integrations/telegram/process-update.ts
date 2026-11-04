@@ -21,6 +21,9 @@ import { decodeCallback, encodeCallback, TelegramError, type InlineKeyboard, typ
  *   or discard it. Anything else gets a line of help.
  * - From anyone else: how to link, and nothing more. Nothing they send is
  *   stored as an expense.
+ * - In a group: nothing at all, unless an owner or admin approved the group
+ *   with a code. There, a receipt from a linked member is taken as above,
+ *   its details and buttons sent to them privately; everyone else is ignored.
  *
  * Everything that changes the books is a procedure run as the member
  * themselves -- their permissions, their name on the audit entry, with
@@ -49,8 +52,8 @@ function linkHelp(appUrl: string): string {
 
 const fullName = (user: TelegramUser) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || String(user.id)
 
-/** A member as an actor: who they are, their role now, and what it allows. */
-type Member = { request: Omit<ExecutionRequest, 'input'>; identityId: string; userName: string }
+/** A member as an actor: who they are, their role now, and what it allows -- and their private chat with the bot. */
+type Member = { request: Omit<ExecutionRequest, 'input'>; identityId: string; userName: string; chatId: string }
 
 async function memberRequest(organizationId: string, userId: string, now: Date): Promise<Omit<ExecutionRequest, 'input'> | null> {
   const [found] = await withTenant(organizationId, (tx) =>
@@ -83,7 +86,7 @@ async function linkedMember(organizationId: string, from: TelegramUser, now: Dat
     await withTenant(organizationId, (tx) => tx.update(i).set({ revokedAt: now }).where(eq(i.id, identity.id)))
     return null
   }
-  return { request, identityId: identity.id, userName: (request.actor as { label: string }).label }
+  return { request, identityId: identity.id, userName: (request.actor as { label: string }).label, chatId: identity.chatId }
 }
 
 /** Whether the organization has turned on reading receipts with AI. */
@@ -97,9 +100,12 @@ async function receiptReadingOn(organizationId: string): Promise<boolean> {
 export async function processUpdate(context: UpdateContext): Promise<void> {
   const update = context.row.payload as TelegramUpdate
   if (update.callback_query) return handleButton(context, update.callback_query)
+  if (update.my_chat_member) return membershipChanged(context, update.my_chat_member)
   const message = update.message
-  // Private chats only: a receipt posted in a group is not addressed to the bot.
-  if (!message?.from || message.chat.type !== 'private' || message.from.is_bot) return
+  if (!message?.from || message.from.is_bot) return
+  if (message.chat.type === 'group' || message.chat.type === 'supergroup') return groupMessage(context, message)
+  // Channels and anything else are not conversations with the bot.
+  if (message.chat.type !== 'private') return
 
   const start = /^\/start(?:\s+(\S+))?/.exec(message.text?.trim() ?? '')
   if (start) return start[1] ? link(context, message, start[1]) : greet(context, message)
@@ -130,7 +136,7 @@ async function link(context: UpdateContext, message: TelegramMessage, code: stri
     const [found] = await tx
       .select()
       .from(c)
-      .where(and(eq(c.codeHash, hashSecret(code)), isNull(c.usedAt), gt(c.expiresAt, now)))
+      .where(and(eq(c.codeHash, hashSecret(code)), eq(c.purpose, 'identity'), isNull(c.usedAt), gt(c.expiresAt, now)))
       .limit(1)
       .for('update')
     if (!found) return null
@@ -176,9 +182,14 @@ function attachment(message: TelegramMessage): { fileId: string; name: string | 
   return null
 }
 
-async function receipt(context: UpdateContext, message: TelegramMessage, member: Member, appUrl: string) {
+/**
+ * A receipt from a linked member. From a group, everything about it -- the
+ * amounts, the buttons, any problem -- goes to the sender privately, and the
+ * group sees one line that it was taken.
+ */
+async function receipt(context: UpdateContext, message: TelegramMessage, member: Member, appUrl: string, group?: TelegramMessage['chat']) {
   const { organizationId, bot, row, client } = context
-  const chat = message.chat.id
+  const chat = group ? member.chatId : message.chat.id
 
   const limit = await consumeRateLimit(rateLimitKey({ organizationId, actorId: `telegram:${member.identityId}`, klass: 'expensive' }), 'expensive', context.now)
   if (!limit.allowed) {
@@ -259,6 +270,104 @@ async function receipt(context: UpdateContext, message: TelegramMessage, member:
     ],
   }
   await client.sendMessage(chat, lines.join('\n'), keyboard)
+  if (group) await client.sendMessage(group.id, `Draft expense started for ${member.userName}. The details are in your private chat with me.`)
+}
+
+type GroupRow = typeof schema.telegramGroups.$inferSelect
+
+async function approvedGroup(organizationId: string, chatId: number): Promise<GroupRow | null> {
+  const g = schema.telegramGroups
+  const [group] = await withTenant(organizationId, (tx) =>
+    tx
+      .select()
+      .from(g)
+      .where(and(eq(g.chatId, String(chatId)), isNull(g.revokedAt)))
+      .limit(1),
+  )
+  return group ?? null
+}
+
+/**
+ * A message in a group. The bot answers only in groups an owner or admin has
+ * approved, and there only to receipts from linked members. Everyone else,
+ * and every other group, gets silence: a bot that chatters in groups is a bot
+ * people mute.
+ */
+async function groupMessage(context: UpdateContext, message: TelegramMessage) {
+  const { organizationId } = context
+  // Telegram may address a command to the bot by name: /start@webloom_bot CODE.
+  const command = /^\/(start|link)(?:@(\w+))?(?:\s+(\S+))?/.exec(message.text?.trim() ?? '')
+  if (command?.[3] && (!command[2] || command[2].toLowerCase() === context.bot.username.toLowerCase())) return approveGroup(context, message, command[3])
+
+  if (message.migrate_to_chat_id) {
+    // The group became a supergroup, with a new id: the approval moves with it.
+    await withTenant(organizationId, (tx) =>
+      tx
+        .update(schema.telegramGroups)
+        .set({ chatId: String(message.migrate_to_chat_id) })
+        .where(and(eq(schema.telegramGroups.chatId, String(message.chat.id)), isNull(schema.telegramGroups.revokedAt))),
+    )
+    return
+  }
+
+  if (!(message.photo?.length || message.document)) return
+  if (!(await approvedGroup(organizationId, message.chat.id))) return
+  const member = await linkedMember(organizationId, message.from!, context.now)
+  if (!member) return
+  const { appUrl } = await telegramSettings()
+  return receipt(context, message, member, appUrl, message.chat)
+}
+
+/** `/link <code>` in a group, or the code Telegram's "add to group" link carries: approves the group. */
+async function approveGroup(context: UpdateContext, message: TelegramMessage, code: string) {
+  const { organizationId, now, bot } = context
+  const c = schema.messagingLinkCodes
+  const g = schema.telegramGroups
+  const userId = await withTenant(organizationId, async (tx) => {
+    const [found] = await tx
+      .select()
+      .from(c)
+      .where(and(eq(c.codeHash, hashSecret(code)), eq(c.purpose, 'group'), isNull(c.usedAt), gt(c.expiresAt, now)))
+      .limit(1)
+      .for('update')
+    if (!found) return null
+    await tx.update(c).set({ usedAt: now }).where(eq(c.id, found.id))
+    return found.userId
+  })
+  // The code's maker must still be able to approve groups.
+  const request = userId ? await memberRequest(organizationId, userId, now) : null
+  if (!userId || !request || !request.permissions.has('integration:manage')) {
+    await context.client.sendMessage(message.chat.id, 'That code has expired or was already used. An owner or admin can make a new one in Workloom.')
+    return
+  }
+  const hooks = { commit: [] as Array<() => Promise<void>>, rollback: [] as Array<() => Promise<void>> }
+  await withTenant(organizationId, async (tx) => {
+    const ctx = buildContext(request, tx, hooks)
+    const [existing] = await tx
+      .select({ id: g.id })
+      .from(g)
+      .where(and(eq(g.chatId, String(message.chat.id)), isNull(g.revokedAt)))
+      .limit(1)
+    const id = existing?.id ?? newId()
+    if (existing) await tx.update(g).set({ title: message.chat.title ?? null }).where(eq(g.id, id))
+    else await tx.insert(g).values({ id, organizationId, botId: bot.id, chatId: String(message.chat.id), title: message.chat.title ?? null, approvedBy: userId, approvedAt: now })
+    await ctx.audit({ action: 'telegram_group.approved', entityType: 'telegram_group', entityId: id, entityLabel: message.chat.title ?? String(message.chat.id) })
+  })
+  await context.client.sendMessage(
+    message.chat.id,
+    'This group is linked to Workloom. Post a receipt photo or PDF here and it becomes a draft expense for whoever sent it; the details go to them privately. Link your own Telegram in Workloom first.',
+  )
+}
+
+/** The bot was added to a chat or taken out of one. Taken out of a group, its approval ends. */
+async function membershipChanged(context: UpdateContext, change: NonNullable<TelegramUpdate['my_chat_member']>) {
+  if (change.new_chat_member.status !== 'left' && change.new_chat_member.status !== 'kicked') return
+  await withTenant(context.organizationId, (tx) =>
+    tx
+      .update(schema.telegramGroups)
+      .set({ revokedAt: context.now, revokedReason: 'the bot left the group' })
+      .where(and(eq(schema.telegramGroups.chatId, String(change.chat.id)), isNull(schema.telegramGroups.revokedAt))),
+  )
 }
 
 /** A Confirm or Discard press, done as -- and only if allowed for -- the person who pressed it. */

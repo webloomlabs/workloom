@@ -381,3 +381,124 @@ describe('the webhook', () => {
     expect(inA.rows).toHaveLength(0)
   })
 })
+
+describe('a group', () => {
+  let nextGroup = -1001000
+  const group = () => ({ id: nextGroup--, type: 'supergroup', title: `Webloom team ${nextGroup}` })
+  type Group = ReturnType<typeof group>
+
+  function inGroup(chat: Group, from: Person, extra: Record<string, unknown>) {
+    const update = { update_id: nextUpdate++, message: { message_id: nextUpdate, from, chat, date: 0, ...extra } }
+    telegram.queue.push(update)
+    return update
+  }
+  function photoInGroup(chat: Group, from: Person) {
+    const fileId = `group-photo-${nextUpdate}`
+    telegram.files.set(fileId, jpeg())
+    return inGroup(chat, from, { photo: [{ file_id: fileId, file_unique_id: 'g', width: 800, height: 800, file_size: 100 }] })
+  }
+  async function approve(chat: Group, from: Person) {
+    const { code } = await run<{ code: string }>('telegramGroup.createLinkCode', {})
+    inGroup(chat, from, { text: `/start@webloom_receipts_bot ${code}` })
+    await deliver()
+    return code
+  }
+
+  it('is silent until an owner or admin approves it', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    const before = (await telegramExpenses()).length
+    photoInGroup(team, shakil)
+    inGroup(team, shakil, { text: 'anyone there?' })
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.messages(team.id)).toEqual([])
+    await expect(run('telegramGroup.createLinkCode', {}, as(manager, 'manager'))).rejects.toBeInstanceOf(core.ForbiddenError)
+  })
+
+  it('is approved by the code Telegram’s add-to-group link carries, once', async () => {
+    const team = group()
+    const code = await approve(team, person())
+    expect(telegram.messages(team.id)).toEqual([expect.stringMatching(/^This group is linked to Workloom/)])
+    expect((await run('telegramGroup.list', {})).data.map((g: any) => g.title)).toContain(team.title)
+    // The same code in another group: used up.
+    const other = group()
+    inGroup(other, person(), { text: `/link ${code}` })
+    await deliver()
+    expect(telegram.messages(other.id)).toEqual([expect.stringMatching(/expired or was already used/)])
+    // A person's link code does not approve a group.
+    const { code: personal } = await run<{ code: string }>('messagingIdentity.createLinkCode', {})
+    const third = group()
+    inGroup(third, person(), { text: `/link ${personal}` })
+    await deliver()
+    expect((await run('telegramGroup.list', {})).data.map((g: any) => g.title)).not.toContain(third.title)
+  })
+
+  it('turns a linked member’s receipt into their draft, details sent privately', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    await approve(team, shakil)
+    telegram.clear()
+    const before = (await telegramExpenses()).length
+    photoInGroup(team, shakil)
+    await deliver()
+
+    const created = await telegramExpenses()
+    expect(created).toHaveLength(before + 1)
+    expect(created.at(-1)).toMatchObject({ status: 'draft', created_by: owner, supplier: 'Hostinger' })
+    // The group sees one line; the amounts and buttons go to the sender.
+    expect(telegram.messages(team.id)).toEqual([`Draft expense started for Shakil. The details are in your private chat with me.`])
+    const privately = telegram.calls('sendMessage').find((c) => c.body.chat_id === String(shakil.id) || c.body.chat_id === shakil.id)!
+    expect(privately.body.text).toMatch(/Hostinger · LKR\s?12,500\.00/)
+    expect(privately.body.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+  })
+
+  it('ignores people who have not linked their Telegram', async () => {
+    const team = group()
+    await approve(team, person())
+    telegram.clear()
+    const before = (await telegramExpenses()).length
+    photoInGroup(team, person())
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.calls('sendMessage')).toEqual([])
+  })
+
+  it('stops when the bot is taken out, or the group is removed in Workloom', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    await approve(team, shakil)
+    telegram.queue.push({ update_id: nextUpdate++, my_chat_member: { chat: team, from: shakil, new_chat_member: { status: 'kicked', user: { id: 4242424242 } } } })
+    await deliver()
+    expect((await run('telegramGroup.list', {})).data.map((g: any) => g.title)).not.toContain(team.title)
+    const before = (await telegramExpenses()).length
+    photoInGroup(team, shakil)
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+
+    const second = group()
+    await approve(second, shakil)
+    const listed = (await run('telegramGroup.list', {})).data.find((g: any) => g.title === second.title)
+    await run('telegramGroup.revoke', { id: listed.id })
+    photoInGroup(second, shakil)
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+  })
+
+  it('follows a group that becomes a supergroup', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = { ...group(), type: 'group' }
+    await approve(team, shakil)
+    const upgraded = { id: nextGroup--, type: 'supergroup', title: team.title }
+    inGroup(team, shakil, { migrate_to_chat_id: upgraded.id })
+    await deliver()
+    const before = (await telegramExpenses()).length
+    photoInGroup(upgraded, shakil)
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before + 1)
+  })
+})

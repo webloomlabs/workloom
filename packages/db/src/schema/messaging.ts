@@ -22,6 +22,8 @@ export const TELEGRAM_MODES = ['webhook', 'poll'] as const
 export const TELEGRAM_BOT_STATUSES = ['active', 'paused', 'error'] as const
 export const MESSAGING_PROVIDERS = ['telegram'] as const
 export const TELEGRAM_UPDATE_STATUSES = ['pending', 'done', 'failed'] as const
+/** What a link code links: a person's own chat account, or a group the bot works in. */
+export const LINK_CODE_PURPOSES = ['identity', 'group'] as const
 
 export const telegramBots = pgTable(
   'telegram_bots',
@@ -92,11 +94,43 @@ export const messagingLinkCodes = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     codeHash: text('code_hash').notNull(),
+    purpose: text('purpose').notNull().default('identity'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique('messaging_link_codes_organization_id_id_key').on(t.organizationId, t.id), unique('messaging_link_codes_code_key').on(t.organizationId, t.codeHash)],
+  (t) => [
+    unique('messaging_link_codes_organization_id_id_key').on(t.organizationId, t.id),
+    unique('messaging_link_codes_code_key').on(t.organizationId, t.codeHash),
+    check('messaging_link_codes_purpose_check', sql`${t.purpose} in ${oneOf(LINK_CODE_PURPOSES)}`),
+  ],
+)
+
+/**
+ * A Telegram group the bot works in, approved by an owner or admin with a
+ * one-time code. In any other group the bot stays silent.
+ */
+export const telegramGroups = pgTable(
+  'telegram_groups',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    botId: uuid('bot_id').notNull(),
+    chatId: text('chat_id').notNull(),
+    title: text('title'),
+    approvedBy: uuid('approved_by').references(() => user.id, { onDelete: 'set null' }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** Why it stopped: removed in Workloom, or the bot was taken out of the group. */
+    revokedReason: text('revoked_reason'),
+  },
+  (t) => [
+    unique('telegram_groups_organization_id_id_key').on(t.organizationId, t.id),
+    uniqueIndex('telegram_groups_live_key')
+      .on(t.organizationId, t.chatId)
+      .where(sql`${t.revokedAt} is null`),
+    foreignKey({ name: 'telegram_groups_bot_fk', columns: [t.organizationId, t.botId], foreignColumns: [telegramBots.organizationId, telegramBots.id] }).onDelete('cascade'),
+  ],
 )
 
 /** Everything the bot has received, waiting for or past processing. */

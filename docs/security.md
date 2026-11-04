@@ -102,6 +102,9 @@ all. This is a deliberate trade and is documented as one.
   webhook's secret header (compared in constant time, per organization) or by
   that bot's own poll. The right secret at another organization's address is
   refused.
+- **Groups are opt-in.** The bot acts only in groups an owner or admin approved
+  with a one-time code, only on receipts from linked members, and sends the
+  details privately rather than to the group.
 - **A stranger can do nothing.** Only a Telegram account linked by a one-time
   code (hashed at rest, ten minutes, single use) is acted on; everyone else is
   told how to link. A link dies with the person's membership, and can be

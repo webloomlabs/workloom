@@ -7,7 +7,7 @@
  */
 
 export type TelegramUser = { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string }
-export type TelegramChat = { id: number; type: string }
+export type TelegramChat = { id: number; type: string; title?: string }
 export type TelegramPhotoSize = { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }
 export type TelegramDocument = { file_id: string; file_name?: string; mime_type?: string; file_size?: number }
 export type TelegramMessage = {
@@ -19,9 +19,13 @@ export type TelegramMessage = {
   caption?: string
   photo?: TelegramPhotoSize[]
   document?: TelegramDocument
+  /** A group became a supergroup, and has a new id. */
+  migrate_to_chat_id?: number
 }
 export type TelegramCallbackQuery = { id: string; from: TelegramUser; message?: TelegramMessage; data?: string }
-export type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallbackQuery }
+/** The bot's own membership of a chat changed: added to a group, or removed from it. */
+export type TelegramChatMemberUpdated = { chat: TelegramChat; from: TelegramUser; new_chat_member: { status: string; user: TelegramUser } }
+export type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallbackQuery; my_chat_member?: TelegramChatMemberUpdated }
 export type InlineKeyboard = { inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> }
 
 export class TelegramError extends Error {
@@ -38,6 +42,8 @@ export class TelegramError extends Error {
 }
 
 const TIMEOUT_MS = 15_000
+/** What the bot asks Telegram for: messages, button presses, and being added to or removed from groups. */
+const UPDATE_TYPES = ['message', 'callback_query', 'my_chat_member']
 
 export class TelegramClient {
   constructor(
@@ -72,7 +78,7 @@ export class TelegramClient {
   }
 
   setWebhook(url: string, secretToken: string) {
-    return this.call<boolean>('setWebhook', { url, secret_token: secretToken, allowed_updates: ['message', 'callback_query'], drop_pending_updates: false })
+    return this.call<boolean>('setWebhook', { url, secret_token: secretToken, allowed_updates: UPDATE_TYPES, drop_pending_updates: false })
   }
 
   deleteWebhook() {
@@ -80,7 +86,7 @@ export class TelegramClient {
   }
 
   getUpdates(offset: number | undefined, limit = 50) {
-    return this.call<TelegramUpdate[]>('getUpdates', { ...(offset !== undefined ? { offset } : {}), limit, timeout: 0, allowed_updates: ['message', 'callback_query'] })
+    return this.call<TelegramUpdate[]>('getUpdates', { ...(offset !== undefined ? { offset } : {}), limit, timeout: 0, allowed_updates: UPDATE_TYPES })
   }
 
   sendMessage(chatId: number | string, text: string, replyMarkup?: InlineKeyboard) {

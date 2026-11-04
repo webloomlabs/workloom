@@ -1,6 +1,6 @@
 'use server'
 
-import { messagingIdentityCreateLinkCode, messagingIdentityRevoke, organizationUpdate, telegramBotConnect, telegramBotDisconnect, telegramBotUpdate } from '@workloom/core/modules'
+import { messagingIdentityCreateLinkCode, messagingIdentityRevoke, organizationUpdate, telegramBotConnect, telegramBotDisconnect, telegramBotUpdate, telegramGroupCreateLinkCode, telegramGroupRevoke } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { call } from '../server/procedures.ts'
@@ -67,6 +67,22 @@ export async function createLinkCodeAction(_: ActionState<LinkCode>): Promise<Ac
   } catch (error) {
     return toActionError(error)
   }
+}
+
+export type GroupCode = { code: string; addToGroupLink: string; botUsername: string }
+
+export async function createGroupCodeAction(_: ActionState<GroupCode>): Promise<ActionState<GroupCode>> {
+  try {
+    const made = await call(telegramGroupCreateLinkCode, {})
+    return { status: 'success', message: 'Use it within ten minutes.', data: { code: made.code, addToGroupLink: made.addToGroupLink, botUsername: made.botUsername } }
+  } catch (error) {
+    return toActionError(error)
+  }
+}
+
+export async function revokeGroupAction(form: FormData): Promise<void> {
+  await call(telegramGroupRevoke, { id: z.uuid().parse(form.get('id')) })
+  revalidatePath('/settings/telegram')
 }
 
 export async function revokeIdentityAction(form: FormData): Promise<void> {
