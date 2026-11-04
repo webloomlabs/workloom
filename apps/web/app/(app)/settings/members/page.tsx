@@ -3,7 +3,15 @@ import { memberList } from '@workloom/core/modules'
 import { Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
-import { AddMemberForm, InviteMemberForm, MemberRoleForm, RemoveMemberForm, ROLE_LABELS } from '@/components/member-forms'
+import {
+  AddMemberForm,
+  ChangePasswordButton,
+  InviteMemberForm,
+  MemberRoleForm,
+  RemoveMemberForm,
+  ResetMemberPasswordButton,
+  ROLE_LABELS,
+} from '@/components/member-forms'
 import { cancelInvitationAction } from '@/lib/actions/settings'
 import { call } from '@/lib/server/procedures'
 import { isMultiTenant } from '@/lib/server/tenancy'
@@ -49,7 +57,7 @@ export default async function MembersPage() {
         <Card>
           <CardHeader
             title="Add a member"
-            description="Creates their account and adds them straight away. Nothing is emailed — pass the password on yourself, and they can change it from “Forgot password?”."
+            description="Creates their account and adds them straight away. Nothing is emailed — pass the password on yourself. They can change it later, and you can reset it from their row."
           />
           <div className="p-5"><AddMemberForm canAddOwner={canInviteOwner} /></div>
         </Card>
@@ -78,8 +86,20 @@ export default async function MembersPage() {
                     )}
                   </Td>
                   <Td className="text-muted">{m.joinedAt.toLocaleDateString()}</Td>
-                  <Td className="text-right">
-                    {canRemove && !isSelf && <RemoveMemberForm userId={m.userId} name={m.name} />}
+                  <Td>
+                    <div className="flex items-center justify-end gap-1">
+                      {isSelf && <ChangePasswordButton />}
+                      {canUpdate && !isSelf && (
+                        <ResetMemberPasswordButton
+                          userId={m.userId}
+                          name={m.name}
+                          email={m.email}
+                          // Setting it outright: only where the admin chose the first one, and an owner's only by an owner.
+                          canSetPassword={!multiTenant && (m.role !== 'owner' || viewer.role === 'owner')}
+                        />
+                      )}
+                      {canRemove && !isSelf && <RemoveMemberForm userId={m.userId} name={m.name} />}
+                    </div>
                   </Td>
                 </Tr>
               )

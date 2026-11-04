@@ -154,3 +154,39 @@ describe('creating a second organization', () => {
     ).rejects.toThrow()
   })
 })
+
+describe('an administrator setting a member’s password', () => {
+  const NEW_PASSWORD = 'a-brand-new-long-password'
+
+  it('changes it, ends every session they had, and audits it', async () => {
+    const { userId } = await provisioning.provisionMember({
+      organizationId,
+      role: 'developer',
+      person: { name: 'Forgetful', email: 'forgetful@single.test', password: PASSWORD },
+      createdBy: { type: 'user', id: adminUserId, label: 'Ada Admin' },
+    })
+    const signedIn = await auth.api.signInEmail({ body: { email: 'forgetful@single.test', password: PASSWORD }, returnHeaders: true })
+    const cookie = signedIn.headers.get('set-cookie')!.split(';')[0]!
+
+    await provisioning.setMemberPassword({
+      organizationId,
+      userId,
+      password: NEW_PASSWORD,
+      setBy: { type: 'user', id: adminUserId, label: 'Ada Admin' },
+    })
+
+    expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull()
+    await expect(auth.api.signInEmail({ body: { email: 'forgetful@single.test', password: PASSWORD } })).rejects.toThrow()
+    const again = await auth.api.signInEmail({ body: { email: 'forgetful@single.test', password: NEW_PASSWORD }, returnHeaders: true })
+    expect(again.response.user.id).toBe(userId)
+    expect(await auditActions(organizationId)).toContain('member.password_set')
+  })
+
+  it('refuses someone who is not a member, and a short password', async () => {
+    const setBy = { type: 'user' as const, id: adminUserId, label: 'Ada Admin' }
+    await expect(
+      provisioning.setMemberPassword({ organizationId, userId: '01a0dd00-0000-7000-8000-00000000dead', password: NEW_PASSWORD, setBy }),
+    ).rejects.toThrow(/not a member/)
+    await expect(provisioning.setMemberPassword({ organizationId, userId: adminUserId, password: 'too-short', setBy })).rejects.toThrow(/at least 12 characters/)
+  })
+})

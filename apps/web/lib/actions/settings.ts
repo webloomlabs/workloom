@@ -1,9 +1,9 @@
 'use server'
 
-import { auth, provisionMember } from '@workloom/auth'
+import { auth, authErrorCode, provisionMember, recordAuthEvent, setMemberPassword } from '@workloom/auth'
 import { env } from '@workloom/config'
-import { ForbiddenError, ROLES } from '@workloom/core'
-import { apiKeyCreate, apiKeyRevoke, documentSequenceUpdate, memberRemove, organizationRemoveLogo, organizationUpdate, organizationUploadLogo } from '@workloom/core/modules'
+import { DomainError, ForbiddenError, NotFoundError, ROLES } from '@workloom/core'
+import { apiKeyCreate, apiKeyRevoke, documentSequenceUpdate, memberList, memberRemove, organizationRemoveLogo, organizationUpdate, organizationUploadLogo } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { z } from 'zod'
@@ -218,6 +218,116 @@ export async function removeMemberAction(_: ActionState, form: FormData): Promis
   }
   revalidatePath('/settings/members')
   return { status: 'success', message: 'Member removed.' }
+}
+
+const newPassword = z.string().min(12, 'Use at least 12 characters.').max(256, 'Use at most 256 characters.')
+
+/** Your own password: the current one, then the new one twice. Every other session ends. */
+export async function changeOwnPasswordAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = z
+    .object({ currentPassword: z.string().min(1, 'Enter your current password.'), newPassword, confirmPassword: z.string() })
+    .refine((v) => v.newPassword === v.confirmPassword, { message: 'The passwords do not match.', path: ['confirmPassword'] })
+    .safeParse(Object.fromEntries(form))
+  if (!parsed.success) return toActionError(parsed.error)
+
+  const viewer = await requireViewer()
+  if (viewer.actor.type !== 'user') return { status: 'error', message: 'Only a signed-in person can change their password.' }
+  const requestHeaders = await headers()
+  try {
+    await auth.api.changePassword({
+      body: { currentPassword: parsed.data.currentPassword, newPassword: parsed.data.newPassword, revokeOtherSessions: true },
+      headers: requestHeaders,
+    })
+  } catch (error) {
+    if (authErrorCode(error) === 'INVALID_PASSWORD') {
+      return { status: 'error', message: 'That is not your current password.', fieldErrors: { currentPassword: 'That is not your current password.' } }
+    }
+    return toActionError(error)
+  }
+  await recordAuthEvent({
+    organizationId: viewer.organizationId,
+    actor: viewer.actor,
+    entry: { action: 'user.password_changed', entityType: 'user', entityId: viewer.actor.id, entityLabel: viewer.actor.label },
+    context: { headers: requestHeaders },
+  })
+  return { status: 'success', message: 'Password changed. Any other devices signed in as you have been signed out.' }
+}
+
+/**
+ * The member someone with `member:update` is acting on: never themselves --
+ * their own password goes through the current one -- and only in this
+ * organization.
+ */
+async function managedMember(form: FormData) {
+  const viewer = await requireViewer()
+  if (!viewer.permissions.has('member:update')) throw new ForbiddenError('member:update')
+  const userId = z.uuid().parse(form.get('userId'))
+  if (viewer.actor.type === 'user' && viewer.actor.id === userId) {
+    throw new DomainError('Change your own password with your current one.', 'own_password')
+  }
+  const target = (await call(memberList, {})).data.find((m) => m.userId === userId)
+  if (!target) throw new NotFoundError('Member', userId)
+  return { viewer, target }
+}
+
+/** Emails a member a link to choose a new password. Works on any installation: only they ever see the new password. */
+export async function sendPasswordResetAction(_: ActionState, form: FormData): Promise<ActionState> {
+  let email: string
+  try {
+    const { viewer, target } = await managedMember(form)
+    email = target.email
+    const requestHeaders = await headers()
+    try {
+      await auth.api.requestPasswordReset({ body: { email, redirectTo: '/reset-password' }, headers: requestHeaders })
+    } catch (error) {
+      console.error('[password-reset] sending for a member failed', error)
+      return { status: 'error', message: `The email to ${email} could not be sent. Check the mail settings (MAIL_DRIVER) and try again.` }
+    }
+    await recordAuthEvent({
+      organizationId: viewer.organizationId,
+      actor: viewer.actor,
+      entry: { action: 'member.password_reset_sent', entityType: 'member', entityId: target.id, entityLabel: email },
+      context: { headers: requestHeaders },
+    })
+  } catch (error) {
+    return toActionError(error)
+  }
+  return { status: 'success', message: `Reset link sent to ${email}. It works once, for an hour.` }
+}
+
+/**
+ * Sets a member's password outright, on a single-tenant installation, where
+ * the administrator already chose their first one. Their sessions end.
+ *
+ * Not on a multi-tenant one: there an account spans every organization the
+ * person belongs to, and this organization's administrator setting its
+ * password would be taking it over everywhere. The emailed link is the way
+ * there.
+ */
+export async function setMemberPasswordAction(_: ActionState, form: FormData): Promise<ActionState> {
+  if (env.MULTI_TENANT) {
+    return { status: 'error', message: 'On a multi-organization installation, send a reset link instead.' }
+  }
+  const parsed = z.object({ password: newPassword }).safeParse({ password: form.get('password') })
+  if (!parsed.success) return toActionError(parsed.error)
+  let name: string
+  try {
+    const { viewer, target } = await managedMember(form)
+    // The rule for making owners: an admin who could set an owner's password
+    // could sign in as them.
+    if (target.role === 'owner' && viewer.role !== 'owner') throw new ForbiddenError('member:update')
+    name = target.name
+    await setMemberPassword({
+      organizationId: viewer.organizationId,
+      userId: target.userId,
+      password: parsed.data.password,
+      setBy: viewer.actor,
+      context: { headers: await headers() },
+    })
+  } catch (error) {
+    return toActionError(error)
+  }
+  return { status: 'success', message: `Password set for ${name}, and they have been signed out everywhere. Pass it on yourself — it is not emailed.` }
 }
 
 export type CreatedKey = { name: string; secret: string }

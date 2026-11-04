@@ -60,10 +60,25 @@ Anyone with `member:invite` adds a member under **Settings → Members** by
 entering their name, email, role, and a first password. The account is created
 already verified and already a member; **nothing is emailed**, so adding a
 colleague does not depend on a working mail server. Pass the password on
-yourself. They can change it from "Forgot password?" — which does need mail — or
-you can add them again after removing them.
+yourself. They can change it themselves (below), or you can set a new one.
 
 Only an owner may create another owner, the same rule invitations follow.
+
+### Passwords
+
+- **Your own:** **Settings → Members → Change password** on your own row, with
+  your current password. Every other session you have ends. Anyone can do this.
+- **Forgotten:** "Forgot password?" on the sign-in page emails a one-hour,
+  single-use link. It needs working mail (`MAIL_DRIVER`).
+- **Someone else's** (`member:update`): **Reset password** on their row.
+  - *Email a reset link* works on any installation: only they see the new
+    password.
+  - *Set a new password* is offered only on a single-tenant installation, where
+    the administrator chose the first one anyway. It ends all their sessions.
+    Only an owner may set an owner's password, or an admin could sign in as
+    one. On a multi-tenant installation an account spans every organization
+    its person belongs to, so one organization's administrator setting it
+    would be taking it over everywhere: there, only the emailed link exists.
 
 This is restricted to single-tenant installations on purpose. Where several
 organizations share an installation, one organization's administrator minting
@@ -74,7 +89,10 @@ shape.
 The two functions that create accounts without a session live in
 `packages/auth/src/provisioning.ts` and authorise nothing themselves. Their
 only callers are `setupAction` (guarded by "no account exists yet") and
-`addMemberAction` (guarded by `member:invite`).
+`addMemberAction` (guarded by `member:invite`). `setMemberPassword`, in the
+same file, likewise authorises nothing; its one caller is
+`setMemberPasswordAction` (guarded by single-tenant, `member:update`, not
+yourself, and owner-only for owners).
 
 ### Invitations, on a multi-tenant installation
 

@@ -103,10 +103,12 @@ const schema = z
     REDIS_URL: z.url().optional(),
 
     /**
-     * `smtp` delivers mail. `memory` keeps sent messages in process for tests
-     * to inspect, and is refused in production.
+     * `smtp` delivers mail through a mail server. `resend` sends it through
+     * Resend's HTTP API with `RESEND_API_KEY`. `memory` keeps sent messages in
+     * process for tests to inspect, and is refused in production.
      */
-    MAIL_DRIVER: z.enum(['smtp', 'memory']).default('smtp'),
+    MAIL_DRIVER: z.enum(['smtp', 'resend', 'memory']).default('smtp'),
+    RESEND_API_KEY: z.string().min(1).optional(),
     SMTP_HOST: z.string().min(1).optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(587),
     SMTP_USER: z.string().optional(),
@@ -167,6 +169,9 @@ const schema = z
     }
     if (v.MAIL_DRIVER === 'smtp' && !v.SMTP_HOST) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'required when MAIL_DRIVER is "smtp"' })
+    }
+    if (v.MAIL_DRIVER === 'resend' && !v.RESEND_API_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['RESEND_API_KEY'], message: 'required when MAIL_DRIVER is "resend"' })
     }
     if (v.NODE_ENV === 'production' && v.MAIL_DRIVER === 'memory') {
       ctx.addIssue({

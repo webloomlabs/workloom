@@ -7,5 +7,7 @@ export {
   completeSetup,
   isInstalled,
   provisionMember,
+  setMemberPassword,
   type NewAccount,
 } from './provisioning.ts'
+export { recordAuthEvent } from './audit-hooks.ts'

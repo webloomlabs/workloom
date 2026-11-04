@@ -1,7 +1,7 @@
 import { DomainError, newId, type Actor, type Role } from '@workloom/core'
 // The auth tables are not tenant-scoped, so this module is one of the few
 // permitted to use the unscoped client. See docs/architecture.md.
-import { count, db, eq, schema, sql, type TenantTransaction } from '@workloom/db'
+import { and, count, db, eq, schema, sql, type TenantTransaction } from '@workloom/db'
 import { auth } from './auth.ts'
 import { recordAuthEvent } from './audit-hooks.ts'
 
@@ -229,4 +229,59 @@ export async function provisionMember(input: {
   })
 
   return { userId: result.user.id, memberId: result.memberId }
+}
+
+/**
+ * An administrator setting a member's password, for a single-tenant
+ * installation -- the same administrator who chose their first one.
+ *
+ * Every session the person has ends: whoever was signed in as them with the
+ * old password is not any more. A person with no password yet (an account
+ * that only ever signed in some other way) gets one.
+ *
+ * Like `provisionMember`, this authorises nothing. The caller must have
+ * checked that the actor may manage this member, and must never offer it on
+ * a multi-tenant installation: there a person's account is theirs across
+ * every organization they belong to, and one organization's administrator
+ * setting its password would be taking over the others. See
+ * `setMemberPasswordAction`.
+ */
+export async function setMemberPassword(input: {
+  organizationId: string
+  userId: string
+  password: string
+  /** For the audit entry: who set it. */
+  setBy: Actor
+  context?: { headers?: Headers } | undefined
+}): Promise<void> {
+  const passwordHash = await hashPassword(input.password)
+
+  const member = await db.transaction(async (tx) => {
+    const [found] = await tx
+      .select({ memberId: schema.member.id, email: schema.user.email })
+      .from(schema.member)
+      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+      .where(and(eq(schema.member.organizationId, input.organizationId), eq(schema.member.userId, input.userId)))
+      .limit(1)
+    if (!found) throw new DomainError('That person is not a member of this organization.', 'not_a_member')
+
+    const a = schema.account
+    const updated = await tx
+      .update(a)
+      .set({ password: passwordHash, updatedAt: new Date() })
+      .where(and(eq(a.userId, input.userId), eq(a.providerId, 'credential')))
+      .returning({ id: a.id })
+    if (updated.length === 0) {
+      await tx.insert(a).values({ id: newId(), userId: input.userId, providerId: 'credential', accountId: input.userId, password: passwordHash })
+    }
+    await tx.delete(schema.session).where(eq(schema.session.userId, input.userId))
+    return found
+  })
+
+  await recordAuthEvent({
+    organizationId: input.organizationId,
+    actor: input.setBy,
+    entry: { action: 'member.password_set', entityType: 'member', entityId: member.memberId, entityLabel: member.email },
+    context: input.context,
+  })
 }
