@@ -226,14 +226,18 @@ export async function createApiKeyAction(
   _: ActionState<CreatedKey>,
   form: FormData,
 ): Promise<ActionState<CreatedKey>> {
+  const restricted = form.get('access') === 'restricted'
   const scopes = form.getAll('scopes').map(String).filter(Boolean)
   const expiresAt = optional(form.get('expiresAt'))
+  if (restricted && scopes.length === 0) {
+    return { status: 'error', message: 'Choose at least one permission, or give the key full access.', fieldErrors: { scopes: 'Choose at least one permission.' } }
+  }
 
   try {
     const created = await call(apiKeyCreate, {
       name: String(form.get('name') ?? ''),
-      // No boxes ticked means "everything I may do", not "nothing".
-      scopes: scopes.length > 0 ? scopes : null,
+      // Full access is no scopes at all: the key does whatever its owner may.
+      scopes: restricted ? scopes : null,
       expiresAt: expiresAt ? new Date(`${expiresAt}T23:59:59Z`) : null,
     })
     revalidatePath('/settings/api-keys')

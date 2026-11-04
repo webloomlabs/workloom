@@ -112,6 +112,7 @@ test('the owner issues a scoped API key that works exactly once as shown', async
   await page.goto('/settings/api-keys')
 
   await page.getByLabel('Name', { exact: true }).fill('n8n')
+  await page.getByRole('radio', { name: /^Restricted/ }).check()
   await page.getByRole('checkbox').and(page.locator('[value="invoice:read"]')).check()
   await page.getByRole('button', { name: 'Create key' }).click()
 

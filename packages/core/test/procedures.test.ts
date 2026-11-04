@@ -1232,6 +1232,14 @@ describe('cross-tenant access through procedures', () => {
     expect(rows[0]?.revoked_at).toBeNull()
   })
 
+  it('makes full-access and restricted API keys, but not one that can do nothing', async () => {
+    const full = (await run('apiKey.create', asOwner(ORG_A, ownerA), { name: 'full' })) as { key: { scopes: string[] | null } }
+    expect(full.key.scopes).toBeNull()
+    const restricted = (await run('apiKey.create', asOwner(ORG_A, ownerA), { name: 'restricted', scopes: ['invoice:read'] })) as { key: { scopes: string[] | null } }
+    expect(restricted.key.scopes).toEqual(['invoice:read'])
+    await expect(run('apiKey.create', asOwner(ORG_A, ownerA), { name: 'empty', scopes: [] })).rejects.toMatchObject({ code: 'scopes_empty' })
+  })
+
   it('lists only the acting organization\'s API keys', async () => {
     await run('apiKey.create', asOwner(ORG_B, ownerB), { name: 'belongs to B' })
     const listed = (await run('apiKey.list', asOwner(ORG_A, ownerA), {})) as {

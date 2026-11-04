@@ -2,6 +2,7 @@ import { apiKeyList } from '@workloom/core/modules'
 import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { CreateApiKeyForm, RevokeApiKeyForm } from '@/components/api-key-forms'
+import { actionLabel, groupScopes } from '@/lib/api-key-scopes'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
@@ -15,11 +16,6 @@ export default async function ApiKeysPage() {
   const viewer = await requireViewer()
   const { data: keys } = await call(apiKeyList, { includeRevoked: false })
 
-  const grantable: Record<string, string[]> = {}
-  for (const permission of [...viewer.permissions].sort()) {
-    const [resource, action] = permission.split(':') as [string, string]
-    ;(grantable[resource] ??= []).push(action)
-  }
 
   const now = Date.now()
 
@@ -31,7 +27,7 @@ export default async function ApiKeysPage() {
             title="Create an API key"
             description="For connecting automation tools such as n8n, Make, or your own scripts."
           />
-          <div className="p-5"><CreateApiKeyForm grantable={grantable} /></div>
+          <div className="p-5"><CreateApiKeyForm groups={groupScopes(viewer.permissions)} /></div>
         </Card>
       )}
 
@@ -42,7 +38,7 @@ export default async function ApiKeysPage() {
         ) : (
           <Table>
             <thead>
-              <tr><Th>Name</Th><Th>Key</Th><Th>Scopes</Th><Th>Last used</Th><Th>Expires</Th><Th /></tr>
+              <tr><Th>Name</Th><Th>Key</Th><Th>Access</Th><Th>Last used</Th><Th>Expires</Th><Th /></tr>
             </thead>
             <tbody>
               {keys.map((key) => {
@@ -53,9 +49,9 @@ export default async function ApiKeysPage() {
                     <Td><code className="font-mono text-xs text-muted">{key.keyPrefix}…</code></Td>
                     <Td>
                       {key.scopes === null ? (
-                        <Badge>Owner&apos;s permissions</Badge>
+                        <Badge tone="accent">Full access</Badge>
                       ) : (
-                        <span className="text-xs text-muted">{key.scopes.join(', ')}</span>
+                        <ScopeSummary scopes={key.scopes} />
                       )}
                     </Td>
                     <Td className="text-muted">{formatDate(key.lastUsedAt)}</Td>
@@ -71,5 +67,30 @@ export default async function ApiKeysPage() {
         )}
       </Card>
     </div>
+  )
+}
+
+/** A restricted key's permissions: a count, opening to the list by area. */
+function ScopeSummary({ scopes }: { scopes: string[] }) {
+  const groups = groupScopes(scopes)
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+        <Badge>Restricted</Badge>
+        <span className="text-xs text-muted underline-offset-2 group-hover:underline">
+          {scopes.length} {scopes.length === 1 ? 'permission' : 'permissions'}
+        </span>
+      </summary>
+      <dl className="mt-2 space-y-1.5 text-xs">
+        {groups.map((group) => (
+          <div key={group.key}>
+            <dt className="font-medium text-ink">{group.title}</dt>
+            <dd className="text-muted">
+              {group.resources.map((r) => `${r.label} (${r.actions.map(actionLabel).join(', ')})`).join(' · ')}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   )
 }

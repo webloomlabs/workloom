@@ -77,6 +77,11 @@ export const apiKeyCreate = defineProcedure({
       throw new DomainError('API keys can only be issued by a signed-in user.', 'user_required')
     }
 
+    // An empty list would make a key that can do nothing: full access is null, not [].
+    if (input.scopes && input.scopes.length === 0) {
+      throw new DomainError('Choose at least one permission, or leave scopes out for full access.', 'scopes_empty', 'scopes')
+    }
+
     const unknown = (input.scopes ?? []).filter((s) => !isPermission(s))
     if (unknown.length > 0) {
       throw new DomainError(
