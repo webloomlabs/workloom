@@ -1,6 +1,7 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
 import {
   ATTACHMENT_MAX_BYTES,
+  billingScheduleList,
   attachmentList,
   commentList,
   companyList,
@@ -46,7 +47,7 @@ import { CreateRevisionForm, EditRevisionForm, RevisionControls } from '@/compon
 import { QuickTaskForm, TaskStatusControl } from '@/components/projects/task-forms'
 import { EntryControls, LogTimeForm } from '@/components/time/time-forms'
 import { label as labelOf } from '@/lib/crm-labels'
-import { DOCUMENT_CATEGORY_LABELS } from '@/lib/service-labels'
+import { DOCUMENT_CATEGORY_LABELS, describeInterval } from '@/lib/service-labels'
 import { DeleteDocumentButton, DocumentVisibilityToggle, UploadDocumentForm } from '@/components/service/document-forms'
 import { formatBytes, formatDate, formatDateTime, todayIn } from '@/lib/format'
 import { PRIORITY_RANK, TASK_STATUS_LABELS } from '@/lib/project-labels'
@@ -375,11 +376,12 @@ async function Revisions({ project, can }: Context) {
 }
 
 async function Billing({ project, can }: Context) {
-  const [plan, milestones, taxRates, contacts] = await Promise.all([
+  const [plan, milestones, taxRates, contacts, schedules] = await Promise.all([
     call(projectBillingStageList, { id: project.id }),
     can('milestone:read') ? call(milestoneList, { id: project.id }) : { data: [] },
     can('taxRate:read') ? call(taxRateList, {}) : { data: [] },
     project.companyId && can('contact:read') ? call(contactList, { companyId: project.companyId, limit: 100 }) : { data: [] },
+    can('billingSchedule:read') ? call(billingScheduleList, { projectId: project.id, limit: 50 }) : { data: [] },
   ])
   const live = !project.archivedAt
   const canPlan = can('projectBilling:update') && live
@@ -434,6 +436,40 @@ async function Billing({ project, can }: Context) {
           <div className="mt-1 text-xs text-muted">{plan.stages.length === 0 ? 'No stages planned' : `${pending.length} still to bill`}</div>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title="Recurring billing"
+          description="Monthly and other recurring fees bill through schedules, apart from the contract and its stages. One set up by an accepted quote starts paused: resume it when the work goes live."
+          action={can('billingSchedule:create') && live ? <Link href={`/recurring/new?projectId=${project.id}${project.companyId ? `&companyId=${project.companyId}` : ''}`} className={buttonStyles({ variant: 'secondary', size: 'sm' })}>New schedule</Link> : undefined}
+        />
+        {schedules.data.length === 0 ? (
+          <EmptyState>No recurring billing on this project. A quote line marked Recurring sets one up when the quote is accepted.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr><Th>Schedule</Th><Th>How often</Th><Th className="text-right">Each period</Th><Th>Next</Th><Th>Status</Th></tr>
+            </thead>
+            <tbody>
+              {schedules.data.map((s) => (
+                <Tr key={s.id}>
+                  <Td><Link href={`/recurring/${s.id}`} className="font-medium hover:underline">{s.name}</Link></Td>
+                  <Td className="text-muted">{describeInterval(s.intervalUnit, s.intervalCount)}</Td>
+                  <Td className="text-right tabular-nums">{money(s.periodSubtotalMinor, s.currency)}</Td>
+                  <Td className="text-muted">{s.status === 'active' && s.nextRunOn ? formatDate(s.nextRunOn) : '—'}</Td>
+                  <Td>
+                    {s.status === 'paused' ? (
+                      <Link href={`/recurring/${s.id}`} className="text-sm"><Badge tone="caution">Paused</Badge> <span className="text-muted hover:underline">Resume when live</span></Link>
+                    ) : (
+                      <Badge tone={s.status === 'active' ? 'positive' : 'neutral'}>{s.status === 'active' ? 'Active' : 'Ended'}</Badge>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
 
       {plan.overCommittedMinor > 0 && (
         <Alert tone="warning">

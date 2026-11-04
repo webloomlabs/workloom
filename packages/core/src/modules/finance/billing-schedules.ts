@@ -261,6 +261,8 @@ export const billingScheduleList = defineProcedure({
   readOnly: true,
   input: z.object({
     companyId: z.uuid().optional(),
+    /** The schedules a project bills through, such as those its accepted quote set up. */
+    projectId: z.uuid().optional(),
     status: z.enum(schema.BILLING_SCHEDULE_STATUSES).optional(),
     /** Schedules whose next period has already arrived. */
     due: z.coerce.boolean().optional(),
@@ -274,6 +276,7 @@ export const billingScheduleList = defineProcedure({
     if (input.companyId) await loadCompany(ctx, input.companyId)
     const conditions: Array<SQL | undefined> = [
       input.companyId ? eq(s.companyId, input.companyId) : undefined,
+      input.projectId ? eq(s.projectId, input.projectId) : undefined,
       input.status ? eq(s.status, input.status) : undefined,
       input.due ? and(eq(s.status, 'active'), isNotNull(s.nextRunOn), lte(s.nextRunOn, await today(ctx))) : undefined,
       input.q ? or(ilike(s.name, contains(input.q)), ilike(schema.companies.name, contains(input.q))) : undefined,

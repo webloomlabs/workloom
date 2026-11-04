@@ -77,12 +77,17 @@ export function CreateScheduleForm({
   baseCurrency,
   today,
   companyId,
+  projects = [],
+  projectId,
 }: {
   companies: Choice[]
   taxRates: Choice[]
   baseCurrency: string
   today: string
   companyId?: string | undefined
+  /** Projects it can bill for, so it shows on the project's Billing tab. */
+  projects?: Choice[]
+  projectId?: string | undefined
 }) {
   const [state, action] = useActionState(createScheduleAction, idle)
   return (
@@ -90,6 +95,7 @@ export function CreateScheduleForm({
       <FormMessage state={state} />
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField state={state} name="companyId" label="Client" defaultValue={companyId} options={choices(companies)} empty="Choose a client" />
+        <SelectField state={state} name="projectId" label="Project (optional)" defaultValue={projectId} options={choices(projects)} empty="None" />
         <TextField state={state} name="name" label="Name" required placeholder="Website care plan" hint="Each invoice it raises is titled this." />
         <TextField state={state} name="currency" label="Currency" defaultValue={baseCurrency} />
         <SelectField state={state} name="taxMode" label="Tax" defaultValue="exclusive" options={options(TAX_MODE_LABELS)} />

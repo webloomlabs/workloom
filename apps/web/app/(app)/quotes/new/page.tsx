@@ -33,7 +33,7 @@ export default async function NewQuotePage({ searchParams }: PageProps<'/quotes/
         title="New quote"
       />
       <Card>
-        <CardHeader title="Quote" description="It starts as a draft. Add lines next, then mark it as sent when it goes to the client." />
+        <CardHeader title="Quote" description="It starts as a draft. On the next screen, add its lines — a line can be one-time, or recurring (monthly, quarterly, yearly) for a retainer. Then mark it as sent when it goes to the client." />
         <div className="p-5">
           <CreateQuoteForm
             companies={companies.data.map((c) => ({ id: c.id, name: c.name }))}

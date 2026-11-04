@@ -1,4 +1,4 @@
-import { companyList, taxRateList } from '@workloom/core/modules'
+import { companyList, projectList, taxRateList } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -13,11 +13,12 @@ export const metadata: Metadata = { title: 'New recurring schedule · Workloom' 
 
 export default async function NewSchedulePage({ searchParams }: PageProps<'/recurring/new'>) {
   const query = await searchParams
-  await requireViewer()
-  const [companies, taxRates, settings] = await Promise.all([
+  const viewer = await requireViewer()
+  const [companies, taxRates, settings, projects] = await Promise.all([
     call(companyList, { limit: 100 }),
     call(taxRateList, {}),
     organizationSettings(),
+    viewer.permissions.has('project:read') ? call(projectList, { limit: 100 }) : { data: [] },
   ])
 
   return (
@@ -38,6 +39,8 @@ export default async function NewSchedulePage({ searchParams }: PageProps<'/recu
             baseCurrency={settings.baseCurrency}
             today={todayIn(settings.timezone)}
             companyId={param(query.companyId)}
+            projects={projects.data.map((p) => ({ id: p.id, name: p.companyName ? `${p.name} · ${p.companyName}` : p.name }))}
+            projectId={param(query.projectId)}
           />
         </div>
       </Card>

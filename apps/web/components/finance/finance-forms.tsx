@@ -317,6 +317,7 @@ export function AddLineForm({
   intervals?: boolean
 }) {
   const [state, action] = useActionState(add, idle)
+  const [billing, setBilling] = useState('default')
   return (
     <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={documentId} />
@@ -333,7 +334,14 @@ export function AddLineForm({
           name="billingType"
           label="Billing"
           defaultValue="default"
-          options={[{ value: 'default', label: "Service's default" }, { value: 'one_off', label: 'One-time' }, { value: 'recurring', label: 'Recurring' }, { value: '', label: 'Not shown' }]}
+          onChange={setBilling}
+          options={[
+            { value: 'default', label: "Service's default" },
+            { value: 'one_off', label: 'One-time' },
+            { value: 'recurring', label: intervals ? 'Recurring (monthly, quarterly…)' : 'Recurring' },
+            { value: '', label: 'Not shown' },
+          ]}
+          hint={intervals && billing !== 'recurring' ? 'For a retainer, choose Recurring and set how often below.' : undefined}
         />
       </div>
       {periods && (
@@ -342,9 +350,9 @@ export function AddLineForm({
           <TextField state={state} id="add-periodEnd" name="periodEnd" label="Period to" type="date" />
         </div>
       )}
-      {intervals && (
+      {intervals && billing === 'recurring' && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <TextField state={state} id="add-intervalCount" name="intervalCount" label="If recurring: every" type="number" defaultValue="1" />
+          <TextField state={state} id="add-intervalCount" name="intervalCount" label="Billed every" type="number" defaultValue="1" />
           <SelectField
             state={state}
             id="add-intervalUnit"
