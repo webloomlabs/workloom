@@ -449,6 +449,7 @@ export const paymentRecord = defineProcedure({
       entityType: 'payment',
       entityId: id,
       entityLabel: `${recorded.amountMinor} ${recorded.currency} from ${company.name}`,
+      snapshot: recorded,
     })
     await ctx.emit('payment.recorded', recorded)
     return recorded
@@ -517,6 +518,7 @@ export const paymentDelete = defineProcedure({
       entityType: 'payment',
       entityId: payment.id,
       entityLabel: `${payment.amountMinor} ${payment.currency} from ${payment.companyName}`,
+      snapshot: payment,
     })
     await ctx.emit('payment.deleted', payment)
     return { deleted: true }

@@ -1,9 +1,9 @@
-import { companyList, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
+import { companyList, expenseCategoryList, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { param } from '@/components/crm/list-controls'
-import { ExpenseForm } from '@/components/finance/expense-forms'
+import { ExpenseForm, StartFromReceiptForm } from '@/components/finance/expense-forms'
 import { todayIn } from '@/lib/format'
 import { accountChoices } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
@@ -17,11 +17,12 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
   const projectId = param(query.projectId) ?? null
   const companyId = param(query.companyId) ?? null
 
-  const [companies, projects, taxRates, organization] = await Promise.all([
+  const [companies, projects, taxRates, organization, categories] = await Promise.all([
     call(companyList, { limit: 100 }),
     viewer.permissions.has('project:read') ? call(projectList, { limit: 100 }) : { data: [] },
     viewer.permissions.has('taxRate:read') ? call(taxRateList, {}) : { data: [] },
     call(organizationGet, {}),
+    call(expenseCategoryList, {}),
   ])
   const accounts = await accountChoices(organization.baseCurrency, viewer.permissions.has('bankAccount:read'))
 
@@ -32,13 +33,20 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
         title="Record an expense"
       />
       <Card>
-        <CardHeader title="Expense" description="A billable expense is rebilled onto a draft invoice at cost plus its markup." />
+        <CardHeader title="Start from a receipt" description="The quickest way: the receipt becomes a draft expense, which you check and confirm. You can also send receipts to the Telegram bot." />
+        <div className="p-5">
+          <StartFromReceiptForm reading={organization.receiptReadingEnabled && organization.receiptReadingAvailable} />
+        </div>
+      </Card>
+      <Card>
+        <CardHeader title="Or type it in" description="A billable expense is rebilled onto a draft invoice at cost plus its markup." />
         <div className="p-5">
           <ExpenseForm
             companies={companies.data.map((c) => ({ id: c.id, name: c.name }))}
             projects={projects.data.map((p) => ({ id: p.id, name: p.name }))}
             taxRates={taxRates.data.map((t) => ({ id: t.id, name: t.name, rate: t.rate }))}
             baseCurrency={organization.baseCurrency}
+            categories={categories.data.map((c) => ({ id: c.key, name: c.name }))}
             expense={{
               description: '',
               supplier: null,
@@ -53,6 +61,9 @@ export default async function NewExpensePage({ searchParams }: PageProps<'/expen
               markupPercent: null,
               bankAccountId: null,
               notes: null,
+              paymentMethod: null,
+              paidOn: null,
+              reimbursable: false,
             }}
             accounts={accounts.choices}
             defaultAccountId={accounts.defaultId}

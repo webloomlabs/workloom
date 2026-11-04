@@ -1,5 +1,5 @@
 import { addDays } from '@workloom/core/time'
-import { companyList, dealGet } from '@workloom/core/modules'
+import { companyList, dealGet, projectGet } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -17,10 +17,12 @@ export default async function NewQuotePage({ searchParams }: PageProps<'/quotes/
   await requireViewer()
   const companyId = param(query.companyId) ?? null
   const dealId = param(query.dealId)
-  const [companies, settings, deal] = await Promise.all([
+  const projectId = param(query.projectId)
+  const [companies, settings, deal, project] = await Promise.all([
     call(companyList, { limit: 100 }),
     organizationSettings(),
     dealId && /^[0-9a-f-]{36}$/.test(dealId) ? call(dealGet, { id: dealId }) : null,
+    projectId && /^[0-9a-f-]{36}$/.test(projectId) ? call(projectGet, { id: projectId }) : null,
   ])
   const back = deal ? `/deals/${deal.id}` : companyId ? `/companies/${companyId}?tab=quotes` : '/quotes'
 
@@ -35,9 +37,10 @@ export default async function NewQuotePage({ searchParams }: PageProps<'/quotes/
         <div className="p-5">
           <CreateQuoteForm
             companies={companies.data.map((c) => ({ id: c.id, name: c.name }))}
-            companyId={companyId}
+            companyId={project?.companyId ?? companyId}
+            project={project ? { id: project.id, name: project.name } : null}
             deal={deal ? { id: deal.id, name: deal.name, companyName: deal.companyName } : null}
-            currency={deal?.currency ?? settings.baseCurrency}
+            currency={project?.currency ?? deal?.currency ?? settings.baseCurrency}
             validUntil={addDays(todayIn(settings.timezone), 30)}
           />
         </div>

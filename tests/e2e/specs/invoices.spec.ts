@@ -43,7 +43,7 @@ test('tracked time becomes an invoice, issued, emailed, opened by the client, th
   await page.getByLabel('Legal name').fill('Webloom Labs Pty Ltd')
   await page.getByLabel('Tax number').fill('ABN 12 345 678 901')
   await page.getByLabel('Address').fill('1 Harbour St\nSydney NSW 2000')
-  await page.getByLabel('How to pay').fill('Transfer to BSB 000-000, account 1234567.')
+  await page.getByLabel('Other payment instructions').fill('Transfer to BSB 000-000, account 1234567.')
   await page.getByLabel('Payment terms (days)').fill('21')
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Settings saved.' })).toBeVisible()
@@ -139,6 +139,9 @@ test('the API raises invoices from quotes, freezes issued ones, and holds billed
   const service = (await send('post', '/api/v1/services', { name: `Retainer ${run}`, defaultPriceMinor: 100_00, defaultTaxRateId: tax.id })).body
   const quote = (await send('post', '/api/v1/quotes', { companyId: company.id, title: 'Retainer', lines: [{ serviceId: service.id, quantity: '3' }] })).body
   await send('post', `/api/v1/quotes/${quote.id}/send`, {})
+  // A quote is invoiced once the client has accepted it.
+  expect((await send('post', `/api/v1/quotes/${quote.id}/invoice`, {})).status).toBe(422)
+  await send('post', `/api/v1/quotes/${quote.id}/accept`, {})
 
   const raised = await send('post', `/api/v1/quotes/${quote.id}/invoice`, {})
   expect(raised.status).toBe(201)

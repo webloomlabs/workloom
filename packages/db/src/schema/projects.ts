@@ -7,6 +7,7 @@ import {
   foreignKey,
   index,
   integer,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -37,6 +38,47 @@ export const PROJECT_STATUSES = ['planning', 'in_progress', 'on_hold', 'review',
 export const TASK_STATUSES = ['todo', 'in_progress', 'in_review', 'done', 'cancelled'] as const
 export const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 export const PROJECT_MEMBER_ROLES = ['manager', 'member'] as const
+/**
+ * How a project is paid for, which decides what its money looks like: a
+ * fixed price has a contract and a billing plan, a retainer bills by the
+ * period and budgets by the period, time and materials bills what was logged,
+ * and internal work bills nothing.
+ */
+export const PROJECT_BILLING_MODELS = ['fixed_price', 'retainer', 'time_and_materials', 'non_billable'] as const
+/** The span a budget is measured over: the whole project, or each period of a retainer. */
+export const BUDGET_PERIODS = ['total', 'week', 'month', 'quarter', 'year'] as const
+/** What a budget alert measured. */
+export const BUDGET_MEASURES = ['cost', 'hours'] as const
+
+/**
+ * The agency's own kinds of project -- "Web development", "Digital marketing"
+ * -- each with the billing model and budget period a new one starts from.
+ * Labels for reporting and defaults for the form; the billing model on the
+ * project is what decides behaviour.
+ */
+export const projectTypes = pgTable(
+  'project_types',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    name: text('name').notNull(),
+    description: text('description'),
+    defaultBillingModel: text('default_billing_model').notNull().default('fixed_price'),
+    defaultBudgetPeriod: text('default_budget_period').notNull().default('total'),
+    /** A hex colour for the label: "#0b8a5e". */
+    color: text('color'),
+    position: integer('position').notNull().default(0),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    unique('project_types_organization_id_id_key').on(t.organizationId, t.id),
+    uniqueIndex('project_types_organization_name_key').on(t.organizationId, sql`lower(${t.name})`).where(sql`${t.archivedAt} is null`),
+    check('project_types_billing_model_check', sql`${t.defaultBillingModel} in ${oneOf(PROJECT_BILLING_MODELS)}`),
+    check('project_types_budget_period_check', sql`${t.defaultBudgetPeriod} in ${oneOf(BUDGET_PERIODS)}`),
+    check('project_types_color_check', sql`${t.color} ~ '^#[0-9a-f]{6}$'`),
+  ],
+)
 
 function oneOf(values: readonly string[]) {
   return sql.raw(`(${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`)
@@ -51,6 +93,9 @@ export const projects = pgTable(
     companyId: uuid('company_id'),
     /** The won deal this project delivers, if it came from one. */
     dealId: uuid('deal_id'),
+    /** The agency's own label for the kind of work. */
+    projectTypeId: uuid('project_type_id'),
+    billingModel: text('billing_model').notNull().default('time_and_materials'),
     name: text('name').notNull(),
     description: text('description'),
     status: text('status').notNull().default('planning'),
@@ -59,8 +104,15 @@ export const projects = pgTable(
 
     /** The currency of the budget and of member rate overrides. */
     currency: text('currency').notNull(),
-    /** Integer minor units of `currency`. Null when there is no budget. */
+    /**
+     * Integer minor units of `currency`: what the work may cost, per
+     * `budget_period`. Null when there is no budget.
+     */
     budgetMinor: bigint('budget_minor', { mode: 'number' }),
+    /** Hours the work may take, per `budget_period`. Null means: measure against the tasks' estimates. */
+    budgetHours: numeric('budget_hours', { precision: 10, scale: 2 }),
+    /** What the budgets are per: the whole project, or each week, month, quarter or year of a retainer. */
+    budgetPeriod: text('budget_period').notNull().default('total'),
     /**
      * The price originally agreed, in `currency`.
      *
@@ -78,6 +130,8 @@ export const projects = pgTable(
      * agreed total, and a project without one cannot have a billing plan.
      */
     contractValueMinor: bigint('contract_value_minor', { mode: 'number' }),
+    /** The quote whose acceptance set the contract value, when one did. */
+    contractQuoteId: uuid('contract_quote_id'),
 
     /** The person accountable for delivery. */
     ownerId: uuid('owner_id').references(() => user.id, { onDelete: 'set null' }),
@@ -103,6 +157,18 @@ export const projects = pgTable(
       columns: [t.organizationId, t.dealId],
       foreignColumns: [deals.organizationId, deals.id],
     }),
+    foreignKey({
+      name: 'projects_project_type_fk',
+      columns: [t.organizationId, t.projectTypeId],
+      foreignColumns: [projectTypes.organizationId, projectTypes.id],
+    }),
+    check('projects_billing_model_check', sql`${t.billingModel} in ${oneOf(PROJECT_BILLING_MODELS)}`),
+    check('projects_budget_period_check', sql`${t.budgetPeriod} in ${oneOf(BUDGET_PERIODS)}`),
+    check('projects_budget_hours_check', sql`${t.budgetHours} >= 0`),
+    /** A retainer is paid by the period: it has no agreed total. */
+    check('projects_retainer_contract_check', sql`${t.billingModel} <> 'retainer' or ${t.contractValueMinor} is null`),
+    /** A fixed price is one sum for the whole job, so its budget is too. */
+    check('projects_fixed_price_period_check', sql`${t.billingModel} <> 'fixed_price' or ${t.budgetPeriod} = 'total'`),
     check('projects_status_check', sql`${t.status} in ${oneOf(PROJECT_STATUSES)}`),
     check('projects_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$'`),
     check('projects_budget_check', sql`${t.budgetMinor} >= 0`),
@@ -331,5 +397,34 @@ export const attachments = pgTable(
       foreignColumns: [tasks.organizationId, tasks.projectId, tasks.id],
     }).onDelete('cascade'),
     check('attachments_size_check', sql`${t.sizeBytes} >= 0`),
+  ],
+)
+
+/**
+ * Budget thresholds a project has crossed, one row per threshold per budget
+ * period. The unique key is what makes an alert fire once: the hourly sweep
+ * inserts, and only an insert that took announces anything.
+ */
+export const projectBudgetAlerts = pgTable(
+  'project_budget_alerts',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    projectId: uuid('project_id').notNull(),
+    measure: text('measure').notNull(),
+    /** The first day of the budget period it was crossed in; the project's start for a whole-project budget. */
+    periodStart: date('period_start', { mode: 'string' }).notNull(),
+    /** The percentage crossed: 80, 100. */
+    threshold: integer('threshold').notNull(),
+    /** How far through the budget it was when noticed. */
+    percent: integer('percent').notNull(),
+    alertedAt: timestamp('alerted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('project_budget_alerts_organization_id_id_key').on(t.organizationId, t.id),
+    unique('project_budget_alerts_once_key').on(t.organizationId, t.projectId, t.measure, t.periodStart, t.threshold),
+    foreignKey({ name: 'project_budget_alerts_project_fk', columns: [t.organizationId, t.projectId], foreignColumns: [projects.organizationId, projects.id] }).onDelete('cascade'),
+    check('project_budget_alerts_measure_check', sql`${t.measure} in ${oneOf(BUDGET_MEASURES)}`),
+    check('project_budget_alerts_threshold_check', sql`${t.threshold} between 1 and 1000`),
   ],
 )

@@ -115,6 +115,9 @@ application code.
 The unscoped `db` handle is a separate, narrower allowlist enforced by
 `eslint.config.js`: `packages/auth` (Better Auth's tables are not tenant-scoped),
 `packages/core/src/rate-limit.ts`, the worker's outbox and maintenance modules,
+the Telegram inbox (`packages/core/src/modules/integrations/telegram/inbox.ts`,
+which lists organization ids and then works each inside its own `withTenant`),
+the tax pack builder (`packages/core/src/modules/books/pack-builder.ts`, the same way),
 the health route, and the boot sequence.
 
 The worker's hourly maintenance prunes idempotency keys the documented way:

@@ -80,7 +80,7 @@ describe('the columns of every export', () => {
     ['time-entries', 'id,spentOn,userName,projectId,projectName,taskTitle,description,durationSeconds,billable,invoiced,currency,billableRate,costRate'],
     ['invoices', 'id,number,companyId,companyName,status,issueDate,dueDate,currency,subtotal,discount,tax,total,amountPaid,amountDue'],
     ['payments', 'id,receivedOn,companyId,companyName,kind,method,reference,currency,amount,allocated,unallocated'],
-    ['expenses', 'id,incurredOn,description,supplier,category,projectId,projectName,companyId,companyName,currency,amount,tax,billable,invoiceNumber'],
+    ['expenses', 'id,number,status,incurredOn,paidOn,description,supplier,category,categoryName,taxTreatment,projectId,projectName,companyId,companyName,currency,amount,taxName,taxRate,tax,total,baseCurrency,amountBase,paymentMethod,reimbursable,bankAccountName,billable,invoiceNumber,receiptCount,source'],
   ]
 
   it('names every resource in the catalogue', () => {

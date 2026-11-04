@@ -1,6 +1,6 @@
 import { pruneRateLimits } from '@workloom/core'
-import { expireDueQuotes, generateDueInvoices, markOverdueInvoices, sweepExpiringAssets } from '@workloom/core/modules'
-import { buildContext } from '@workloom/core/registry'
+import { expireDueQuotes, generateDueInvoices, markOverdueInvoices, sealAuditLog, sweepExpiringAssets, sweepProjectBudgets } from '@workloom/core/modules'
+import { buildContext, type TransactionHooks } from '@workloom/core/registry'
 import { db, lt, schema, withTenant } from '@workloom/db'
 
 /** Replays are honoured for a day; after that a key may be reused. */
@@ -33,6 +33,10 @@ export async function runMaintenance(now = new Date()): Promise<void> {
     // Raises drafts only: nothing is issued or sent without a person.
     await sweep(id, 'recurring billing', generateDueInvoices, 'raised %n draft invoice(s) from schedules', now)
     await sweep(id, 'expiring infrastructure', sweepExpiringAssets, 'announced %n asset(s) approaching renewal', now)
+    // Once per threshold per budget period: a retainer over in March hears it once in March.
+    await sweep(id, 'project budgets', (ctx) => sweepProjectBudgets(ctx), 'raised %n budget alert(s)', now)
+    // Each finished day of the audit log, sealed so a later edit shows.
+    await sweep(id, 'audit seals', sealAuditLog, 'sealed %n day(s) of the audit log', now)
   }
 
   await pruneRateLimits()
@@ -46,12 +50,29 @@ async function sweep(
   message: string,
   now: Date,
 ): Promise<void> {
+  // What a sweep leaves to do once its changes are safe -- an email, a file
+  // removed -- runs after the commit, as it does for a procedure, and is
+  // dropped if the sweep rolls back.
+  const hooks: TransactionHooks = { commit: [], rollback: [] }
   try {
     const changed = await withTenant(organizationId, (tx) =>
-      run(buildContext({ organizationId, actor: { type: 'job', label }, role: null, permissions: new Set(), now }, tx)),
+      run(buildContext({ organizationId, actor: { type: 'job', label }, role: null, permissions: new Set(), now }, tx, hooks)),
     )
     if (changed > 0) console.log(`worker: ${message.replace('%n', String(changed))} in ${organizationId}`)
   } catch (error) {
     console.error(`worker: ${label} failed in ${organizationId}`, error)
+    await settle(hooks.rollback, label, organizationId)
+    return
+  }
+  await settle(hooks.commit, label, organizationId)
+}
+
+async function settle(tasks: Array<() => Promise<void>>, label: string, organizationId: string): Promise<void> {
+  for (const task of tasks) {
+    try {
+      await task()
+    } catch (error) {
+      console.error(`worker: after ${label} in ${organizationId}`, error)
+    }
   }
 }

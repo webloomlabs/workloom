@@ -45,3 +45,10 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S9 — Dashboard](S9.md) | Done |
 | [S10 — Release hardening](S10.md) | Done |
 | [S11 — Support, maintenance, infrastructure, documents, recurring billing](S11.md) | Done |
+| [S14 — Invoice document v2: branding, numbering, statements, due at launch](S14.md) | Done |
+| [S15 — Expenses v2: receipts, drafts, categories](S15.md) | Done |
+| [S16 — Recurring billing: several periods on one invoice](S16.md) | Done |
+| [S17 — Project billing models, types, and budgets](S17.md) | Done |
+| [S18 — Quotes into projects: alternatives, contract, statement final invoice](S18.md) | Done |
+| [S19 — Receipts from Telegram, read by AI](S19.md) | Done |
+| [S20 — Closing the year: books lock, audit log, income tax pack](S20.md) | Done |

@@ -56,3 +56,82 @@ export function periodIndexOf(startOn: string, unit: Interval, count: number, da
   while (index < 1200 && periodStart(startOn, unit, count, index + 1) <= date) index += 1
   return index
 }
+
+export type Period = { index: number; start: string; end: string }
+
+/** The period with this index. */
+export function periodAt(startOn: string, unit: Interval, count: number, index: number): Period {
+  return { index, start: periodStart(startOn, unit, count, index), end: periodEnd(startOn, unit, count, index) }
+}
+
+/**
+ * The first period at or after `fromIndex` that has not been billed, given the
+ * start dates of those that have. After a rewind -- January deleted while
+ * February stays billed -- the schedule bills January, then skips to March.
+ */
+export function nextUnbilledIndex(startOn: string, unit: Interval, count: number, fromIndex: number, billedStarts: ReadonlySet<string>): number {
+  let index = fromIndex
+  while (index < fromIndex + 1200 && billedStarts.has(periodStart(startOn, unit, count, index))) index += 1
+  return index
+}
+
+/**
+ * The next `n` unbilled periods from `fromIndex`, oldest first. Stops early at
+ * `endOn`: a period starting after the agreement ends is not billed.
+ */
+export function unbilledPeriods(
+  startOn: string,
+  unit: Interval,
+  count: number,
+  fromIndex: number,
+  n: number,
+  billedStarts: ReadonlySet<string>,
+  endOn: string | null = null,
+): Period[] {
+  const periods: Period[] = []
+  let index = fromIndex
+  while (periods.length < n) {
+    index = nextUnbilledIndex(startOn, unit, count, index, billedStarts)
+    const period = periodAt(startOn, unit, count, index)
+    if (endOn && period.start > endOn) break
+    periods.push(period)
+    index += 1
+  }
+  return periods
+}
+
+/** How many more periods a schedule may bill under its occurrence limit. Null when there is none. */
+export function remainingOccurrences(maxOccurrences: number | null, generatedCount: number): number | null {
+  return maxOccurrences === null ? null : Math.max(0, maxOccurrences - generatedCount)
+}
+
+/** Whether these periods follow one another with no gap, so one line can state them as a single range. */
+export function contiguous(periods: readonly Period[]): boolean {
+  return periods.every((p, i) => i === 0 || p.index === periods[i - 1]!.index + 1)
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Whole calendar months a period covers, when it runs from a first of the month to a last; otherwise null. */
+export function wholeMonths(start: string, end: string): number | null {
+  const [sy, sm, sd] = start.split('-').map(Number) as [number, number, number]
+  const [ey, em, ed] = end.split('-').map(Number) as [number, number, number]
+  const lastDay = new Date(Date.UTC(ey, em, 0)).getUTCDate()
+  if (sd !== 1 || ed !== lastDay) return null
+  const months = (ey - sy) * 12 + (em - sm) + 1
+  return months > 0 ? months : null
+}
+
+/**
+ * A period in words: "Nov 2026", "Nov 2026 – Jan 2027", "Jan – Mar 2026", or
+ * the two dates for a period that is not whole months.
+ */
+export function periodText(start: string, end: string, formatDate: (date: string) => string = (d) => d): string {
+  const months = wholeMonths(start, end)
+  const month = (d: string) => `${MONTH_NAMES[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
+  if (months === 1) return month(start)
+  if (months !== null) {
+    return start.slice(0, 4) === end.slice(0, 4) ? `${MONTH_NAMES[Number(start.slice(5, 7)) - 1]} – ${month(end)}` : `${month(start)} – ${month(end)}`
+  }
+  return `${formatDate(start)} – ${formatDate(end)}`
+}

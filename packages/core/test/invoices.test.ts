@@ -229,15 +229,17 @@ describe('from a quote', () => {
     expect(reread.totalMinor).toBe(accepted.totalMinor)
   })
 
-  it('refuses a draft or declined quote, and allows several invoices from one quote', async () => {
-    const draftQuote = await quote()
-    await expect(run('invoice.fromQuote', owner(), { id: draftQuote.id })).rejects.toMatchObject({ code: 'quote_not_sent' })
+  it('refuses a quote the client has not accepted, and invoices an accepted quote once', async () => {
+    const pending = await quote()
+    await expect(run('invoice.fromQuote', owner(), { id: pending.id })).rejects.toMatchObject({ code: 'quote_not_accepted' })
+    await run('quote.send', owner(), { id: pending.id })
+    await expect(run('invoice.fromQuote', owner(), { id: pending.id })).rejects.toMatchObject({ code: 'quote_not_accepted' })
 
-    await run('quote.send', owner(), { id: draftQuote.id })
-    const deposit = await run('invoice.fromQuote', owner(), { id: draftQuote.id, title: 'Deposit' })
-    const balance = await run('invoice.fromQuote', owner(), { id: draftQuote.id, title: 'Balance' })
-    expect(deposit.id).not.toBe(balance.id)
-    expect((await run('invoice.list', owner(), { quoteId: draftQuote.id })).data).toHaveLength(2)
+    await run('quote.accept', owner(), { id: pending.id })
+    const invoice = await run('invoice.fromQuote', owner(), { id: pending.id, title: 'Deposit' })
+    // Billed once: staged billing or a statement does the rest.
+    await expect(run('invoice.fromQuote', owner(), { id: pending.id })).rejects.toMatchObject({ code: 'quote_already_invoiced' })
+    expect((await run('invoice.list', owner(), { quoteId: pending.id })).data.map((i: { id: string }) => i.id)).toEqual([invoice.id])
 
     const declined = await quote()
     await run('quote.send', owner(), { id: declined.id })
@@ -408,13 +410,25 @@ describe('the printed invoice', () => {
       marker: null,
       issuer: { name: 'Webloom Labs Pty Ltd', addressLines: ['1 Harbour St', 'Sydney NSW 2000'], taxNumber: 'ABN 12 345 678 901' },
       facts: [
-        { label: 'Issued', value: '16/09/2026' },
+        { label: 'Date', value: '16/09/2026' },
         { label: 'Due', value: '07/10/2026' },
       ],
+      headline: { label: 'BALANCE DUE', amount: '$1,100.00', caption: null },
+      currency: 'AUD',
+      columns: { billing: false, unitPrice: true, discount: false, tax: true },
       paymentInstructions: 'Transfer to BSB 000-000, account 1234567.',
     })
-    expect(input.lines).toEqual([{ description: 'Design', quantity: '2', unitAmount: '$500.00', discount: null, tax: expect.stringContaining('10%'), amount: '$1,000.00' }])
-    expect(input.totals).toMatchObject({ subtotal: '$1,000.00', total: '$1,100.00', taxes: [{ amount: '$100.00', label: expect.stringContaining('10%') }] })
+    expect(input.lines).toEqual([
+      { title: 'Design', subtitle: null, billing: null, quantity: '2', unitAmount: '500.00', discount: null, tax: expect.stringContaining('10%'), amount: '1,000.00' },
+    ])
+    expect(input.totals).toEqual({
+      rows: [
+        { label: 'Subtotal', amount: '$1,000.00' },
+        { label: expect.stringContaining('10%'), amount: '$100.00' },
+      ],
+      bar: { label: 'Balance Due', amount: '$1,100.00' },
+      after: [],
+    })
 
     const bytes = await pdf.renderDocumentPdf(input)
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')

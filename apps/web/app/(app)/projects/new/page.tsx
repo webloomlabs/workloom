@@ -1,4 +1,4 @@
-import { companyList } from '@workloom/core/modules'
+import { companyList, projectTypeList } from '@workloom/core/modules'
 import { Card, CardHeader, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -16,10 +16,11 @@ export default async function NewProjectPage({ searchParams }: PageProps<'/proje
   const companyId = param(query.companyId) ?? null
   const dealId = param(query.dealId) ?? null
 
-  const [companies, members, settings] = await Promise.all([
+  const [companies, members, settings, types] = await Promise.all([
     viewer.permissions.has('company:read') ? call(companyList, { limit: 100 }) : { data: [] },
     memberChoices(),
     organizationSettings(),
+    call(projectTypeList, {}),
   ])
 
   return (
@@ -42,6 +43,7 @@ export default async function NewProjectPage({ searchParams }: PageProps<'/proje
             companies={companies.data.map((c) => ({ id: c.id, name: c.name }))}
             financial={viewer.permissions.has('report:readFinancial')}
             baseCurrency={settings.baseCurrency}
+            projectTypes={types.data.map((t) => ({ id: t.id, name: t.name }))}
           />
         </div>
       </Card>

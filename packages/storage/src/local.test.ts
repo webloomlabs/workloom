@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -39,6 +39,16 @@ describe('local storage', () => {
     expect(await storage.exists('org/a/file.bin')).toBe(false)
   })
 
+  it('stores a file from disk', async () => {
+    const storage = new LocalStorage()
+    const source = join(root, '..', `workloom-putfile-${Date.now()}.bin`)
+    await writeFile(source, Buffer.from('a large zip, in spirit'))
+    const stored = await storage.putFile('org/packs/pack.zip', source, { contentType: 'application/zip' })
+    expect(stored).toMatchObject({ key: 'org/packs/pack.zip', size: 22, contentType: 'application/zip' })
+    expect((await storage.get('org/packs/pack.zip')).toString()).toBe('a large zip, in spirit')
+    await rm(source)
+  })
+
   it('refuses keys that would escape its directory', async () => {
     const storage = new LocalStorage()
     for (const key of ['../outside', '/etc/passwd', 'a//b', 'a/../../b', '']) {
@@ -51,7 +61,7 @@ describe('signed URLs', () => {
   it('verify with the name and type they were issued for', async () => {
     const url = new URL(await new LocalStorage().signedUrl('org/a/report.pdf', { filename: 'Q3 report.pdf', contentType: 'application/pdf' }))
     expect(url.pathname).toBe('/api/files')
-    expect(LocalStorage.verify(url.searchParams)).toEqual({ key: 'org/a/report.pdf', name: 'Q3 report.pdf', type: 'application/pdf' })
+    expect(LocalStorage.verify(url.searchParams)).toEqual({ key: 'org/a/report.pdf', name: 'Q3 report.pdf', type: 'application/pdf', inline: false })
   })
 
   it('stop verifying when any parameter is changed', async () => {
@@ -79,5 +89,27 @@ describe('download disposition', () => {
     expect(tricky).not.toMatch(/[\r\n]/)
     expect(tricky.startsWith('attachment; filename="a_b_c__Set-Cookie: x.html"')).toBe(true)
     expect(attachmentDisposition('résumé.pdf')).toContain("filename*=UTF-8''r%C3%A9sum%C3%A9.pdf")
+  })
+})
+
+describe('showing an image instead of downloading it', () => {
+  it('is signed into the URL, and honoured only for raster images', async () => {
+    const store = new LocalStorage()
+    const image = new URL(await store.signedUrl('org/receipts/a', { contentType: 'image/jpeg', filename: 'r.jpg', inline: true }))
+    expect(LocalStorage.verify(image.searchParams)?.inline).toBe(true)
+
+    // Asked for, but not an image that cannot carry script: still a download.
+    const pdf = new URL(await store.signedUrl('org/receipts/b', { contentType: 'application/pdf', filename: 'r.pdf', inline: true }))
+    expect(LocalStorage.verify(pdf.searchParams)?.inline).toBe(false)
+    const svg = new URL(await store.signedUrl('org/receipts/c', { contentType: 'image/svg+xml', filename: 'r.svg', inline: true }))
+    expect(LocalStorage.verify(svg.searchParams)?.inline).toBe(false)
+
+    // Adding the flag to a download link breaks its signature.
+    const download = new URL(await store.signedUrl('org/receipts/d', { contentType: 'image/jpeg', filename: 'r.jpg' }))
+    download.searchParams.set('disposition', 'inline')
+    expect(LocalStorage.verify(download.searchParams)).toBeNull()
+    // Changing the type of an inline link does too.
+    image.searchParams.set('type', 'text/html')
+    expect(LocalStorage.verify(image.searchParams)).toBeNull()
   })
 })

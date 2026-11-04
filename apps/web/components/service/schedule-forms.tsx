@@ -10,6 +10,7 @@ import {
   generateInvoiceAction,
   removeScheduleLineAction,
   updateScheduleAction,
+  updateScheduleLineAction,
 } from '@/lib/actions/service'
 import { idle, type ActionState } from '@/lib/actions/state'
 import { options } from '@/lib/crm-labels'
@@ -29,6 +30,7 @@ type Schedule = {
   startOn: string
   endOn: string | null
   maxOccurrences: number | null
+  periodsPerInvoice: number
   notes: string | null
   ownerId: string | null
 }
@@ -52,11 +54,19 @@ function Calendar({ state, schedule }: { state: ActionState<unknown>; schedule?:
       <TextField
         state={state}
         name="maxOccurrences"
-        label="Or after this many invoices"
+        label="Or after this many periods"
         type="number"
         defaultValue={schedule?.maxOccurrences?.toString() ?? ''}
       />
       <TextField state={state} name="paymentTermsDays" label="Payment terms (days)" type="number" defaultValue={String(schedule?.paymentTermsDays ?? 14)} />
+      <TextField
+        state={state}
+        name="periodsPerInvoice"
+        label="Periods on each invoice"
+        type="number"
+        defaultValue={String(schedule?.periodsPerInvoice ?? 1)}
+        hint="3 on a monthly schedule bills a quarter ahead each time."
+      />
     </div>
   )
 }
@@ -128,6 +138,9 @@ export function AddScheduleLineForm({ scheduleId, currency, taxRates }: { schedu
       <input type="hidden" name="currency" value={currency} />
       <div className="min-w-56 flex-1">
         <TextField state={state} name="description" label="Description" required placeholder="Extra support hours" />
+      </div>
+      <div className="min-w-44 flex-1">
+        <TextField state={state} name="detail" label="Detail (optional)" placeholder="12 posts a month" />
       </div>
       <div className="w-28">
         <TextField state={state} name="quantity" label="Qty" defaultValue="1" />
@@ -207,6 +220,74 @@ export function DeleteScheduleButton({ id }: { id: string }) {
     <form action={action}>
       <input type="hidden" name="id" value={id} />
       <SubmitButton variant="secondary" size="sm" pendingLabel="Deleting…">Delete</SubmitButton>
+    </form>
+  )
+}
+
+/** Changes one line of what each period bills. Invoices already raised keep theirs. */
+export function EditScheduleLineForm({
+  scheduleId,
+  currency,
+  line,
+}: {
+  scheduleId: string
+  currency: string
+  line: { id: string; description: string; detail: string | null; quantity: string; unitAmount: string }
+}) {
+  const [state, action] = useActionState(updateScheduleLineAction, idle)
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3" noValidate>
+      <input type="hidden" name="scheduleId" value={scheduleId} />
+      <input type="hidden" name="lineId" value={line.id} />
+      <input type="hidden" name="currency" value={currency} />
+      <div className="min-w-48 flex-1">
+        <TextField state={state} id={`line-${line.id}-description`} name="description" label="Description" defaultValue={line.description} />
+      </div>
+      <div className="min-w-40 flex-1">
+        <TextField state={state} id={`line-${line.id}-detail`} name="detail" label="Detail" defaultValue={line.detail} />
+      </div>
+      <div className="w-24">
+        <TextField state={state} id={`line-${line.id}-quantity`} name="quantity" label="Qty" defaultValue={line.quantity} />
+      </div>
+      <div className="w-36">
+        <TextField state={state} id={`line-${line.id}-unitAmount`} name="unitAmount" label={`Amount (${currency})`} defaultValue={line.unitAmount} />
+      </div>
+      <SubmitButton size="sm" variant="secondary" pendingLabel="Saving…">Save line</SubmitButton>
+      <FormMessage state={state} />
+    </form>
+  )
+}
+
+/**
+ * Bills several periods on one invoice now: a client paying a quarter or a
+ * year ahead. Each period is still billed exactly once.
+ */
+export function PrepayForm({ id, remaining }: { id: string; remaining: number | null }) {
+  const [state, action] = useActionState(generateInvoiceAction, idle)
+  const max = Math.min(12, remaining ?? 12)
+  return (
+    <form action={action} className="space-y-3" noValidate>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="force" value="1" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <TextField state={state} id="prepay-periods" name="periods" label="Periods" type="number" defaultValue="3" hint={`Up to ${max}.`} />
+        <SelectField
+          state={state}
+          id="prepay-layout"
+          name="layout"
+          label="On the invoice"
+          defaultValue="combined"
+          options={[
+            { value: 'combined', label: 'One line for the stretch' },
+            { value: 'per_period', label: 'A line for each period' },
+          ]}
+        />
+        <TextField state={state} id="prepay-discount" name="discountPercent" label="Prepay discount (%)" placeholder="0" />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Raising…">Raise the invoice</SubmitButton>
+        <FormMessage state={state} />
+      </div>
     </form>
   )
 }

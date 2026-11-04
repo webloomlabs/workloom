@@ -17,7 +17,7 @@ import {
 import { idle, type ActionState } from '@/lib/actions/state'
 import { FormMessage, SubmitButton, fieldError } from '../form-bits'
 import { choices, OwnerField, SelectField, TextAreaField, TextField, type Choice } from '../crm/fields'
-import { MEMBER_ROLE_LABELS, PROJECT_STATUS_LABELS, options } from './labels'
+import { BUDGET_PERIOD_LABELS, MEMBER_ROLE_LABELS, PROJECT_BILLING_MODEL_LABELS, PROJECT_STATUS_LABELS, options } from './labels'
 
 // Projects
 
@@ -35,6 +35,10 @@ export type ProjectFormValues = {
   budget?: string
   contractValue?: string
   ownerId: string | null
+  projectTypeId?: string | null
+  billingModel?: string
+  budgetHours?: string | null
+  budgetPeriod?: string
 }
 
 function ProjectFields({
@@ -44,6 +48,7 @@ function ProjectFields({
   companies,
   financial,
   creating,
+  projectTypes = [],
 }: {
   state: ActionState<unknown>
   project: ProjectFormValues
@@ -51,6 +56,8 @@ function ProjectFields({
   companies: Choice[]
   financial: boolean
   creating: boolean
+  /** The organization's kinds of project. */
+  projectTypes?: Choice[]
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -66,6 +73,15 @@ function ProjectFields({
         />
       )}
       <OwnerField state={state} members={members} defaultValue={project.ownerId} />
+      <SelectField state={state} name="projectTypeId" label="Kind of work" defaultValue={project.projectTypeId ?? null} empty="Not set" options={choices(projectTypes)} />
+      <SelectField
+        state={state}
+        name="billingModel"
+        label="Paid for as"
+        defaultValue={project.billingModel ?? ''}
+        options={[...(creating ? [{ value: '', label: 'From the kind of work' }] : []), ...options(PROJECT_BILLING_MODEL_LABELS)]}
+        hint="A retainer is billed and budgeted by the period; a fixed price has a contract."
+      />
       <TextField state={state} name="startDate" label="Start" type="date" defaultValue={project.startDate} />
       <TextField state={state} name="dueDate" label="Due" type="date" defaultValue={project.dueDate} />
       {financial && (
@@ -82,7 +98,15 @@ function ProjectFields({
             label="Contract value"
             defaultValue={project.contractValue}
             placeholder="40,000.00"
-            hint="The price agreed, before any variation. Blank for time and materials."
+            hint="The price agreed, before any variation. Blank for time and materials or a retainer."
+          />
+          <TextField state={state} name="budgetHours" label="Hours budget" defaultValue={project.budgetHours ?? null} placeholder="40" hint="Blank: measured against the tasks' estimates." />
+          <SelectField
+            state={state}
+            name="budgetPeriod"
+            label="Budgets are for"
+            defaultValue={project.budgetPeriod ?? ''}
+            options={[...(creating ? [{ value: '', label: 'From the kind of work' }] : []), ...options(BUDGET_PERIOD_LABELS)]}
           />
         </>
       )}
@@ -99,6 +123,7 @@ export function CreateProjectForm(props: {
   companies: Choice[]
   financial: boolean
   baseCurrency: string
+  projectTypes?: Choice[]
 }) {
   const [state, action] = useActionState(createProjectAction, idle)
   return (
@@ -112,7 +137,7 @@ export function CreateProjectForm(props: {
   )
 }
 
-export function EditProjectForm(props: { project: ProjectFormValues & { id: string }; members: Choice[]; companies: Choice[]; financial: boolean }) {
+export function EditProjectForm(props: { project: ProjectFormValues & { id: string }; members: Choice[]; companies: Choice[]; financial: boolean; projectTypes?: Choice[] }) {
   const [state, action] = useActionState(updateProjectAction, idle)
   return (
     <form action={action} className="space-y-5" noValidate>

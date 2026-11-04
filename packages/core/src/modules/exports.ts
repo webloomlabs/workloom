@@ -99,8 +99,9 @@ const catalogue = {
     permission: 'expense:read',
     list: expenseList,
     columns: [
-      'id', 'incurredOn', 'description', 'supplier', 'category', 'projectId', 'projectName',
-      'companyId', 'companyName', 'currency', 'amountMinor', 'taxMinor', 'billable', 'invoiceNumber',
+      'id', 'number', 'status', 'incurredOn', 'paidOn', 'description', 'supplier', 'category', 'categoryName', 'taxTreatment',
+      'projectId', 'projectName', 'companyId', 'companyName', 'currency', 'amountMinor', 'taxName', 'taxRate', 'taxMinor', 'totalMinor',
+      'baseCurrency', 'amountBaseMinor', 'paymentMethod', 'reimbursable', 'bankAccountName', 'billable', 'invoiceNumber', 'receiptCount', 'source',
     ],
   },
 } as const satisfies Record<string, Listable>
@@ -124,7 +125,8 @@ function cellFor(row: Record<string, unknown>, column: string): string {
   const value = row[column]
   if (value === null || value === undefined) return ''
   if (column.endsWith('Minor') && typeof value === 'number') {
-    const currency = typeof row.currency === 'string' ? row.currency : null
+    // An amount in the base currency is divided by the base currency's exponent, not the row's own.
+    const currency = column.includes('Base') && typeof row.baseCurrency === 'string' ? row.baseCurrency : typeof row.currency === 'string' ? row.currency : null
     // Without a currency there is no exponent to divide by, so the raw figure
     // goes out rather than a wrong one.
     return currency ? minorToDecimalString(value, currency) : String(value)

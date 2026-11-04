@@ -32,6 +32,8 @@ beforeAll(async () => {
   admin = new pg.Client({ connectionString: database.adminUrl })
   await admin.connect()
   await admin.query(`insert into organization (id, name, slug) values ($1, 'Ledger', 'ledger')`, [ORG])
+  // Expenses are filed under a category of the organization's own (S15).
+  await admin.query(`insert into expense_categories (organization_id, key, name) values ($1, 'other', 'Other')`, [ORG])
 })
 
 afterAll(async () => {
@@ -198,6 +200,8 @@ describe('an organization leaving', () => {
   it('takes its payments, allocations, and expenses with it', async () => {
     const org = crypto.randomUUID()
     await admin.query(`insert into organization (id, name, slug) values ($1, 'Leaving', $2)`, [org, `pay-leaving-${org.slice(0, 8)}`])
+    // Expenses are filed under a category of the organization's own (S15).
+    await admin.query(`insert into expense_categories (organization_id, key, name) values ($1, 'other', 'Other')`, [org])
     const company = await client(org)
     const target = await invoice(company, 1000, 'AUD', org)
     await allocate(org, await payment(company, 1000, 'payment', 'AUD', org), target, 1000)
@@ -209,11 +213,11 @@ describe('an organization leaving', () => {
 
     // As in document-guard.test.ts: the cascade needs a right the application
     // role is denied, and granting it here isolates what this test is about.
-    await admin.query('grant delete on audit_logs to workloom_app_test')
+    await admin.query('grant delete on audit_logs, audit_seals to workloom_app_test')
     try {
       await admin.query(`delete from organization where id = $1`, [org])
     } finally {
-      await admin.query('revoke delete on audit_logs from workloom_app_test')
+      await admin.query('revoke delete on audit_logs, audit_seals from workloom_app_test')
     }
     const { rowCount } = await admin.query(`select 1 from payments where organization_id = $1`, [org])
     expect(rowCount).toBe(0)

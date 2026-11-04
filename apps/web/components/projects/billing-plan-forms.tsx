@@ -24,11 +24,18 @@ export type StageRow = {
   dueOn: string | null
   milestoneId: string | null
   status: string
+  invoiceStyle?: string
 }
 
 const BASES = [
   { value: 'amount', label: 'A fixed amount' },
   { value: 'percent', label: 'A share of the contract' },
+  { value: 'balance', label: 'Whatever is left (the balance)' },
+]
+
+const STYLES = [
+  { value: 'single_line', label: 'One line for the stage' },
+  { value: 'statement', label: 'A statement: the whole project, earlier invoices taken off' },
 ]
 
 const choices = (items: Choice[]) => items.map((i) => ({ value: i.id, label: i.name }))
@@ -65,9 +72,19 @@ function StageFields({
             placeholder="50"
             hint="Follows the contract as accepted revisions raise it."
           />
+        ) : basis === 'balance' ? (
+          <p className="self-end pb-2 text-sm text-muted">The contract less every other stage, worked out as the contract changes.</p>
         ) : (
           <TextField state={state} name="amount" label={`Amount (${currency})`} required defaultValue={stage?.amount} placeholder="5000.00" />
         )}
+        <SelectField
+          state={state}
+          name="invoiceStyle"
+          label="Its invoice"
+          defaultValue={stage?.invoiceStyle ?? (basis === 'balance' ? 'statement' : 'single_line')}
+          options={STYLES}
+          hint="A statement suits the final stage: the client sees the whole project and pays the balance."
+        />
         <TextField state={state} name="dueOn" label="Expected" type="date" defaultValue={stage?.dueOn ?? ''} />
         <SelectField
           state={state}
@@ -167,6 +184,10 @@ export function ReleaseStageForm({
         <div className="w-24">
           <label className="sr-only" htmlFor={`terms-${stage.id}`}>Payment terms in days</label>
           <Input id={`terms-${stage.id}`} name="paymentTermsDays" placeholder="Terms" className="h-8 text-xs" />
+        </div>
+        <div className="w-32">
+          <label className="sr-only" htmlFor={`due-${stage.id}`}>Due on an event</label>
+          <Input id={`due-${stage.id}`} name="dueLabel" placeholder="Due: At launch" defaultValue={stage.invoiceStyle === 'statement' ? 'At launch' : ''} className="h-8 text-xs" />
         </div>
         <SubmitButton size="sm" pendingLabel="Raising…">Bill {amountLabel}</SubmitButton>
       </div>

@@ -1,5 +1,5 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
-import { contactList, invoiceGet, paymentList, projectList, serviceList, taxRateList, type Invoice, type Payment } from '@workloom/core/modules'
+import { contactList, invoiceGet, invoiceList, paymentList, projectList, serviceList, taxRateList, type Invoice, type Payment } from '@workloom/core/modules'
 import { Alert, Card, CardHeader, DownloadIcon, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -7,12 +7,14 @@ import { InvoiceStatusBadge } from '@/components/finance/badges'
 import { BillExpensesForm } from '@/components/finance/expense-forms'
 import { AddLineForm, LineControls, QuoteDetailsForm } from '@/components/finance/finance-forms'
 import {
+  AddDeductionForm,
   BillTimeForm,
   CancelInvoiceControls,
   CopyLinkButton,
   DeleteInvoiceButton,
   EmailInvoiceForm,
   SendInvoiceForm,
+  SetDueDateForm,
 } from '@/components/finance/invoice-forms'
 import { RecordPaymentForm, UnallocateButton } from '@/components/finance/payment-forms'
 import { addInvoiceLineAction, removeInvoiceLineAction, updateInvoiceAction, updateInvoiceLineAction } from '@/lib/actions/invoices'
@@ -46,6 +48,13 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
   const decimal = (minor: number) => minorToDecimalString(minor, invoice.currency)
   const contactEmail = contacts.data.find((c) => c.id === invoice.contactId)?.email ?? null
   const settled = !draft && can('payment:read') ? await call(paymentList, { invoiceId: invoice.id, limit: 100 }) : { data: [] }
+  // Issued invoices of the same client that this one could take off: a deposit, a progress payment.
+  const deducted = new Set(invoice.lines.map((l) => l.deductsInvoiceId).filter(Boolean))
+  const deductible = editable
+    ? (await call(invoiceList, { companyId: invoice.companyId, limit: 100 })).data
+        .filter((i) => i.id !== invoice.id && i.status !== 'draft' && i.status !== 'cancelled' && !deducted.has(i.id) && i.currency === invoice.currency)
+        .map((i) => ({ id: i.id, label: `${i.number} · ${i.title} · ${money(i.totalMinor, i.currency)}` }))
+    : []
   const overdue = Boolean(invoice.dueDate && invoice.dueDate < todayIn(settings.timezone) && invoice.amountDueMinor > 0 && !['draft', 'cancelled', 'paid'].includes(invoice.status))
 
   return (
@@ -62,7 +71,8 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
             {invoice.quoteId && <Link href={`/quotes/${invoice.quoteId}`} className="hover:underline">From a quote</Link>}
             {invoice.recurring && (
               <Link href={`/recurring/${invoice.recurring.scheduleId}`} className="hover:underline">
-                {formatDate(invoice.recurring.periodStart)} — {formatDate(invoice.recurring.periodEnd)}, from {invoice.recurring.scheduleName}
+                {formatDate(invoice.recurring.periodStart)} — {formatDate(invoice.recurring.periodEnd)}
+                {invoice.recurring.periods > 1 ? ` (${invoice.recurring.periods} periods)` : ''}, from {invoice.recurring.scheduleName}
               </Link>
             )}
             <span>{TAX_MODE_LABELS[invoice.taxMode]}</span>
@@ -76,7 +86,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                 Download PDF
               </Link>
             )}
-            {draft && can('invoice:delete') && <DeleteInvoiceButton invoiceId={invoice.id} />}
+            {draft && can('invoice:delete') && <DeleteInvoiceButton invoiceId={invoice.id} recurring={invoice.recurring !== null} />}
           </div>
         }
       />
@@ -105,7 +115,23 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                 <tbody>
                   {invoice.lines.map((line) => (
                     <Tr key={line.id}>
-                      <Td>{line.description}</Td>
+                      <Td>
+                        <div className={line.kind === 'deduction' ? 'text-muted' : 'font-medium'}>
+                          {line.kind === 'deduction' ? `Less ${line.deductsInvoiceNumber}` : line.description}
+                        </div>
+                        {(line.detail || line.billingType || line.periodStart) && line.kind === 'item' && (
+                          <div className="text-xs text-muted">
+                            {[
+                              line.detail,
+                              line.billingType === 'one_off' ? 'One-time' : line.billingType === 'recurring' ? 'Recurring' : null,
+                              line.periodStart && line.periodEnd ? `${formatDate(line.periodStart)} – ${formatDate(line.periodEnd)}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                        )}
+                        {line.kind === 'deduction' && <div className="text-xs text-muted">{line.description}</div>}
+                      </Td>
                       <Td className="text-right tabular-nums">{line.quantity}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.unitAmountMinor, invoice.currency)}</Td>
                       <Td className="text-right tabular-nums text-muted">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
@@ -119,9 +145,15 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                             taxRates={taxChoices}
                             save={updateInvoiceLineAction}
                             remove={removeInvoiceLineAction}
+                            periods
+                            editable={line.kind === 'item'}
                             line={{
                               id: line.id,
                               description: line.description,
+                              detail: line.detail,
+                              billingType: line.billingType,
+                              periodStart: line.periodStart,
+                              periodEnd: line.periodEnd,
                               quantity: line.quantity,
                               unitAmount: decimal(line.unitAmountMinor),
                               discountPercent: line.discountPercent,
@@ -142,6 +174,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                   currency={invoice.currency}
                   taxRates={taxChoices}
                   add={addInvoiceLineAction}
+                  periods
                   services={services.data.map((s) => ({
                     id: s.id,
                     name: s.name,
@@ -151,6 +184,18 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
               </div>
             )}
           </Card>
+
+          {editable && (
+            <Card>
+              <CardHeader
+                title="Earlier invoices to take off"
+                description="For a final invoice: list the whole project above, then take off the deposit or progress invoices already raised. The client sees the full picture and pays only the balance."
+              />
+              <div className="p-5">
+                <AddDeductionForm invoiceId={invoice.id} candidates={deductible} />
+              </div>
+            </Card>
+          )}
 
           {editable && can('timeEntry:read') && (
             <Card>
@@ -179,7 +224,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
                 <QuoteDetailsForm
                   save={updateInvoiceAction}
                   contacts={contacts.data.map((c) => ({ id: c.id, name: [c.firstName, c.lastName].filter(Boolean).join(' ') }))}
-                  terms={{ label: 'Payment terms (days)', value: String(invoice.paymentTermsDays) }}
+                  terms={{ label: 'Payment terms (days)', value: String(invoice.paymentTermsDays), dueLabel: invoice.dueLabel }}
                   quote={{
                     id: invoice.id,
                     title: invoice.title,
@@ -215,7 +260,15 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
             <Card>
               <CardHeader title="Issue" description="Issuing gives the invoice its number and due date. It can no longer be changed afterwards." />
               <div className="p-5">
-                <SendInvoiceForm invoiceId={invoice.id} currency={invoice.currency} baseCurrency={settings.baseCurrency} suggestedEmail={contactEmail} />
+                <SendInvoiceForm invoiceId={invoice.id} currency={invoice.currency} baseCurrency={settings.baseCurrency} suggestedEmail={contactEmail} dueLabel={invoice.dueLabel} />
+              </div>
+            </Card>
+          )}
+          {!draft && invoice.dueLabel && !invoice.dueDate && invoice.status !== 'cancelled' && can('invoice:send') && (
+            <Card>
+              <CardHeader title="When it is due" description={`Due "${invoice.dueLabel}". Once that has a date, set it here; the invoice can then become overdue.`} />
+              <div className="p-5">
+                <SetDueDateForm invoiceId={invoice.id} dueLabel={invoice.dueLabel} />
               </div>
             </Card>
           )}
@@ -302,7 +355,7 @@ function StatusAlert({ invoice, overdue, timezone }: { invoice: Invoice; overdue
   if (invoice.status === 'cancelled') {
     return <Alert tone="warning">Cancelled {formatDateTime(invoice.cancelledAt, timezone)}{invoice.cancelReason ? `: ${invoice.cancelReason}` : '.'}</Alert>
   }
-  const issued = `Issued ${formatDate(invoice.issueDate)}, due ${formatDate(invoice.dueDate)}`
+  const issued = `Issued ${formatDate(invoice.issueDate)}, due ${invoice.dueDate ? formatDate(invoice.dueDate) : (invoice.dueLabel ?? '—').toLowerCase()}`
   if (overdue) return <Alert tone="error">{issued}. Payment is overdue.</Alert>
   if (invoice.viewedAt) return <Alert tone="info">{issued}. The client opened it {formatDateTime(invoice.viewedAt, timezone)}.</Alert>
   return <Alert tone="info">{issued}. The client has not opened it yet.</Alert>
@@ -316,6 +369,29 @@ function Totals({ invoice }: { invoice: Invoice }) {
     </div>
   )
   const inclusive = invoice.taxMode === 'inclusive'
+  if (invoice.totals.statement) {
+    return (
+      <Card>
+        <CardHeader title="Totals" description="Reads as a statement: the whole project, less what was already invoiced." />
+        <dl className="space-y-2 p-5 text-sm" aria-label="Invoice totals">
+          {row('Project total', invoice.totals.itemsTotalMinor)}
+          {invoice.totals.deductions.map((d) => (
+            <div key={d.invoiceId}>
+              {row(d.settled === false ? `Previously invoiced (${d.number})` : d.settled ? `Already paid (${d.number})` : `Less ${d.number}`, -d.amountMinor)}
+            </div>
+          ))}
+          {invoice.amountPaidMinor > 0 && row('Paid', -invoice.amountPaidMinor)}
+          {row('Balance due', invoice.totals.balanceDueMinor, true)}
+          {invoice.taxes.map((t) => (
+            <div key={t.taxRateId} className="flex justify-between gap-4 text-muted">
+              <dt>{inclusive ? 'Includes' : 'Of which'} {t.name} {t.rate}%</dt>
+              <dd className="tabular-nums">{money(t.taxMinor, invoice.currency)}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+    )
+  }
   return (
     <Card>
       <CardHeader title="Totals" />

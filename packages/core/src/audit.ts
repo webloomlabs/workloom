@@ -1,6 +1,6 @@
 import { schema, type TenantTransaction } from '@workloom/db'
 import { newId } from './ids.ts'
-import type { Actor, AuditEntry } from './context.ts'
+import { defaultSource, type Actor, type AuditEntry, type AuditSource } from './context.ts'
 
 /**
  * Writes an audit entry inside the caller's transaction.
@@ -17,6 +17,7 @@ export async function writeAuditEntry(
     requestId: string
     ipAddress?: string | undefined
     userAgent?: string | undefined
+    source?: AuditSource | undefined
     entry: AuditEntry
   },
 ): Promise<void> {
@@ -32,9 +33,12 @@ export async function writeAuditEntry(
     entityId: options.entry.entityId ?? null,
     entityLabel: options.entry.entityLabel ?? null,
     changes: options.entry.changes ?? null,
+    // Through JSON, so dates and the like are stored as their API form.
+    snapshot: options.entry.snapshot === undefined ? null : JSON.parse(JSON.stringify(options.entry.snapshot)),
     requestId: options.requestId,
     ipAddress: options.ipAddress ?? null,
     userAgent: options.userAgent ?? null,
+    source: options.source ?? defaultSource(actor),
   })
 }
 

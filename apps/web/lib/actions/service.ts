@@ -7,6 +7,7 @@ import {
   billingScheduleGenerate,
   billingScheduleLineAdd,
   billingScheduleLineRemove,
+  billingScheduleLineUpdate,
   billingScheduleUpdate,
   documentDelete,
   documentUpdate,
@@ -396,7 +397,7 @@ export async function deleteDocumentAction(_: ActionState, form: FormData): Prom
 // Recurring billing
 
 export async function createScheduleAction(_: ActionState, form: FormData): Promise<ActionState> {
-  const currency = text(form, 'currency') || 'AUD'
+  const currency = (text(form, 'currency') || text(form, 'baseCurrency')).toUpperCase()
   let created: { id: string }
   try {
     created = await call(billingScheduleCreate, {
@@ -410,6 +411,7 @@ export async function createScheduleAction(_: ActionState, form: FormData): Prom
       taxMode: (text(form, 'taxMode') || undefined) as never,
       endOn: text(form, 'endOn') || null,
       maxOccurrences: number(form, 'maxOccurrences'),
+      periodsPerInvoice: number(form, 'periodsPerInvoice') ?? undefined,
       projectId: optional(form, 'projectId'),
       contactId: optional(form, 'contactId'),
       notes: text(form, 'notes'),
@@ -441,6 +443,7 @@ export async function updateScheduleAction(_: ActionState, form: FormData): Prom
       taxMode: (maybe(form, 'taxMode') || undefined) as never,
       endOn: form.has('endOn') ? text(form, 'endOn') || null : undefined,
       maxOccurrences: form.has('maxOccurrences') ? number(form, 'maxOccurrences') : undefined,
+      periodsPerInvoice: number(form, 'periodsPerInvoice') ?? undefined,
       notes: maybe(form, 'notes'),
       ownerId: optional(form, 'ownerId'),
     })
@@ -457,7 +460,8 @@ export async function addScheduleLineAction(_: ActionState, form: FormData): Pro
     await call(billingScheduleLineAdd, {
       scheduleId,
       description: text(form, 'description'),
-      unitAmountMinor: amount(form, 'unitAmount', text(form, 'currency') || 'AUD'),
+      detail: text(form, 'detail') || null,
+      unitAmountMinor: amount(form, 'unitAmount', text(form, 'currency')),
       quantity: text(form, 'quantity') || undefined,
       taxRateId: optional(form, 'taxRateId'),
       serviceId: optional(form, 'serviceId'),
@@ -467,6 +471,24 @@ export async function addScheduleLineAction(_: ActionState, form: FormData): Pro
   }
   revalidatePath(`/recurring/${scheduleId}`)
   return { status: 'idle' }
+}
+
+export async function updateScheduleLineAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const scheduleId = id(form, 'scheduleId')
+  try {
+    await call(billingScheduleLineUpdate, {
+      scheduleId,
+      lineId: id(form, 'lineId'),
+      description: text(form, 'description') || undefined,
+      detail: text(form, 'detail') || null,
+      quantity: text(form, 'quantity') || undefined,
+      unitAmountMinor: amount(form, 'unitAmount', text(form, 'currency')),
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(`/recurring/${scheduleId}`)
+  return { status: 'success', message: 'Saved. Invoices already raised are unchanged.' }
 }
 
 export async function removeScheduleLineAction(_: ActionState, form: FormData): Promise<ActionState> {
@@ -496,7 +518,14 @@ export async function generateInvoiceAction(_: ActionState, form: FormData): Pro
   const scheduleId = id(form)
   let result: { invoiceId: string | null }
   try {
-    result = await call(billingScheduleGenerate, { id: scheduleId, force: checked(form, 'force') })
+    const periods = number(form, 'periods')
+    result = await call(billingScheduleGenerate, {
+      id: scheduleId,
+      force: checked(form, 'force'),
+      ...(periods ? { periods } : {}),
+      ...(text(form, 'layout') ? { layout: text(form, 'layout') as 'combined' | 'per_period' } : {}),
+      ...(text(form, 'discountPercent') ? { discountPercent: text(form, 'discountPercent') } : {}),
+    })
   } catch (error) {
     return failed(error, form)
   }

@@ -53,9 +53,17 @@ export const billingSchedules = pgTable(
     nextRunOn: date('next_run_on', { mode: 'string' }),
     /** Stops on or before this date. */
     endOn: date('end_on', { mode: 'string' }),
-    /** Stops after this many invoices. */
+    /** Stops after this many periods have been billed. */
     maxOccurrences: integer('max_occurrences'),
+    /** Periods billed so far, counted by the database from `billing_schedule_invoices`. */
     generatedCount: integer('generated_count').notNull().default(0),
+    /**
+     * How many periods each invoice bills in advance: 1 for monthly, 3 for a
+     * client who always pays a quarter at a time on a monthly schedule.
+     */
+    periodsPerInvoice: integer('periods_per_invoice').notNull().default(1),
+    /** The quote whose recurring lines set this schedule up, when one did. */
+    quoteId: uuid('quote_id'),
 
     lastRunAt: timestamp('last_run_at', { withTimezone: true }),
     ownerId: uuid('owner_id').references(() => user.id, { onDelete: 'set null' }),
@@ -91,6 +99,7 @@ export const billingSchedules = pgTable(
     check('billing_schedules_terms_check', sql`${t.paymentTermsDays} between 0 and 365`),
     check('billing_schedules_occurrences_check', sql`${t.maxOccurrences} is null or ${t.maxOccurrences} >= 1`),
     check('billing_schedules_generated_check', sql`${t.generatedCount} >= 0`),
+    check('billing_schedules_periods_per_invoice_check', sql`${t.periodsPerInvoice} between 1 and 12`),
     check('billing_schedules_window_check', sql`${t.endOn} is null or ${t.endOn} >= ${t.startOn}`),
     // A live schedule has a date to run on; an ended one has none left.
     check('billing_schedules_next_run_check', sql`(${t.status} = 'ended') = (${t.nextRunOn} is null)`),
@@ -113,6 +122,8 @@ export const billingScheduleLines = pgTable(
     position: integer('position').notNull(),
     serviceId: uuid('service_id'),
     description: text('description').notNull(),
+    /** A quieter second line on the invoice. The period is added after it. */
+    detail: text('detail'),
     quantity: numeric('quantity', { precision: 12, scale: 4 }).notNull().default('1'),
     /** Minor units of the schedule's currency. */
     unitAmountMinor: bigint('unit_amount_minor', { mode: 'number' }).notNull(),
@@ -167,7 +178,10 @@ export const billingScheduleInvoices = pgTable(
   (t) => [
     unique('billing_schedule_invoices_organization_id_id_key').on(t.organizationId, t.id),
     unique('billing_schedule_invoices_period_key').on(t.organizationId, t.scheduleId, t.periodStart),
-    unique('billing_schedule_invoices_invoice_key').on(t.organizationId, t.invoiceId),
+    // One invoice may bill several periods -- a client prepaying three months
+    // -- so the invoice is an index, not a key. The period key above is still
+    // what makes billing any one period twice impossible.
+    index('billing_schedule_invoices_organization_invoice_idx').on(t.organizationId, t.invoiceId),
     foreignKey({
       name: 'billing_schedule_invoices_schedule_fk',
       columns: [t.organizationId, t.scheduleId],

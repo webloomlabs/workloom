@@ -6,6 +6,7 @@ import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
 import { loadCompany } from '../crm/companies.ts'
 import { loadDeal } from '../crm/deals.ts'
+import { loadProjectType } from './project-types.ts'
 import {
   actingUserId,
   assertMember,
@@ -48,6 +49,11 @@ export const projectOutput = z.object({
   companyId: z.uuid().nullable(),
   companyName: z.string().nullable(),
   dealId: z.uuid().nullable(),
+  /** The agency's own label for the kind of work, and its name. */
+  projectTypeId: z.uuid().nullable(),
+  projectTypeName: z.string().nullable(),
+  /** How it is paid for: a fixed price, a retainer, the time it took, or not at all. */
+  billingModel: z.enum(schema.PROJECT_BILLING_MODELS),
   name: z.string(),
   description: z.string().nullable(),
   status: z.enum(schema.PROJECT_STATUSES),
@@ -67,6 +73,10 @@ export const projectOutput = z.object({
    * is not fixed-price, or without `report:readFinancial`.
    */
   contractValueMinor: z.number().int().nullable(),
+  /** Hours the work may take, per budget period. Null without one, or without `report:readFinancial`. */
+  budgetHours: z.string().nullable(),
+  /** What the budgets are per: the whole project, or each period of a retainer. */
+  budgetPeriod: z.enum(schema.BUDGET_PERIODS),
   ownerId: z.uuid().nullable(),
   progress: progressOutput,
   completedAt: z.date().nullable(),
@@ -130,13 +140,14 @@ export function progressPercent(p: Omit<Progress, 'percent'>): number | null {
 
 function selectProjects(ctx: ActorContext) {
   return ctx.tx
-    .select({ project: schema.projects, companyName: schema.companies.name })
+    .select({ project: schema.projects, companyName: schema.companies.name, projectTypeName: schema.projectTypes.name })
     .from(schema.projects)
     .leftJoin(schema.companies, eq(schema.companies.id, schema.projects.companyId))
+    .leftJoin(schema.projectTypes, eq(schema.projectTypes.id, schema.projects.projectTypeId))
 }
 
 function present(
-  row: { project: ProjectRow; companyName: string | null },
+  row: { project: ProjectRow; companyName: string | null; projectTypeName: string | null },
   progress: Progress,
   options: { financial: boolean },
 ): Project {
@@ -146,6 +157,9 @@ function present(
     companyId: project.companyId,
     companyName: row.companyName,
     dealId: project.dealId,
+    projectTypeId: project.projectTypeId,
+    projectTypeName: row.projectTypeName,
+    billingModel: project.billingModel as Project['billingModel'],
     name: project.name,
     description: project.description,
     status: project.status as ProjectStatus,
@@ -154,6 +168,8 @@ function present(
     currency: project.currency,
     budgetMinor: options.financial ? project.budgetMinor : null,
     contractValueMinor: options.financial ? project.contractValueMinor : null,
+    budgetHours: options.financial && project.budgetHours !== null ? String(Number(project.budgetHours)) : null,
+    budgetPeriod: project.budgetPeriod as Project['budgetPeriod'],
     ownerId: project.ownerId,
     progress,
     completedAt: project.completedAt,
@@ -268,6 +284,29 @@ const details = {
   budgetMinor: minorAmount.nullish(),
   contractValueMinor: minorAmount.nullish(),
   ownerId: z.uuid().nullish(),
+  /** The agency's own label for the kind of work. Its defaults fill a new project's billing model and budget period. */
+  projectTypeId: z.uuid().nullish(),
+  billingModel: z.enum(schema.PROJECT_BILLING_MODELS).optional(),
+  /** Hours the work may take, per budget period. */
+  budgetHours: z
+    .union([z.string(), z.number()])
+    .transform((v) => String(v).trim())
+    .refine((v) => /^\d{1,8}(\.\d{1,2})?$/.test(v), 'Hours as a number, up to two decimal places')
+    .nullish(),
+  budgetPeriod: z.enum(schema.BUDGET_PERIODS).optional(),
+}
+
+/**
+ * The money terms have to fit the way the project is paid for. Refused here
+ * with a sentence a person can act on; the database refuses the same.
+ */
+function assertBillingTerms(model: string, period: string, contractValueMinor: number | null) {
+  if (model === 'retainer' && contractValueMinor !== null) {
+    throw new DomainError('A retainer is paid by the period, so it has no contract value. Clear it, or make it a fixed price.', 'retainer_contract_value', 'contractValueMinor')
+  }
+  if (model === 'fixed_price' && period !== 'total') {
+    throw new DomainError('A fixed price is one sum for the whole job, so its budget is for the whole project too.', 'fixed_price_period', 'budgetPeriod')
+  }
 }
 
 export const projectCreate = defineProcedure({
@@ -299,7 +338,12 @@ export const projectCreate = defineProcedure({
     }
     if (companyId) refuseArchived(await loadCompany(ctx, companyId), 'company')
     assertDates(input.startDate, input.dueDate)
-    requireFinancial(ctx, input.budgetMinor != null || input.contractValueMinor != null)
+    requireFinancial(ctx, input.budgetMinor != null || input.contractValueMinor != null || input.budgetHours != null)
+    const type = input.projectTypeId ? await loadProjectType(ctx, input.projectTypeId, { active: true }) : null
+    const billingModel =
+      input.billingModel ?? type?.defaultBillingModel ?? (input.contractValueMinor != null ? 'fixed_price' : companyId ? 'time_and_materials' : 'non_billable')
+    const budgetPeriod = input.budgetPeriod ?? (billingModel === 'fixed_price' ? 'total' : (type?.defaultBudgetPeriod ?? (billingModel === 'retainer' ? 'month' : 'total')))
+    assertBillingTerms(billingModel, budgetPeriod, input.contractValueMinor ?? null)
 
     const ownerId = input.ownerId === undefined ? actingUserId(ctx) : input.ownerId
     await assertMember(ctx, ownerId)
@@ -318,6 +362,10 @@ export const projectCreate = defineProcedure({
       currency: input.currency ?? (await baseCurrency(ctx)),
       budgetMinor: input.budgetMinor ?? null,
       contractValueMinor: input.contractValueMinor ?? null,
+      projectTypeId: type?.id ?? null,
+      billingModel,
+      budgetHours: input.budgetHours ?? null,
+      budgetPeriod,
       ownerId,
       createdBy: actingUserId(ctx),
     })
@@ -349,7 +397,13 @@ export const projectUpdate = defineProcedure({
     const { id, ...fields } = input
     const before = await loadProject(ctx, id, { lock: true })
     const patch = provided(fields)
-    requireFinancial(ctx, 'budgetMinor' in patch || 'contractValueMinor' in patch)
+    requireFinancial(ctx, 'budgetMinor' in patch || 'contractValueMinor' in patch || 'budgetHours' in patch)
+    if (patch.projectTypeId) await loadProjectType(ctx, patch.projectTypeId, { active: patch.projectTypeId !== before.projectTypeId })
+    assertBillingTerms(
+      patch.billingModel ?? before.billingModel,
+      patch.budgetPeriod ?? before.budgetPeriod,
+      patch.contractValueMinor !== undefined ? patch.contractValueMinor : before.contractValueMinor,
+    )
     if (patch.companyId && patch.companyId !== before.companyId) {
       refuseArchived(await loadCompany(ctx, patch.companyId), 'company')
     }

@@ -163,6 +163,8 @@ export default tseslint.config(
    *   packages/auth       Better Auth's tables are not tenant-scoped.
    *   rate-limit.ts       Counters are keyed by opaque strings, not tenants.
    *   worker outbox       Enumerates organizations, then scopes per org (S2).
+   *   telegram inbox      Same: lists organization ids, then one withTenant each (S19).
+   *   tax pack builder    Same, for packs waiting to be built (S20).
    *   health, boot        Report on the database itself.
    *   auth route          Hands requests to Better Auth, which owns its tables.
    */
@@ -172,6 +174,8 @@ export default tseslint.config(
       'packages/core/src/rate-limit.ts',
       'apps/worker/src/outbox/**/*.ts',
       'apps/worker/src/maintenance.ts',
+      'packages/core/src/modules/integrations/telegram/inbox.ts',
+      'packages/core/src/modules/books/pack-builder.ts',
       'apps/web/app/api/health/**/*.ts',
       'apps/web/app/api/auth/**/*.ts',
       'apps/web/instrumentation.ts',

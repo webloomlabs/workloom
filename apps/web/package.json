@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@workloom/ai": "workspace:*",
     "@workloom/auth": "workspace:*",
     "@workloom/config": "workspace:*",
     "@workloom/core": "workspace:*",

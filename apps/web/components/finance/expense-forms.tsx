@@ -2,10 +2,10 @@
 
 import { Button, Checkbox } from '@workloom/ui'
 import { useActionState } from 'react'
-import { billExpensesAction, createExpenseAction, deleteExpenseAction, updateExpenseAction } from '@/lib/actions/expenses'
+import { billExpensesAction, confirmExpenseAction, createExpenseAction, deleteExpenseAction, deleteReceiptAction, startFromReceiptAction, updateExpenseAction, uploadReceiptsAction } from '@/lib/actions/expenses'
 import { idle } from '@/lib/actions/state'
 import { options } from '@/lib/crm-labels'
-import { EXPENSE_CATEGORY_LABELS } from '@/lib/finance-labels'
+import { EXPENSE_PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
 import { FormMessage, SubmitButton } from '../form-bits'
 import { choices, SelectField, TextAreaField, TextField, type Choice } from '../crm/fields'
 import type { TaxChoice } from './finance-forms'
@@ -25,6 +25,9 @@ export type ExpenseValues = {
   markupPercent: string | null
   bankAccountId: string | null
   notes: string | null
+  paymentMethod: string | null
+  paidOn: string | null
+  reimbursable: boolean
 }
 
 /**
@@ -41,10 +44,13 @@ export function ExpenseForm({
   returnTo,
   accounts,
   defaultAccountId,
+  categories,
 }: {
   expense: ExpenseValues
   companies: Choice[]
   projects: Choice[]
+  /** The organization's active expense categories, by key. */
+  categories: Choice[]
   taxRates: TaxChoice[]
   baseCurrency: string
   returnTo?: string | undefined
@@ -59,14 +65,29 @@ export function ExpenseForm({
       <FormMessage state={state} />
       {expense.id && <input type="hidden" name="id" value={expense.id} />}
       {editing && <input type="hidden" name="currency" value={expense.currency} />}
+      <input type="hidden" name="baseCurrency" value={baseCurrency} />
       {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField state={state} name="description" label="What was it" required defaultValue={expense.description} placeholder="Annual hosting" />
         <TextField state={state} name="supplier" label="Supplier" defaultValue={expense.supplier} placeholder="Vultr" />
-        <TextField state={state} name="amount" label={`Amount, before tax (${expense.currency})`} required defaultValue={expense.amount} placeholder="120.00" />
+        <TextField state={state} name="amount" label={editing ? `Amount, before tax (${expense.currency})` : `Amount (${expense.currency})`} required defaultValue={expense.amount} placeholder="120.00" />
+        {!editing && (
+          <SelectField
+            state={state}
+            name="amountMode"
+            label="That amount is"
+            defaultValue="gross"
+            options={[
+              { value: 'gross', label: 'The total on the receipt, tax included' },
+              { value: 'net', label: 'Before tax' },
+            ]}
+          />
+        )}
         <SelectField state={state} name="taxRateId" label="Tax" empty="No tax" defaultValue={expense.taxRateId} options={taxRates.map((t) => ({ value: t.id, label: `${t.name} (${t.rate}%)` }))} />
         <TextField state={state} name="incurredOn" label="Date" type="date" defaultValue={expense.incurredOn} />
-        <SelectField state={state} name="category" label="Category" defaultValue={expense.category} options={options(EXPENSE_CATEGORY_LABELS)} />
+        <SelectField state={state} name="category" label="Category" defaultValue={expense.category} options={choices(categories)} />
+        <SelectField state={state} name="paymentMethod" label="Paid by" empty="Not recorded" defaultValue={expense.paymentMethod} options={options(EXPENSE_PAYMENT_METHOD_LABELS)} />
+        <TextField state={state} name="paidOn" label="Paid on" type="date" defaultValue={expense.paidOn} hint="If not the day it was incurred." />
         <SelectField state={state} name="projectId" label="Project" empty="Not a project cost" defaultValue={expense.projectId} options={choices(projects)} hint="Its client comes from the project." />
         <SelectField state={state} name="companyId" label="Client" empty="The agency's own cost" defaultValue={expense.companyId} options={choices(companies)} />
         {expense.currency !== baseCurrency && (
@@ -90,7 +111,17 @@ export function ExpenseForm({
           <Checkbox name="billable" defaultChecked={expense.billable} /> Rebill this to the client
         </label>
         <TextField state={state} name="markupPercent" label="Markup (%)" defaultValue={expense.markupPercent} hint="Added when it is rebilled. Blank charges it at cost." />
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox name="reimbursable" defaultChecked={expense.reimbursable} /> Someone paid this themselves and is owed it back
+        </label>
       </div>
+      {!editing && (
+        <div className="space-y-1">
+          <label htmlFor="receipts" className="text-sm font-medium">Receipts</label>
+          <input id="receipts" name="receipts" type="file" multiple accept="image/*,application/pdf,.heic" className="block text-sm" />
+          <p className="text-xs text-muted">Photos or PDFs, up to 10 MB each.</p>
+        </div>
+      )}
       <TextAreaField state={state} name="notes" label="Notes" defaultValue={expense.notes} />
       <SubmitButton pendingLabel="Saving…">{editing ? 'Save changes' : 'Record expense'}</SubmitButton>
     </form>
@@ -137,6 +168,69 @@ export function BillExpensesForm({ invoiceId, projects, taxRates }: { invoiceId:
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <SubmitButton size="sm" variant="secondary" pendingLabel="Adding…">Add unbilled expenses</SubmitButton>
+        <FormMessage state={state} />
+      </div>
+    </form>
+  )
+}
+
+/** Confirms a draft: it takes its number and starts to count. */
+export function ConfirmExpenseButton({ expenseId }: { expenseId: string }) {
+  const [state, action] = useActionState(confirmExpenseAction, idle)
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="id" value={expenseId} />
+      <SubmitButton pendingLabel="Confirming…">Confirm expense</SubmitButton>
+      <FormMessage state={state} />
+    </form>
+  )
+}
+
+/** Adds receipts to an expense that already exists. */
+export function UploadReceiptsForm({ expenseId }: { expenseId: string }) {
+  const [state, action] = useActionState(uploadReceiptsAction, idle)
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="id" value={expenseId} />
+      <input name="receipts" type="file" multiple accept="image/*,application/pdf,.heic" aria-label="Receipt files" className="block text-sm" required />
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Uploading…">Attach</SubmitButton>
+        <FormMessage state={state} />
+      </div>
+    </form>
+  )
+}
+
+export function DeleteReceiptButton({ receiptId, expenseId, filename }: { receiptId: string; expenseId: string; filename: string }) {
+  return (
+    <form
+      action={deleteReceiptAction}
+      onSubmit={(e) => {
+        if (!confirm(`Remove ${filename}?`)) e.preventDefault()
+      }}
+    >
+      <input type="hidden" name="id" value={receiptId} />
+      <input type="hidden" name="expenseId" value={expenseId} />
+      <Button type="submit" size="xs" variant="ghost" aria-label={`Remove ${filename}`}>Remove</Button>
+    </form>
+  )
+}
+
+/** Drop a receipt, get a draft: read by AI first when the organization has turned that on. */
+export function StartFromReceiptForm({ reading }: { reading: boolean }) {
+  const [state, action] = useActionState(startFromReceiptAction, idle)
+  return (
+    <form action={action} className="space-y-3" noValidate>
+      <div className="space-y-1">
+        <label htmlFor="start-receipt" className="text-sm font-medium">Receipt</label>
+        <input id="start-receipt" name="receipt" type="file" accept="image/*,application/pdf,.heic" className="block text-sm" required />
+        <p className="text-xs text-muted">
+          {reading ? 'A photo or PDF, up to 10 MB. AI reads it and fills in the draft for you to check.' : 'A photo or PDF, up to 10 MB. It is saved as a draft for you to fill in.'}
+        </p>
+      </div>
+      <TextField state={state} id="start-note" name="note" label="Note (optional)" placeholder="Taxi to the Kyla & Co. meeting" />
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton variant="secondary" pendingLabel={reading ? 'Reading the receipt…' : 'Saving…'}>Start a draft from it</SubmitButton>
         <FormMessage state={state} />
       </div>
     </form>

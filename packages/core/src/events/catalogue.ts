@@ -57,6 +57,7 @@ const definitions = {
 
   'project.created': { description: 'A project was created', since: 'S5' },
   'project.updated': { description: "A project's details changed", since: 'S5' },
+  'project.budget_threshold_crossed': { description: 'A project crossed a budget threshold (80%, 100%) for its cost or hours, once per threshold per budget period', since: 'S17' },
   'project.status_changed': { description: "A project's status changed", since: 'S5' },
   'project.completed': { description: 'A project was completed', since: 'S5' },
   'project.archived': { description: 'A project was archived', since: 'S5' },
@@ -119,6 +120,9 @@ const definitions = {
   'expense.created': { description: 'An expense was recorded', since: 'S7c' },
   'expense.updated': { description: 'An expense was edited', since: 'S7c' },
   'expense.deleted': { description: 'An expense was deleted', since: 'S7c' },
+  'expense.confirmed': { description: 'An expense was confirmed and numbered: a draft read from a receipt was checked, or one was entered by hand', since: 'S15' },
+  'expense_receipt.added': { description: 'A receipt was attached to an expense', since: 'S15' },
+  'expense_receipt.removed': { description: 'A receipt was taken off an expense', since: 'S15' },
 
   'ticket.created': { description: 'A support ticket was raised', since: 'S11' },
   'ticket.updated': { description: "A ticket's details changed", since: 'S11' },

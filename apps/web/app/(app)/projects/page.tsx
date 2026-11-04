@@ -1,5 +1,6 @@
 import { projectList } from '@workloom/core/modules'
 import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
+import { PROJECT_BILLING_MODEL_LABELS } from '@/lib/project-labels'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
@@ -60,7 +61,9 @@ export default async function ProjectsPage({ searchParams }: PageProps<'/project
                 <Tr key={p.id}>
                   <Td>
                     <Link href={`/projects/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
-                    <div className="text-xs text-muted">{p.companyName ?? 'Internal'}</div>
+                    <div className="text-xs text-muted">
+                      {[p.companyName ?? 'Internal', p.projectTypeName, PROJECT_BILLING_MODEL_LABELS[p.billingModel]].filter(Boolean).join(' · ')}
+                    </div>
                   </Td>
                   <Td><ProjectStatusBadge status={p.status} /></Td>
                   <Td><ProgressBar percent={p.progress.percent} detail={`${p.progress.tasksDone} of ${p.progress.tasksTotal} tasks done`} /></Td>

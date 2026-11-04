@@ -3,6 +3,7 @@
 import { Button, Checkbox, Field, Select } from '@workloom/ui'
 import { useActionState, useState } from 'react'
 import {
+  addDeductionAction,
   billTimeAction,
   cancelInvoiceAction,
   createInvoiceAction,
@@ -10,6 +11,7 @@ import {
   emailInvoiceAction,
   invoiceFromQuoteAction,
   sendInvoiceAction,
+  setDueDateAction,
 } from '@/lib/actions/invoices'
 import { idle } from '@/lib/actions/state'
 import { options } from '@/lib/crm-labels'
@@ -62,11 +64,14 @@ export function SendInvoiceForm({
   currency,
   baseCurrency,
   suggestedEmail,
+  dueLabel = null,
 }: {
   invoiceId: string
   currency: string
   baseCurrency: string
   suggestedEmail: string | null
+  /** When set, the invoice is due on an event: a date is optional, and can be given later. */
+  dueLabel?: string | null
 }) {
   const [state, action] = useActionState(sendInvoiceAction, idle)
   const [email, setEmail] = useState(Boolean(suggestedEmail))
@@ -83,6 +88,16 @@ export function SendInvoiceForm({
       {currency !== baseCurrency && (
         <TextField state={state} name="exchangeRate" label={`1 ${currency} in ${baseCurrency}`} hint="Fixed on the invoice when it is issued." placeholder="1.52" />
       )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField state={state} name="issueDate" label="Issue date" type="date" hint="Today, if left empty." />
+        <TextField
+          state={state}
+          name="dueDate"
+          label="Due date"
+          type="date"
+          hint={dueLabel ? `Optional: due "${dueLabel}" until it has a date.` : 'From the payment terms, if left empty.'}
+        />
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox name="email" checked={email} onChange={(e) => setEmail(e.currentTarget.checked)} /> Email it to the client
       </label>
@@ -167,15 +182,25 @@ export function CancelInvoiceControls({ invoiceId }: { invoiceId: string }) {
   )
 }
 
-export function DeleteInvoiceButton({ invoiceId }: { invoiceId: string }) {
+export function DeleteInvoiceButton({ invoiceId, recurring = false }: { invoiceId: string; recurring?: boolean }) {
   return (
     <form
       action={deleteInvoiceAction}
+      className="flex items-center gap-2"
       onSubmit={(e) => {
         if (!confirm('Delete this draft invoice? Any time it billed becomes billable again.')) e.preventDefault()
       }}
     >
       <input type="hidden" name="id" value={invoiceId} />
+      {recurring && (
+        <>
+          <label htmlFor="schedulePeriods" className="sr-only">Its periods</label>
+          <Select id="schedulePeriods" name="schedulePeriods" defaultValue="rebill" className="h-8 text-xs">
+            <option value="rebill">Bill its periods again</option>
+            <option value="skip">Leave its periods unbilled</option>
+          </Select>
+        </>
+      )}
       <Button type="submit" size="sm" variant="ghost">Delete draft</Button>
     </form>
   )
@@ -222,6 +247,48 @@ export function StatusFilter({ value, statuses }: { value: string; statuses: Arr
         ))}
       </Select>
       <Button type="submit" size="sm" variant="secondary">Show</Button>
+    </form>
+  )
+}
+
+/**
+ * Takes an earlier invoice of the same client -- a deposit, a progress
+ * payment -- off this one, so the final invoice states the whole project and
+ * asks only for what is left.
+ */
+export function AddDeductionForm({ invoiceId, candidates }: { invoiceId: string; candidates: Array<{ id: string; label: string }> }) {
+  const [state, action] = useActionState(addDeductionAction, idle)
+  if (candidates.length === 0) return <p className="text-sm text-muted">This client has no other issued invoice to take off.</p>
+  return (
+    <form action={action} className="space-y-3" noValidate>
+      <input type="hidden" name="id" value={invoiceId} />
+      <SelectField state={state} id="deductsInvoiceId" name="deductsInvoiceId" label="Invoice to take off" empty="Choose an invoice" options={candidates.map((c) => ({ value: c.id, label: c.label }))} />
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Taking off…">Take it off this invoice</SubmitButton>
+        <FormMessage state={state} />
+      </div>
+    </form>
+  )
+}
+
+/** Gives an invoice that was due "At launch" its date, once launch has one. */
+export function SetDueDateForm({ invoiceId, dueLabel }: { invoiceId: string; dueLabel: string }) {
+  const [state, action] = useActionState(setDueDateAction, idle)
+  return (
+    <form
+      action={action}
+      className="space-y-3"
+      onSubmit={(e) => {
+        if (!confirm('Set the due date? It cannot be changed afterwards.')) e.preventDefault()
+      }}
+      noValidate
+    >
+      <input type="hidden" name="id" value={invoiceId} />
+      <TextField state={state} id="set-dueDate" name="dueDate" label={`Due date (was "${dueLabel}")`} type="date" required />
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Saving…">Set due date</SubmitButton>
+        <FormMessage state={state} />
+      </div>
     </form>
   )
 }

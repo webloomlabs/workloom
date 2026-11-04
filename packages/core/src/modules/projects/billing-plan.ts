@@ -1,3 +1,5 @@
+import { percentage, toSafeNumber } from '../../money/money.ts'
+
 /**
  * What a project's billing plan adds up to.
  *
@@ -39,10 +41,13 @@ export type PlanTotals = {
   stageAmounts: Map<string, number>
 }
 
-/** Rounded half away from zero, once, as every other money conversion here is. */
+/**
+ * A percentage of the contract, rounded half away from zero, once -- in exact
+ * integer arithmetic, as every other money conversion here is. A float would
+ * put 33.3333% of an odd total a unit out.
+ */
 function shareOf(contractedMinor: number, percent: string): number {
-  const exact = (contractedMinor * Number(percent)) / 100
-  return Math.sign(exact) * Math.round(Math.abs(exact))
+  return toSafeNumber(percentage(BigInt(contractedMinor), percent))
 }
 
 /**
@@ -74,6 +79,8 @@ export function planTotals(input: {
       stageAmounts.set(stage.id, stage.amountMinor ?? 0)
       continue
     }
+    // Worked out below, once every other stage is known.
+    if (stage.basis === 'balance') continue
     stageAmounts.set(stage.id, contracted === null || stage.percent === null ? 0 : shareOf(contracted, stage.percent))
   }
 
@@ -89,6 +96,14 @@ export function planTotals(input: {
       const total = ordered.reduce((sum, s) => sum + (stageAmounts.get(s.id) ?? 0), 0)
       stageAmounts.set(last.id, (stageAmounts.get(last.id) ?? 0) + (contracted - total))
     }
+  }
+
+  // The balance is whatever the contract has left once every other live stage
+  // is counted -- never less than nothing.
+  const balance = ordered.find((s) => s.basis === 'balance' && s.releasedAmountMinor === null)
+  if (balance) {
+    const others = ordered.filter((s) => s.id !== balance.id).reduce((total, s) => total + (stageAmounts.get(s.id) ?? 0), 0)
+    stageAmounts.set(balance.id, contracted === null ? 0 : Math.max(0, contracted - others))
   }
 
   const plannedMinor = ordered.reduce((total, s) => total + (stageAmounts.get(s.id) ?? 0), 0)

@@ -2,7 +2,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { documentElement } from './document.ts'
 import type { DocumentPdfInput } from './types.ts'
 
-export type { DocumentParty, DocumentPdfInput, DocumentPdfLine } from './types.ts'
+export type { DocumentImage, DocumentParty, DocumentPdfInput, DocumentPdfLine, DocumentPdfTotalRow } from './types.ts'
 
 /**
  * A quote or invoice as PDF bytes.

@@ -12,6 +12,11 @@ export const STATEMENTS = {
   apiKey: ['read', 'create', 'revoke'],
   webhook: ['read', 'create', 'update', 'delete'],
   auditLog: ['read'],
+  /**
+   * Connecting the organization's chat bot and its other outside services, and
+   * unlinking other people's chat accounts. Linking one's own needs nothing.
+   */
+  integration: ['manage'],
 
   company: ['read', 'create', 'update', 'archive'],
   contact: ['read', 'create', 'update', 'archive'],
@@ -84,6 +89,12 @@ export const STATEMENTS = {
    * permission would be a quiet escalation.
    */
   bankTransaction: ['read', 'create', 'update', 'delete', 'import', 'reconcile'],
+
+  /**
+   * Closing the books: setting the date before which invoices, payments, and
+   * expenses can no longer change, and reopening them.
+   */
+  books: ['lock'],
 
   /** Financial reporting, including project profitability and margins. */
   report: ['read', 'readFinancial'],

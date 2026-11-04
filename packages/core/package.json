@@ -21,11 +21,13 @@
     "@workloom/emails": "workspace:*",
     "@workloom/pdf": "workspace:*",
     "@workloom/storage": "workspace:*",
+    "fflate": "^0.8.3",
     "undici": "^7.29.1",
     "uuid": "^14.0.0",
     "zod": "^4.5.0"
   },
   "devDependencies": {
-    "fast-check": "^4.10.0"
+    "fast-check": "^4.10.0",
+    "unpdf": "^2.1.0"
   }
 }

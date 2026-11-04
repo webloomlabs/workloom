@@ -107,3 +107,41 @@ describe('planTotals', () => {
     expect(totals).toMatchObject({ plannedMinor: 0, releasedMinor: 0, remainingMinor: 10_000_00, overCommittedMinor: 0 })
   })
 })
+
+describe('a balance stage', () => {
+  const stage = (id: string, position: number, basis: string, rest: Partial<{ percent: string; amountMinor: number; releasedAmountMinor: number; status: string; invoiceStatus: string }> = {}) => ({
+    id,
+    position,
+    basis,
+    percent: rest.percent ?? null,
+    amountMinor: rest.amountMinor ?? null,
+    status: rest.status ?? 'pending',
+    releasedAmountMinor: rest.releasedAmountMinor ?? null,
+    invoiceStatus: rest.invoiceStatus ?? null,
+  })
+
+  it('is whatever the contract has left: a 26,000 deposit and the balance make 80,000', () => {
+    const totals = planTotals({
+      contractedValueMinor: 80_000_00,
+      stages: [stage('deposit', 1, 'amount', { amountMinor: 26_000_00, status: 'invoiced', releasedAmountMinor: 26_000_00, invoiceStatus: 'paid' }), stage('balance', 2, 'balance')],
+    })
+    expect(totals.stageAmounts.get('balance')).toBe(54_000_00)
+    expect(totals.plannedMinor).toBe(80_000_00)
+    expect(totals.overCommittedMinor).toBe(0)
+  })
+
+  it('follows the contract as revisions raise it, and never goes below nothing', () => {
+    const stages = [stage('deposit', 1, 'percent', { percent: '50' }), stage('balance', 2, 'balance')]
+    expect(planTotals({ contractedValueMinor: 65_000_00, stages }).stageAmounts.get('balance')).toBe(32_500_00)
+    expect(planTotals({ contractedValueMinor: 80_000_00, stages }).stageAmounts.get('balance')).toBe(40_000_00)
+    const over = [stage('big', 1, 'amount', { amountMinor: 90_000_00 }), stage('balance', 2, 'balance')]
+    expect(planTotals({ contractedValueMinor: 80_000_00, stages: over }).stageAmounts.get('balance')).toBe(0)
+  })
+
+  it('works a percentage of an odd total exactly', () => {
+    const totals = planTotals({ contractedValueMinor: 100_001, stages: [stage('a', 1, 'percent', { percent: '33.3333' }), stage('b', 2, 'balance')] })
+    // 100,001 × 33.3333% = 33,333.63..., rounded once to 33,334.
+    expect(totals.stageAmounts.get('a')).toBe(33_334)
+    expect(totals.stageAmounts.get('b')).toBe(66_667)
+  })
+})

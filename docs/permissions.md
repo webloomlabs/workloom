@@ -88,6 +88,12 @@ was a decision.
 | --- | --- | --- | --- | --- | --- | --- |
 | `auditLog:read` | ● | ● | ● | · | · | ● |
 
+**integration**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `integration:manage` | ● | ● | · | · | · | · |
+
 **company**
 
 | Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
@@ -275,6 +281,12 @@ seeing the price schedule.
 | `expense:create` | ● | ● | ● | · | · | ● |
 | `expense:update` | ● | ● | · | · | · | ● |
 | `expense:delete` | ● | ● | · | · | · | ● |
+
+**books**
+
+| Permission | Owner | Admin | Manager | Developer | Account mgr | Finance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `books:lock` | ● | ● | · | · | · | · |
 
 **ticket**
 

@@ -1,25 +1,42 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
-import { companyList, expenseGet, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
-import { Alert, Card, CardHeader, PageHeader } from '@workloom/ui'
+import { companyList, expenseCategoryList, expenseGet, expenseReceiptList, organizationGet, projectList, taxRateList } from '@workloom/core/modules'
+import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DeleteExpenseButton, ExpenseForm } from '@/components/finance/expense-forms'
+import { ConfirmExpenseButton, DeleteExpenseButton, DeleteReceiptButton, ExpenseForm, UploadReceiptsForm } from '@/components/finance/expense-forms'
 import { formatDate } from '@/lib/format'
-import { EXPENSE_CATEGORY_LABELS } from '@/lib/finance-labels'
+import { EXPENSE_PAYMENT_METHOD_LABELS } from '@/lib/finance-labels'
 import { accountChoices, money } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
 
 export const metadata: Metadata = { title: 'Expense · Workloom' }
 
-export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'>) {
+/** What reading the receipt gave, said plainly: a person checks it before confirming. */
+function readFrom(expense: { currency: string; extraction: Record<string, unknown> | null }): string | null {
+  const read = expense.extraction
+  if (!read || typeof read.reader !== 'string') return null
+  const currency = typeof read.currency === 'string' ? read.currency : null
+  const amount = typeof read.amountMinor === 'number' ? read.amountMinor : null
+  if (currency && currency !== expense.currency && amount !== null) {
+    return ` The receipt was read as ${currency} ${minorToDecimalString(amount, currency)}: enter the currency and its exchange rate before confirming.`
+  }
+  return ' Filled in from the receipt by AI — check the amount, date, and category before confirming.'
+}
+
+export default async function ExpensePage({ params, searchParams }: PageProps<'/expenses/[id]'>) {
   const { id } = await params
+  const { refused } = await searchParams
   const viewer = await requireViewer()
   const can = (p: Permission) => viewer.permissions.has(p)
   const expense = await call(expenseGet, { id })
   const rebilled = expense.invoiceLineId !== null
   const accounts = await accountChoices(expense.currency, can('bankAccount:read'))
-  const editable = can('expense:update') && !rebilled
+  const mine = viewer.actor.type === 'user' && expense.createdBy === viewer.actor.id
+  // Your own expense is yours to correct and evidence; someone else's needs expense:update.
+  const editable = (can('expense:update') || (mine && can('expense:create'))) && !rebilled
+  const canConfirm = expense.status === 'draft' && (can('expense:update') || (mine && can('expense:create')))
+  const [receipts, categories] = await Promise.all([call(expenseReceiptList, { expenseId: expense.id }), call(expenseCategoryList, { includeArchived: true })])
 
   const [companies, projects, taxRates, organization] = editable
     ? await Promise.all([
@@ -37,8 +54,11 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
         title={expense.description}
         description={
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {expense.status === 'draft' ? <Badge tone="caution">Draft</Badge> : expense.number && <span className="font-medium text-ink">{expense.number}</span>}
             <span>{formatDate(expense.incurredOn)}</span>
-            <span>{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</span>
+            <span>{expense.categoryName}</span>
+            {expense.paymentMethod && <span>{EXPENSE_PAYMENT_METHOD_LABELS[expense.paymentMethod]}</span>}
+            {expense.reimbursable && <Badge tone="info">To reimburse</Badge>}
             {expense.supplier && <span>{expense.supplier}</span>}
             {expense.bankAccountId && (
               <Link href={`/banking/${expense.bankAccountId}`} className="hover:underline">
@@ -50,9 +70,18 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
           </div>
         }
         actions={
-          editable && can('expense:delete') && <DeleteExpenseButton expenseId={expense.id} />
+          !rebilled && (can('expense:delete') || (mine && expense.status === 'draft')) && <DeleteExpenseButton expenseId={expense.id} />
         }
       />
+
+      {typeof refused === 'string' && <Alert tone="warning">Recorded, but these files were not accepted as receipts: {refused}. A receipt must be a photo or a PDF, up to 10 MB.</Alert>}
+
+      {expense.status === 'draft' && (
+        <Alert tone="info">
+          This is a draft{expense.source === 'telegram' ? ', read from a receipt sent on Telegram' : ''}. It does not count as a cost until it is confirmed.
+          {readFrom(expense)}
+        </Alert>
+      )}
 
       {rebilled && (
         <Alert tone="info">
@@ -72,6 +101,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
                 projects={projects.data.map((p) => ({ id: p.id, name: p.name }))}
                 taxRates={taxRates.data.map((t) => ({ id: t.id, name: t.name, rate: t.rate }))}
                 baseCurrency={organization.baseCurrency}
+                categories={categories.data.filter((c) => !c.archived || c.key === expense.category).map((c) => ({ id: c.key, name: c.name }))}
                 expense={{
                   id: expense.id,
                   description: expense.description,
@@ -87,6 +117,9 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
                   markupPercent: expense.markupPercent,
                   bankAccountId: expense.bankAccountId,
                   notes: expense.notes,
+                  paymentMethod: expense.paymentMethod,
+                  paidOn: expense.paidOn,
+                  reimbursable: expense.reimbursable,
                 }}
                 accounts={accounts.choices}
               />
@@ -99,6 +132,36 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
           </Card>
         )}
 
+        <div className="space-y-6">
+        {canConfirm && (
+          <Card>
+            <CardHeader title="Confirm" description="Check it against the receipt. Confirming gives it its number and counts it as a cost." />
+            <div className="p-5"><ConfirmExpenseButton expenseId={expense.id} /></div>
+          </Card>
+        )}
+        <Card>
+          <CardHeader title="Receipts" description={receipts.data.length === 0 ? 'None attached yet.' : undefined} />
+          {receipts.data.length === 0 ? (
+            <EmptyState>An auditor will ask for this. Attach a photo or PDF.</EmptyState>
+          ) : (
+            <ul className="space-y-3 p-5">
+              {receipts.data.map((r) => (
+                <li key={r.id} className="space-y-2">
+                  {r.previewable && (
+                    <a href={`/files/expense-receipts/${r.id}`} target="_blank" rel="noreferrer">
+                      <img src={`/files/expense-receipts/${r.id}`} alt={`Receipt ${r.filename}`} className="max-h-64 w-full rounded-md border border-line object-contain" />
+                    </a>
+                  )}
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <a href={`/files/expense-receipts/${r.id}`} className="truncate hover:underline">{r.filename}</a>
+                    {editable && <DeleteReceiptButton receiptId={r.id} expenseId={expense.id} filename={r.filename} />}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {editable && <div className="border-t border-line p-5"><UploadReceiptsForm expenseId={expense.id} /></div>}
+        </Card>
         <Card>
           <CardHeader title="Cost" />
           <dl className="space-y-2 p-5 text-sm" aria-label="Expense cost">
@@ -114,6 +177,7 @@ export default async function ExpensePage({ params }: PageProps<'/expenses/[id]'
             )}
           </dl>
         </Card>
+        </div>
       </div>
     </div>
   )

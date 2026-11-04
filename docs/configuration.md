@@ -33,6 +33,10 @@ See [.env.example](../.env.example) for the annotated list.
 | `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` | `587`, unset, unset, `false` | Standard SMTP settings. |
 | `WORKLOOM_PREVIOUS_ENCRYPTION_KEYS` | unset | Comma-separated keys that used to be `WORKLOOM_ENCRYPTION_KEY`. Secrets encrypted under them stay readable after rotation. Remove an old key only once nothing references it. |
 | `WORKLOOM_ALLOW_PRIVATE_WEBHOOKS` | `false` | Webhook URLs resolving to loopback, private, or link-local addresses are rejected, and `https://` is required. Workloom usually runs inside a private network, where such a URL is an SSRF vector against internal services. Set to `true` only for local development, on both the app and the worker. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | unset | A key for any one of these lets an organization turn on reading receipts with AI (Settings → Telegram → Reading receipts). Without one, receipts are stored and a person types the amount. Set it on the app and the worker. |
+| `RECEIPT_PROVIDER` | the first key set, in the order above | `anthropic`, `openai`, `gemini`, or `groq`: which provider reads receipts when several keys are set. Its key must be set. |
+| `RECEIPT_MODEL` | per provider: `claude-opus-5-5`, `gpt-6-luna`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b` | The model that reads receipts. It must accept images and answer in a JSON schema. Groq's vision models take photos only: a PDF receipt is stored unread. |
+| `TELEGRAM_API_BASE` | `https://api.telegram.org` | Telegram's Bot API. Change it only to go through a proxy. |
 | `DANGEROUSLY_ALLOW_SUPERUSER_DB` | `false` | Lets the app boot despite failing isolation checks. Rejected outright in production. For tooling only. |
 
 ## Documents

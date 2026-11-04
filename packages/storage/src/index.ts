@@ -4,8 +4,9 @@ import { S3Storage } from './s3.ts'
 import type { Storage } from './types.ts'
 
 export type { Storage, StoredObject, PutOptions, SignedUrlOptions } from './types.ts'
-export { attachmentDisposition } from './types.ts'
+export { attachmentDisposition, inlineDisposition, INLINE_TYPES, servesInline } from './types.ts'
 export { LocalStorage } from './local.ts'
+export { isOneOf, sniffContentType, type SniffedType } from './sniff.ts'
 
 let instance: Storage | undefined
 

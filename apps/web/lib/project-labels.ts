@@ -48,3 +48,18 @@ export const REVISION_STATUS_LABELS: Record<string, string> = {
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 }
+
+export const PROJECT_BILLING_MODEL_LABELS: Record<string, string> = {
+  fixed_price: 'Fixed price',
+  retainer: 'Retainer',
+  time_and_materials: 'Time and materials',
+  non_billable: 'Not billed',
+}
+
+export const BUDGET_PERIOD_LABELS: Record<string, string> = {
+  total: 'The whole project',
+  week: 'Each week',
+  month: 'Each month',
+  quarter: 'Each quarter',
+  year: 'Each year',
+}

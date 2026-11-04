@@ -1,4 +1,4 @@
-import { attachmentDisposition, LocalStorage, storage } from '@workloom/storage'
+import { attachmentDisposition, inlineDisposition, LocalStorage, storage } from '@workloom/storage'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -12,8 +12,10 @@ export const runtime = 'nodejs'
  * type together. With S3 storage the browser goes straight to the bucket and
  * this route is never used.
  *
- * Every response is a download. Served inline from this origin, an uploaded
- * HTML or SVG file would run its scripts as whoever opened it.
+ * Every response is a download, except a raster image whose link was signed to
+ * be shown -- a receipt photo previewed beside its expense. Served inline from
+ * this origin, an uploaded HTML or SVG file would run its scripts as whoever
+ * opened it; a JPEG cannot, and the signature binds the type it is served as.
  */
 export async function GET(request: Request) {
   const signed = LocalStorage.verify(new URL(request.url).searchParams)
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
   return new Response(new Uint8Array(body), {
     headers: {
       'content-type': signed.type,
-      'content-disposition': attachmentDisposition(signed.name),
+      'content-disposition': (signed.inline ? inlineDisposition : attachmentDisposition)(signed.name),
       'content-length': String(body.byteLength),
       'x-content-type-options': 'nosniff',
       'content-security-policy': "default-src 'none'; sandbox",

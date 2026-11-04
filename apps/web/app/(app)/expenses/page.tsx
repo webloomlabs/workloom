@@ -4,7 +4,6 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { FilterTabs, Pager, param, SearchBox } from '@/components/crm/list-controls'
 import { formatDate } from '@/lib/format'
-import { EXPENSE_CATEGORY_LABELS } from '@/lib/finance-labels'
 import { money } from '@/lib/server/crm'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
@@ -13,6 +12,8 @@ export const metadata: Metadata = { title: 'Expenses · Workloom' }
 
 const VIEWS = {
   all: { label: 'All', filter: {} },
+  drafts: { label: 'Drafts to check', filter: { status: 'draft' as const } },
+  noReceipt: { label: 'Missing a receipt', filter: { status: 'confirmed' as const, hasReceipt: false } },
   billable: { label: 'To rebill', filter: { billable: true, invoiced: false } },
   rebilled: { label: 'Rebilled', filter: { invoiced: true } },
 }
@@ -41,7 +42,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<'/expense
       <Card>
         <CardHeader
           title={VIEWS[view]?.label ?? 'All'}
-          description="What the agency spent. Amounts are net of tax, which is what the work costs."
+          description="What the agency spent. Drafts — read from receipts — count only once someone confirms them."
           action={
             <div className="flex flex-wrap items-center gap-3">
               <FilterTabs
@@ -69,12 +70,17 @@ export default async function ExpensesPage({ searchParams }: PageProps<'/expense
             <tbody>
               {expenses.data.map((expense) => (
                 <Tr key={expense.id}>
-                  <Td className="whitespace-nowrap text-muted">{formatDate(expense.incurredOn)}</Td>
+                  <Td className="whitespace-nowrap text-muted">
+                    {formatDate(expense.incurredOn)}
+                    <div className="text-xs">{expense.status === 'draft' ? <Badge tone="caution">Draft</Badge> : expense.number}</div>
+                  </Td>
                   <Td>
                     <Link href={`/expenses/${expense.id}`} className="font-medium hover:underline">{expense.description}</Link>
-                    {expense.supplier && <div className="text-xs text-muted">{expense.supplier}</div>}
+                    <div className="text-xs text-muted">
+                      {[expense.supplier, expense.receiptCount === 0 ? 'No receipt' : expense.receiptCount === 1 ? '1 receipt' : `${expense.receiptCount} receipts`].filter(Boolean).join(' · ')}
+                    </div>
                   </Td>
-                  <Td className="text-muted">{EXPENSE_CATEGORY_LABELS[expense.category] ?? expense.category}</Td>
+                  <Td className="text-muted">{expense.categoryName}</Td>
                   <Td className="text-muted">
                     {expense.projectId ? (
                       <Link href={`/projects/${expense.projectId}`} className="hover:underline">{expense.projectName}</Link>

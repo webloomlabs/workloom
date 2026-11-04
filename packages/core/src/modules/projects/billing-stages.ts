@@ -6,9 +6,10 @@ import { newId } from '../../ids.ts'
 import { defineProcedure } from '../../registry/index.ts'
 import { actingUserId, optionalText, requiredText } from '../crm/shared.ts'
 import { newLineValues } from '../finance/documents.ts'
-import { defaultTerms, getInvoice, recalculate } from '../finance/invoices.ts'
+import { defaultTerms, documentDefaults, getInvoice, insertDeductions, loadInvoice, recalculate } from '../finance/invoices.ts'
 import { fromNumeric, percentInput } from '../finance/shared.ts'
 import { planTotals, type StageForTotals } from './billing-plan.ts'
+import { contractScopeLines } from './scope-lines.ts'
 import { releaseStageForInvoice } from './stage-release.ts'
 import { loadActiveProject, loadProject } from './projects.ts'
 import { contractFor } from './revisions.ts'
@@ -38,6 +39,8 @@ export const billingStageOutput = z.object({
   basis: z.enum(schema.BILLING_STAGE_BASIS),
   percent: z.string().nullable(),
   amountMinor: z.number().int().nullable(),
+  /** One line for the stage, or the whole project with earlier stages taken off. */
+  invoiceStyle: z.enum(schema.BILLING_STAGE_INVOICE_STYLES),
   currency: z.string().length(3),
   /** What it is worth right now: the fixed amount, or its share of the contracted value. */
   resolvedAmountMinor: z.number().int(),
@@ -119,6 +122,7 @@ function presentStage(row: StageJoin, resolvedAmountMinor: number): BillingStage
     basis: s.basis as BillingStage['basis'],
     percent: fromNumeric(s.percent),
     amountMinor: s.amountMinor,
+    invoiceStyle: s.invoiceStyle as BillingStage['invoiceStyle'],
     currency: s.currency,
     resolvedAmountMinor,
     trigger: s.trigger,
@@ -232,6 +236,12 @@ export const projectBillingSummary = defineProcedure({
 // Writes
 
 const stageFields = {
+  /**
+   * `statement` makes this stage's invoice the final one: the whole project,
+   * then every earlier stage's invoice taken off, so the client sees one
+   * complete account and pays the balance.
+   */
+  invoiceStyle: z.enum(schema.BILLING_STAGE_INVOICE_STYLES).optional(),
   /** What has to be true before it is billed, in words. */
   trigger: optionalText(500),
   dueOn: z.iso.date().nullish(),
@@ -239,8 +249,9 @@ const stageFields = {
   milestoneId: z.uuid().nullish(),
 }
 
-/** A stage is worth a fixed amount or a share, and the caller says which. */
+/** A stage is worth a fixed amount, a share, or the balance, and the caller says which. */
 function assertBasis(basis: string, amountMinor: number | null | undefined, percent: string | null | undefined) {
+  if (basis === 'balance') return
   if (basis === 'percent') {
     if (percent == null) throw new DomainError('Enter the share of the contract this stage bills.', 'percent_required', 'percent')
   } else if (amountMinor == null) {
@@ -282,6 +293,15 @@ export const projectBillingStageCreate = defineProcedure({
       .from(s)
       .where(eq(s.projectId, project.id))
 
+    if (input.basis === 'balance') {
+      const [existing] = await ctx.tx
+        .select({ name: s.name })
+        .from(s)
+        .where(and(eq(s.projectId, project.id), eq(s.basis, 'balance'), sql`${s.status} <> 'cancelled'`))
+        .limit(1)
+      if (existing) throw new DomainError(`“${existing.name}” is already the balance. A plan has one.`, 'balance_exists', 'basis')
+    }
+
     const id = newId()
     await ctx.tx.insert(s).values({
       id,
@@ -292,6 +312,7 @@ export const projectBillingStageCreate = defineProcedure({
       basis: input.basis,
       percent: input.basis === 'percent' ? (input.percent ?? null) : null,
       amountMinor: input.basis === 'amount' ? (input.amountMinor ?? null) : null,
+      invoiceStyle: input.invoiceStyle ?? 'single_line',
       // From the project, not the caller: the foreign key requires they agree.
       currency: project.currency,
       trigger: input.trigger ?? null,
@@ -343,6 +364,7 @@ export const projectBillingStageUpdate = defineProcedure({
       ...(fields.trigger !== undefined ? { trigger: fields.trigger ?? null } : {}),
       ...(fields.dueOn !== undefined ? { dueOn: fields.dueOn ?? null } : {}),
       ...(fields.milestoneId !== undefined ? { milestoneId: fields.milestoneId ?? null } : {}),
+      ...(fields.invoiceStyle !== undefined ? { invoiceStyle: fields.invoiceStyle } : {}),
       basis,
       percent: basis === 'percent' ? (percent ?? null) : null,
       amountMinor: basis === 'amount' ? (amountMinor ?? null) : null,
@@ -429,6 +451,8 @@ export const projectBillingStageRelease = defineProcedure({
     contactId: z.uuid().nullish(),
     taxRateId: z.uuid().nullish(),
     paymentTermsDays: z.number().int().min(0).max(365).optional(),
+    /** Due on an event rather than after the terms: "At launch". */
+    dueLabel: optionalText(80),
   }),
   output: z.object({ stage: billingStageOutput, invoiceId: z.uuid() }),
   http: { method: 'POST', path: '/billing-stages/{id}/release' },
@@ -472,6 +496,9 @@ export const projectBillingStageRelease = defineProcedure({
       )
     }
 
+    const statement = stage.invoiceStyle === 'statement'
+    const earlier = statement ? await earlierStageInvoices(ctx, stage.id, plan, amount, input.taxRateId ?? null) : []
+
     const invoiceId = newId()
     await ctx.tx.insert(schema.invoices).values({
       id: invoiceId,
@@ -479,25 +506,67 @@ export const projectBillingStageRelease = defineProcedure({
       companyId: project.companyId,
       contactId: input.contactId ?? null,
       projectId: project.id,
-      title: `${project.name} — ${stage.name}`,
+      title: statement ? project.name : `${project.name} — ${stage.name}`,
       currency: project.currency,
       paymentTermsDays: input.paymentTermsDays ?? (await defaultTerms(ctx)),
+      dueLabel: input.dueLabel ?? null,
+      ...(await documentDefaults(ctx, {})),
       createdBy: actingUserId(ctx),
     })
-    await ctx.tx.insert(schema.invoiceLines).values({
-      id: newId(),
-      organizationId: ctx.organizationId,
-      invoiceId,
-      position: 1,
-      // The same two calls a recurring schedule makes, so a staged invoice and
-      // a recurring one are priced by identical code.
-      ...(await newLineValues(
-        ctx,
-        { currency: project.currency },
-        { description: stage.name, quantity: '1', unitAmountMinor: amount, taxRateId: input.taxRateId ?? null },
-      )),
-    })
+    if (statement) {
+      // The whole project -- the price first agreed and every accepted change --
+      // then each earlier stage's invoice taken off.
+      const revisions = await ctx.tx
+        .select({ title: schema.projectRevisions.title, amountMinor: schema.projectRevisions.amountMinor, status: schema.projectRevisions.status, number: schema.projectRevisions.number })
+        .from(schema.projectRevisions)
+        .where(eq(schema.projectRevisions.projectId, project.id))
+      const baseTitle = project.contractQuoteId
+        ? (await ctx.tx.select({ title: schema.quotes.title }).from(schema.quotes).where(eq(schema.quotes.id, project.contractQuoteId)).limit(1))[0]?.title
+        : null
+      let position = 1
+      for (const line of contractScopeLines(project, revisions, baseTitle)) {
+        await ctx.tx.insert(schema.invoiceLines).values({
+          id: newId(),
+          organizationId: ctx.organizationId,
+          invoiceId,
+          position: position++,
+          ...(await newLineValues(
+            ctx,
+            { currency: project.currency },
+            { description: line.description, detail: line.detail, billingType: 'one_off', quantity: '1', unitAmountMinor: line.amountMinor, taxRateId: input.taxRateId ?? null },
+          )),
+        })
+      }
+      const invoice = await loadInvoice(ctx, invoiceId)
+      for (const priorId of earlier) await insertDeductions(ctx, invoice, priorId)
+    } else {
+      await ctx.tx.insert(schema.invoiceLines).values({
+        id: newId(),
+        organizationId: ctx.organizationId,
+        invoiceId,
+        position: 1,
+        // The same two calls a recurring schedule makes, so a staged invoice and
+        // a recurring one are priced by identical code.
+        ...(await newLineValues(
+          ctx,
+          { currency: project.currency },
+          { description: stage.name, quantity: '1', unitAmountMinor: amount, taxRateId: input.taxRateId ?? null },
+        )),
+      })
+    }
     await recalculate(ctx, invoiceId)
+    if (statement) {
+      // The statement must ask for exactly what this stage is worth: the
+      // contract less everything raised before. Anything else is refused,
+      // rather than an invoice going out a cent away from the plan.
+      const priced = await loadInvoice(ctx, invoiceId)
+      if (priced.totalMinor - priced.taxMinor !== amount) {
+        throw new DomainError(
+          `As a statement this would ask for ${priced.totalMinor - priced.taxMinor}, not the ${amount} this stage is worth. Make it the balance, or release it as a single line.`,
+          'statement_mismatch',
+        )
+      }
+    }
 
     await ctx.tx
       .update(schema.projectBillingStages)
@@ -518,6 +587,44 @@ export const projectBillingStageRelease = defineProcedure({
     return { stage: released, invoiceId }
   },
 })
+
+/**
+ * The invoices a statement takes off: every earlier stage's, which must all
+ * have been issued -- a draft deposit is not yet a demand, so there is nothing
+ * to deduct. Only the last stage to bill can be a statement: a statement says
+ * "this is everything", and a stage after it would make that untrue.
+ */
+async function earlierStageInvoices(
+  ctx: ActorContext,
+  stageId: string,
+  plan: Awaited<ReturnType<typeof planFor>>,
+  amount: number,
+  taxRateId: string | null,
+): Promise<string[]> {
+  const pendingAfter = plan.stages.filter((s) => s.id !== stageId && s.status === 'pending')
+  if (pendingAfter.length > 0) {
+    throw new DomainError('Only the last stage to bill can be a statement of the whole project. Bill or remove the others first.', 'statement_not_last')
+  }
+  if ((plan.contractedValueMinor ?? 0) - plan.releasedMinor !== amount) {
+    throw new DomainError('A statement asks for everything the contract has left; this stage is worth something else. Make it the balance.', 'statement_mismatch')
+  }
+  const earlier = plan.stages.filter((s) => s.id !== stageId && s.status === 'invoiced' && s.invoiceId && s.invoiceStatus !== 'cancelled')
+  const ids: string[] = []
+  for (const s of earlier) {
+    if (s.invoiceStatus === 'draft') {
+      throw new DomainError(`Issue or delete the invoice for “${s.name}” first: a draft is not yet something to take off.`, 'earlier_stage_draft')
+    }
+    const lines = await ctx.tx
+      .select({ taxRateId: schema.invoiceLines.taxRateId })
+      .from(schema.invoiceLines)
+      .where(and(eq(schema.invoiceLines.invoiceId, s.invoiceId!), eq(schema.invoiceLines.kind, 'item')))
+    if (lines.some((l) => (l.taxRateId ?? null) !== taxRateId)) {
+      throw new DomainError(`“${s.name}” was taxed differently, so it cannot be taken off exactly. Release this stage with the same tax, or as a single line.`, 'statement_tax_mismatch', 'taxRateId')
+    }
+    ids.push(s.invoiceId!)
+  }
+  return ids
+}
 
 // Re-exported so the plan's whole surface is reachable from one module.
 export { releaseStageForInvoice }

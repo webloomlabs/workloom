@@ -8,6 +8,7 @@ import {
   type Actor,
   type ActorContext,
   type AuditEntry,
+  type AuditSource,
 } from '../context.ts'
 import { newId } from '../ids.ts'
 import type { Permission } from '../permissions/statements.ts'
@@ -24,6 +25,8 @@ export type ExecutionRequest = {
   now?: Date
   ipAddress?: string | undefined
   userAgent?: string | undefined
+  /** The door the request came in by, when the actor alone does not say: a person writing from Telegram. */
+  source?: AuditSource | undefined
   /**
    * From the `Idempotency-Key` header. Ignored for reads. A repeated key with
    * the same input returns the original response without running the handler
@@ -32,6 +35,22 @@ export type ExecutionRequest = {
   idempotencyKey?: string | undefined
   /** Called when the response is a replay rather than a fresh execution. */
   onReplay?: (() => void) | undefined
+}
+
+/** A database refusal the person can act on, in words: the closed books (SQLSTATE WL001, migration 0044). */
+export function translateDatabaseError(error: unknown): unknown {
+  for (let e: unknown = error, depth = 0; e && typeof e === 'object' && depth < 4; e = (e as { cause?: unknown }).cause, depth += 1) {
+    const pg = e as { code?: string; detail?: string; message?: string }
+    if (pg.code === 'WL001') {
+      const what = /books_locked: (.+?) dated/.exec(pg.message ?? '')?.[1] ?? 'This record'
+      const through = pg.detail ?? 'the lock date'
+      return new DomainError(
+        `The books are closed through ${through}, so ${what} dated then cannot be added, changed, or removed. Date it after ${through}, or ask an owner to reopen the books.`,
+        'books_locked',
+      )
+    }
+  }
+  return error
 }
 
 /** Keys sorted at every level, so `{a, b}` and `{b, a}` hash identically. */
@@ -77,6 +96,7 @@ export function buildContext(
     now: request.now ?? new Date(),
     ipAddress: request.ipAddress,
     userAgent: request.userAgent,
+    source: request.source,
 
     has: (permission) => request.permissions.has(permission),
     require: (permission) => {
@@ -89,6 +109,7 @@ export function buildContext(
         requestId,
         ipAddress: request.ipAddress,
         userAgent: request.userAgent,
+        source: request.source,
         entry,
       }),
     emit: (type, data) =>
@@ -133,7 +154,7 @@ export async function executeProcedure(name: string, request: ExecutionRequest):
     output = await runInTransaction(procedure, request, input, key, hooks)
   } catch (error) {
     await runHooks(hooks.rollback, `${procedure.name} rollback`)
-    throw error
+    throw translateDatabaseError(error)
   }
   await runHooks(hooks.commit, `${procedure.name} commit`)
   return output

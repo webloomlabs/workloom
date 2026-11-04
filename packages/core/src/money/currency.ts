@@ -87,6 +87,20 @@ export function minorToDecimalString(minor: number, currency: string): string {
 }
 
 /**
+ * 1250050 in any two-decimal currency -> "12,500.50": grouped, with the
+ * currency's own number of decimals, and no symbol -- for a column whose
+ * heading already names the currency, "AMOUNT (LKR)".
+ */
+export function formatAmountPlain(minor: number, currency: string, locale = 'en-AU'): string {
+  const exponent = currencyExponent(currency)
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: exponent,
+    maximumFractionDigits: exponent,
+    useGrouping: true,
+  }).format(minorToDecimalString(minor, currency) as unknown as number)
+}
+
+/**
  * 1250050 in AUD -> "A$12,500.50" (locale-dependent). The decimal string is
  * passed to Intl as a string, which formats it exactly rather than going
  * through a float.

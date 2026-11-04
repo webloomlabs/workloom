@@ -1,4 +1,4 @@
-import { dashboardGet } from '@workloom/core/modules'
+import { dashboardGet, reportProjectBudgets } from '@workloom/core/modules'
 import { formatDuration } from '@workloom/core/time'
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Stat, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
@@ -24,10 +24,14 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
   const query = await searchParams
   // The layout already refused an unauthenticated visitor; this is what makes
   // the page itself refuse one, since it is the first thing anyone lands on.
-  await requireViewer()
+  const viewer = await requireViewer()
   const period = (PERIODS as readonly string[]).includes(param(query.period) ?? '') ? (param(query.period) as (typeof PERIODS)[number]) : 'month'
 
-  const [board, settings] = await Promise.all([call(dashboardGet, { period }), organizationSettings()])
+  const [board, settings, atRisk] = await Promise.all([
+    call(dashboardGet, { period }),
+    organizationSettings(),
+    viewer.permissions.has('report:readFinancial') ? call(reportProjectBudgets, { atRisk: true }) : null,
+  ])
   const amount = (minor: number) => money(minor, board.baseCurrency)
   const span = `${formatDate(board.from)} to ${formatDate(board.to)}`
 
@@ -136,6 +140,30 @@ export default async function DashboardPage({ searchParams }: PageProps<'/'>) {
           {board.pipeline.slice(1).map((row) => `${money(row.openMinor, row.currency)} in ${row.currency}`).join(', ')}. A deal records a value and a
           currency, never an exchange rate, so nothing is converted.
         </p>
+      )}
+
+      {atRisk && atRisk.data.length > 0 && (
+        <Card>
+          <CardHeader title="Projects at risk" description="Past 80% of their cost or hours budget, for the whole project or this period of a retainer." />
+          <Table>
+            <thead>
+              <tr><Th>Project</Th><Th className="text-right">Cost</Th><Th className="text-right">Hours</Th><Th /></tr>
+            </thead>
+            <tbody>
+              {atRisk.data.slice(0, 10).map((b) => (
+                <Tr key={b.projectId}>
+                  <Td>
+                    <Link href={`/projects/${b.projectId}?tab=financials`} className="font-medium hover:underline">{b.projectName}</Link>
+                    <div className="text-xs text-muted">{b.window ? `${formatDate(b.window.from)} – ${formatDate(b.window.to)}` : 'Whole project'}</div>
+                  </Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">{b.costPercent === null ? '—' : `${b.costPercent}%`}</Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">{b.hoursPercent === null ? '—' : `${b.hoursPercent}%`}</Td>
+                  <Td className="text-right">{b.level === 'over' ? <Badge tone="critical">Over</Badge> : <Badge tone="caution">Near</Badge>}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">

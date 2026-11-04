@@ -96,6 +96,14 @@ describe('tenant tables', () => {
         'quote_lines',
         'invoices',
         'invoice_lines',
+        'expense_categories',
+        'expense_receipts',
+        'telegram_bots',
+        'messaging_identities',
+        'messaging_link_codes',
+        'telegram_updates',
+        'tax_packs',
+        'audit_seals',
       ]),
     )
   })

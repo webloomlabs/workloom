@@ -26,6 +26,23 @@ const encryptionKey = z.string().refine(
   { message: 'must be 32 bytes, base64-encoded (generate: openssl rand -base64 32)' },
 )
 
+/** Who can read receipts, and the environment variable holding each one's key. */
+export const RECEIPT_PROVIDERS = ['anthropic', 'openai', 'gemini', 'groq'] as const
+export type ReceiptProvider = (typeof RECEIPT_PROVIDERS)[number]
+const RECEIPT_KEYS = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', groq: 'GROQ_API_KEY' } as const
+
+/**
+ * The default model for each provider: a current one that reads images
+ * reliably and answers in a given JSON schema, at a low price per receipt.
+ * Groq's takes photos only, not PDFs.
+ */
+export const DEFAULT_RECEIPT_MODELS: Record<ReceiptProvider, string> = {
+  anthropic: 'claude-opus-5-5',
+  openai: 'gpt-6-luna',
+  gemini: 'gemini-3.5-flash-lite',
+  groq: 'qwen/qwen3.8-27b',
+}
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -112,8 +129,31 @@ const schema = z
      * network, where such a URL is an SSRF vector against internal services.
      */
     WORKLOOM_ALLOW_PRIVATE_WEBHOOKS: bool.default(false),
+
+    /**
+     * Optional. Lets an organization have its receipts read by AI: the
+     * Telegram bot and "Start from a receipt" on the expense form. Without a
+     * key, receipts are still stored and a person fills the expense in. Each
+     * organization also turns reading on for itself, since it sends the
+     * receipt to the provider.
+     *
+     * Set the key for the provider you use. With several set, RECEIPT_PROVIDER
+     * says which; otherwise the first of Anthropic, OpenAI, Gemini, Groq.
+     */
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    OPENAI_API_KEY: z.string().min(1).optional(),
+    GEMINI_API_KEY: z.string().min(1).optional(),
+    GROQ_API_KEY: z.string().min(1).optional(),
+    RECEIPT_PROVIDER: z.enum(RECEIPT_PROVIDERS).optional(),
+    /** The model that reads receipts. Defaults to a sensible one for the provider. */
+    RECEIPT_MODEL: z.string().min(1).optional(),
+    /** Telegram's Bot API. Overridden only by tests, or to reach it through a proxy. */
+    TELEGRAM_API_BASE: z.url().default('https://api.telegram.org'),
   })
   .superRefine((v, ctx) => {
+    if (v.RECEIPT_PROVIDER && !v[RECEIPT_KEYS[v.RECEIPT_PROVIDER]]) {
+      ctx.addIssue({ code: 'custom', path: [RECEIPT_KEYS[v.RECEIPT_PROVIDER]], message: `required when RECEIPT_PROVIDER is "${v.RECEIPT_PROVIDER}"` })
+    }
     if (v.STORAGE_DRIVER === 's3') {
       for (const key of ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
         if (!v[key]) {
@@ -147,6 +187,16 @@ const schema = z
   })
 
 export type Env = z.infer<typeof schema>
+
+export type ReceiptReaderSettings = { provider: ReceiptProvider; apiKey: string; model: string }
+
+/** Which provider reads receipts on this installation, or null when none is configured. */
+export function receiptReaderSettings(source: Pick<Env, 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | 'GEMINI_API_KEY' | 'GROQ_API_KEY' | 'RECEIPT_PROVIDER' | 'RECEIPT_MODEL'>): ReceiptReaderSettings | null {
+  const provider = source.RECEIPT_PROVIDER ?? RECEIPT_PROVIDERS.find((p) => source[RECEIPT_KEYS[p]])
+  const apiKey = provider ? source[RECEIPT_KEYS[provider]] : undefined
+  if (!provider || !apiKey) return null
+  return { provider, apiKey, model: source.RECEIPT_MODEL ?? DEFAULT_RECEIPT_MODELS[provider] }
+}
 
 export class EnvironmentError extends Error {
   constructor(issues: z.core.$ZodIssue[]) {

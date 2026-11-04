@@ -1,7 +1,7 @@
-import { Document, Page, StyleSheet, Text, View, type DocumentProps, type Styles } from '@react-pdf/renderer'
+import { Document, Image, Page, StyleSheet, Text, View, type DocumentProps, type Styles } from '@react-pdf/renderer'
 import { createElement, type ReactElement } from 'react'
 import { FONT_FAMILY, registerFonts } from './fonts.ts'
-import type { DocumentParty, DocumentPdfInput } from './types.ts'
+import type { DocumentPdfInput, DocumentPdfLine, DocumentPdfTotalRow } from './types.ts'
 
 /**
  * The printed form of a quote or an invoice.
@@ -13,125 +13,245 @@ import type { DocumentParty, DocumentPdfInput } from './types.ts'
  * Written with `createElement` rather than JSX so that the package compiles as
  * plain TypeScript: every consumer -- the web app, the worker, the domain --
  * can then import it without a JSX setting or React types of its own.
+ *
+ * The layout: issuer and logo top left, the document's kind and number top
+ * right; the client beside the figure that matters (the balance due); the
+ * lines under a coloured heading; totals ending in a coloured bar; then how to
+ * pay, notes and terms, and a footer on every page.
  */
 
 const e = createElement
 
+const DEFAULT_ACCENT = '#0b8a5e'
+const INK = '#1f2a24'
+const MUTED = '#6b7570'
+const RULE = '#e3e7e5'
+
+/** A lighter tint of the accent, for the short band at the top of the page. */
+function tint(hex: string, amount = 0.55): string {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const mix = (c: number) => Math.round(c + (255 - c) * amount)
+  const r = mix((n >> 16) & 255)
+  const g = mix((n >> 8) & 255)
+  const b = mix(n & 255)
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
+}
+
 const styles = StyleSheet.create({
-  page: { fontFamily: FONT_FAMILY, fontSize: 9, color: '#1c1c1c', paddingTop: 40, paddingBottom: 56, paddingHorizontal: 40 },
-  row: { flexDirection: 'row' },
+  page: { fontFamily: FONT_FAMILY, fontSize: 9, color: INK, paddingTop: 40, paddingBottom: 56, paddingHorizontal: 44 },
+  band: { position: 'absolute', top: 0, left: 0, right: 0, height: 6, flexDirection: 'row' },
   between: { flexDirection: 'row', justifyContent: 'space-between' },
-  headerRight: { alignItems: 'flex-end', maxWidth: 220 },
-  kind: { fontSize: 22, fontWeight: 700, letterSpacing: 1 },
-  number: { fontSize: 11, fontWeight: 700, marginTop: 2 },
-  party: { maxWidth: 260 },
-  partyName: { fontSize: 12, fontWeight: 700, marginBottom: 3 },
-  muted: { color: '#6b6b6b' },
-  marker: { marginTop: 14, padding: 6, backgroundColor: '#f2f2f2', textAlign: 'center', fontWeight: 700, letterSpacing: 2 },
-  section: { marginTop: 22 },
-  label: { fontSize: 8, fontWeight: 700, color: '#6b6b6b', letterSpacing: 1, marginBottom: 4 },
-  title: { fontSize: 13, fontWeight: 700 },
-  factLabel: { color: '#6b6b6b', marginRight: 8 },
-  tableHead: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1c1c1c', paddingBottom: 4, marginBottom: 2, fontWeight: 700, fontSize: 8 },
-  line: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#dddddd', paddingVertical: 5 },
+  row: { flexDirection: 'row' },
+  left: { width: '55%', paddingRight: 16 },
+  right: { width: '45%', alignItems: 'flex-end' },
+  rightBlock: { width: '45%' },
+  logo: { maxHeight: 56, maxWidth: 160, objectFit: 'contain', marginBottom: 12, alignSelf: 'flex-start' },
+  issuerName: { fontSize: 14, fontWeight: 700, marginBottom: 4 },
+  muted: { color: MUTED },
+  mutedLine: { color: MUTED, marginBottom: 2 },
+  kind: { fontSize: 28, fontWeight: 700, letterSpacing: 1, color: INK },
+  numberRow: { flexDirection: 'row', marginTop: 8 },
+  numberLabel: { fontWeight: 700, marginRight: 8 },
+  number: { fontWeight: 700 },
+  fact: { flexDirection: 'row', marginTop: 4, color: INK },
+  factLabel: { marginRight: 6 },
+  label: { fontSize: 8, fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 },
+  clientName: { fontSize: 13, fontWeight: 700, marginBottom: 4 },
+  headlineAmount: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
+  marker: { marginTop: 18, padding: 6, backgroundColor: '#f2f4f3', textAlign: 'center', fontWeight: 700, letterSpacing: 2, color: MUTED },
+  title: { fontSize: 11, fontWeight: 700, marginTop: 16 },
+  table: { marginTop: 20 },
+  tableHead: { flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, color: '#ffffff', fontWeight: 700, fontSize: 8, letterSpacing: 0.5 },
+  line: { flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, borderBottomWidth: 0.75, borderBottomColor: RULE },
   description: { flex: 1, paddingRight: 8 },
-  quantity: { width: 46, textAlign: 'right' },
-  unit: { width: 72, textAlign: 'right' },
-  discount: { width: 46, textAlign: 'right' },
-  tax: { width: 78, paddingLeft: 8 },
-  amount: { width: 78, textAlign: 'right' },
-  totals: { marginTop: 12, alignSelf: 'flex-end', width: 240 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  grandTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#1c1c1c',
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  note: { marginTop: 18, maxWidth: 380, lineHeight: 1.5 },
-  footer: { position: 'absolute', bottom: 28, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', color: '#6b6b6b', fontSize: 8 },
+  lineTitle: { fontSize: 10, fontWeight: 700 },
+  lineSubtitle: { fontSize: 8.5, color: MUTED, marginTop: 2 },
+  billing: { width: 92 },
+  quantity: { width: 36, textAlign: 'center' },
+  unit: { width: 70, textAlign: 'right' },
+  discount: { width: 40, textAlign: 'right' },
+  tax: { width: 64, paddingLeft: 8 },
+  amount: { width: 92, textAlign: 'right' },
+  totals: { marginTop: 10, alignSelf: 'flex-end', width: 270 },
+  totalRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingRight: 10 },
+  totalLabel: { color: MUTED, fontSize: 10, textAlign: 'right', flex: 1, marginRight: 18 },
+  totalAmount: { width: 110, textAlign: 'right', fontSize: 10 },
+  bar: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, paddingHorizontal: 12, marginTop: 8, color: '#ffffff', fontWeight: 700, fontSize: 13 },
+  after: { flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 4, paddingRight: 10, fontSize: 8, color: MUTED },
+  lower: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 22 },
+  lowerLeft: { width: '48%' },
+  lowerRight: { width: '46%' },
+  detailsBox: { borderWidth: 0.75, borderColor: RULE, borderLeftWidth: 3, paddingVertical: 8, paddingHorizontal: 12 },
+  detailRow: { flexDirection: 'row', paddingVertical: 3 },
+  detailLabel: { width: 90, color: MUTED },
+  detailValue: { flex: 1, fontWeight: 700 },
+  paragraph: { color: MUTED, marginBottom: 8 },
+  closing: { fontSize: 12, fontWeight: 700, marginTop: 18 },
+  footer: { position: 'absolute', bottom: 26, left: 44, right: 44, borderTopWidth: 0.75, borderTopColor: RULE, paddingTop: 8, fontSize: 7.5, color: MUTED },
+  footerText: { textAlign: 'center' },
+  pageNumber: { position: 'absolute', right: 0, top: 8 },
 })
 
 type Style = Styles[string]
 
-const text = (style: Style, value: string, key?: string) => e(Text, { style, key }, value)
+const text = (style: Style | Style[], value: string, key?: string | number) => e(Text, { style, key }, value)
 
-/** A label on the left and an amount on the right, as every total is drawn. */
-const amountRow = (style: Style, label: string, amount: string, labelStyle: Style = styles.muted) =>
-  e(View, { style, key: label }, text(labelStyle, label), text({}, amount))
+function tableRow(input: DocumentPdfInput, cells: Record<'description' | 'billing' | 'quantity' | 'unit' | 'discount' | 'tax' | 'amount', ReactElement | string>) {
+  const cell = (style: Style, content: ReactElement | string, key: string) =>
+    typeof content === 'string' ? text(style, content, key) : e(View, { style, key }, content)
+  return [
+    cell(styles.description, cells.description, 'description'),
+    input.columns.billing ? cell(styles.billing, cells.billing, 'billing') : null,
+    cell(styles.quantity, cells.quantity, 'quantity'),
+    input.columns.unitPrice ? cell(styles.unit, cells.unit, 'unit') : null,
+    input.columns.discount ? cell(styles.discount, cells.discount, 'discount') : null,
+    input.columns.tax ? cell(styles.tax, cells.tax, 'tax') : null,
+    cell(styles.amount, cells.amount, 'amount'),
+  ]
+}
 
-function party(label: string, party: DocumentParty): ReactElement {
-  const details = [...(party.addressLines ?? []), party.taxNumber, party.email, party.phone].filter(Boolean) as string[]
+function lineRow(input: DocumentPdfInput, line: DocumentPdfLine, index: number): ReactElement {
+  const description = e(
+    View,
+    {},
+    text(styles.lineTitle, line.title),
+    line.subtitle ? text(styles.lineSubtitle, line.subtitle) : null,
+  )
   return e(
     View,
-    { style: styles.party },
-    text(styles.label, label),
-    text(styles.partyName, party.name),
-    ...details.map((line, i) => text(i < (party.addressLines?.length ?? 0) ? {} : styles.muted, line, `d${i}`)),
+    { style: styles.line, wrap: false, key: index },
+    ...tableRow(input, {
+      description,
+      billing: line.billing ?? '',
+      quantity: line.quantity,
+      unit: line.unitAmount ?? '',
+      discount: line.discount ?? '',
+      tax: line.tax ?? '',
+      amount: line.amount,
+    }),
+  )
+}
+
+function totalRow(row: DocumentPdfTotalRow, index: number): ReactElement {
+  const strong = row.style === 'strong'
+  return e(
+    View,
+    { style: styles.totalRow, key: index },
+    text(styles.totalLabel, row.label),
+    text([styles.totalAmount, strong ? { fontWeight: 700 } : {}], row.amount),
   )
 }
 
 export function documentElement(input: DocumentPdfInput): ReactElement<DocumentProps> {
   registerFonts()
+  const accent = input.accentColor && /^#[0-9a-f]{6}$/i.test(input.accentColor) ? input.accentColor : DEFAULT_ACCENT
   const heading = input.kind === 'invoice' ? 'INVOICE' : 'QUOTE'
+  const accentText = { color: accent }
 
+  const band = e(
+    View,
+    { style: styles.band, fixed: true },
+    e(View, { style: { width: '26%', backgroundColor: tint(accent) } }),
+    e(View, { style: { flex: 1, backgroundColor: accent } }),
+  )
+
+  const issuerDetails = [...(input.issuer.addressLines ?? []), input.issuer.taxNumber, input.issuer.email, input.issuer.phone].filter(Boolean) as string[]
   const header = e(
     View,
     { style: styles.between },
-    party('From', input.issuer),
     e(
       View,
-      { style: styles.headerRight },
+      { style: styles.left },
+      input.issuer.logo ? e(Image, { style: styles.logo, src: { data: Buffer.from(input.issuer.logo.data), format: input.issuer.logo.format } }) : null,
+      text([styles.issuerName, accentText], input.issuer.name),
+      ...issuerDetails.map((line, i) => text(styles.mutedLine, line, i)),
+    ),
+    e(
+      View,
+      { style: styles.right },
       text(styles.kind, heading),
-      input.number ? text(styles.number, input.number) : null,
-      ...input.facts.map((fact) => e(View, { style: styles.row, key: fact.label }, text(styles.factLabel, fact.label), text({}, fact.value))),
+      input.number
+        ? e(View, { style: styles.numberRow }, text(styles.numberLabel, input.kind === 'invoice' ? 'Invoice No.' : 'Quote No.'), text(styles.number, input.number))
+        : null,
+      ...input.facts.map((fact) => e(View, { style: styles.fact, key: fact.label }, text(styles.factLabel, fact.label), text({}, fact.value))),
     ),
   )
 
-  const lines = e(
+  const clientDetails = [...(input.client.addressLines ?? []), input.client.taxNumber, input.client.email, input.client.phone].filter(Boolean) as string[]
+  const parties = e(
     View,
-    { style: styles.section },
+    { style: [styles.between, { marginTop: 24 }] },
     e(
       View,
-      { style: styles.tableHead },
-      text(styles.description, 'DESCRIPTION'),
-      text(styles.quantity, 'QTY'),
-      text(styles.unit, 'UNIT PRICE'),
-      text(styles.discount, 'DISC.'),
-      text(styles.tax, 'TAX'),
-      text(styles.amount, 'AMOUNT'),
+      { style: styles.left },
+      text([styles.label, accentText], input.kind === 'invoice' ? 'BILL TO' : 'PREPARED FOR'),
+      text(styles.clientName, input.client.name),
+      ...clientDetails.map((line, i) => text(styles.mutedLine, line, i)),
     ),
-    ...input.lines.map((line, i) =>
-      e(
-        View,
-        { style: styles.line, wrap: false, key: i },
-        text(styles.description, line.description),
-        text(styles.quantity, line.quantity),
-        text(styles.unit, line.unitAmount),
-        text(styles.discount, line.discount ?? ''),
-        text(styles.tax, line.tax ?? ''),
-        text(styles.amount, line.amount),
-      ),
+    input.headline
+      ? e(
+          View,
+          { style: styles.rightBlock },
+          text([styles.label, accentText], input.headline.label),
+          text([styles.headlineAmount, accentText], input.headline.amount),
+          input.headline.caption ? text(styles.muted, input.headline.caption) : null,
+        )
+      : null,
+  )
+
+  const table = e(
+    View,
+    { style: styles.table },
+    e(
+      View,
+      { style: [styles.tableHead, { backgroundColor: accent }], fixed: true },
+      ...tableRow(input, {
+        description: 'DESCRIPTION',
+        billing: 'BILLING',
+        quantity: 'QTY',
+        unit: 'UNIT PRICE',
+        discount: 'DISC.',
+        tax: 'TAX',
+        amount: `AMOUNT (${input.currency})`,
+      }),
     ),
+    ...input.lines.map((line, i) => lineRow(input, line, i)),
   )
 
   const totals = e(
     View,
-    { style: styles.totals },
-    amountRow(styles.totalRow, 'Subtotal', input.totals.subtotal),
-    input.totals.discount ? amountRow(styles.totalRow, input.totals.discount.label, input.totals.discount.amount) : null,
-    ...(input.taxIncluded ? [] : input.totals.taxes.map((tax) => amountRow(styles.totalRow, tax.label, tax.amount))),
-    amountRow(styles.grandTotal, 'Total', input.totals.total, {}),
-    ...(input.taxIncluded ? input.totals.taxes.map((tax) => amountRow(styles.totalRow, `Includes ${tax.label}`, tax.amount)) : []),
-    ...(input.totals.extras ?? []).map((extra) => amountRow(styles.totalRow, extra.label, extra.amount)),
+    { style: styles.totals, wrap: false },
+    ...input.totals.rows.map(totalRow),
+    e(View, { style: [styles.bar, { backgroundColor: accent }] }, text({}, input.totals.bar.label), text({}, input.totals.bar.amount)),
+    ...(input.totals.after ?? []).map((row, i) => e(View, { style: styles.after, key: `after${i}` }, text({ marginRight: 12 }, row.label), text({}, row.amount))),
   )
 
-  const note = (label: string, body: string, muted = false) =>
-    e(View, { style: styles.note, key: label }, text(styles.label, label), text(muted ? styles.muted : {}, body))
+  const details = input.paymentDetails ?? []
+  const payment =
+    details.length > 0 || input.paymentInstructions
+      ? e(
+          View,
+          { style: styles.lowerLeft, wrap: false },
+          text([styles.label, accentText], 'PAYMENT DETAILS'),
+          e(
+            View,
+            { style: [styles.detailsBox, { borderLeftColor: accent }] },
+            ...details.map((row, i) => e(View, { style: styles.detailRow, key: i }, text(styles.detailLabel, row.label), text(styles.detailValue, row.value))),
+            input.paymentInstructions ? text([styles.paragraph, { marginBottom: 0, marginTop: details.length > 0 ? 6 : 0 }], input.paymentInstructions) : null,
+          ),
+        )
+      : e(View, { style: styles.lowerLeft })
+
+  const paragraphs = [input.notes, input.terms].filter((p): p is string => Boolean(p && p.trim()))
+  const notes =
+    paragraphs.length > 0
+      ? e(
+          View,
+          { style: styles.lowerRight, wrap: false },
+          text([styles.label, accentText], 'NOTES AND TERMS'),
+          ...paragraphs.flatMap((p, i) => p.split(/\n{2,}/).map((para, j) => text(styles.paragraph, para.trim(), `${i}.${j}`))),
+        )
+      : null
 
   return e<DocumentProps>(
     Document,
@@ -139,20 +259,23 @@ export function documentElement(input: DocumentPdfInput): ReactElement<DocumentP
     e(
       Page,
       { size: 'A4', style: styles.page },
+      band,
       header,
+      parties,
       input.marker ? text(styles.marker, input.marker) : null,
-      e(View, { style: styles.section }, party(input.kind === 'invoice' ? 'Bill to' : 'Prepared for', input.client)),
-      e(View, { style: styles.section }, text(styles.title, input.title)),
-      lines,
+      input.kind === 'quote' ? text(styles.title, input.title) : null,
+      table,
       totals,
-      input.paymentInstructions ? note('HOW TO PAY', input.paymentInstructions) : null,
-      input.notes ? note('NOTES', input.notes) : null,
-      input.terms ? note('TERMS', input.terms, true) : null,
+      e(View, { style: styles.lower }, payment, notes),
+      input.closing ? text([styles.closing, accentText], input.closing) : null,
       e(
         View,
         { style: styles.footer, fixed: true },
-        text({}, `${input.number ? `${input.number} · ` : ''}${input.issuer.name}`),
-        e(Text, { render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `Page ${pageNumber} of ${totalPages}` }),
+        text(styles.footerText, input.footer ?? `${input.number ? `${input.number} · ` : ''}${input.issuer.name}`),
+        e(Text, {
+          style: styles.pageNumber,
+          render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => (totalPages > 1 ? `${pageNumber} / ${totalPages}` : ''),
+        }),
       ),
     ),
   )

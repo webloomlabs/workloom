@@ -8,7 +8,10 @@ import {
   expenseList,
   milestoneList,
   projectGet,
+  projectBudget,
+  quoteList,
   projectFinancials,
+  projectTypeList,
   projectMemberList,
   projectBillingStageList,
   projectRevisionList,
@@ -19,8 +22,9 @@ import {
   timeEntrySummary,
 } from '@workloom/core/modules'
 import { formatDuration } from '@workloom/core/time'
-import { Alert, Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
+import { Alert, Badge, Card, CardHeader, EmptyState, Meter, PageHeader, Table, Td, Th, Tr, buttonStyles } from '@workloom/ui'
 import type { Metadata } from 'next'
+import { QuoteStatusBadge } from '@/components/finance/badges'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { ArchivedBadge } from '@/components/crm/badges'
@@ -64,7 +68,7 @@ type Context = {
   members: Awaited<ReturnType<typeof memberChoices>>
 }
 
-const TABS = ['tasks', 'milestones', 'time', 'revisions', 'billing', 'financials', 'team', 'updates', 'files', 'details'] as const
+const TABS = ['tasks', 'milestones', 'time', 'quotes', 'revisions', 'billing', 'financials', 'team', 'updates', 'files', 'details'] as const
 type Tab = (typeof TABS)[number]
 
 export default async function ProjectPage({ params, searchParams }: PageProps<'/projects/[id]'>) {
@@ -79,8 +83,8 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
   const context: Context = { project, can, selfId, timezone: settings.timezone, members }
   const base = `/projects/${id}`
 
-  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', revisions: 'Revisions', billing: 'Billing', financials: 'Financials', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
-  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read', revisions: 'projectRevision:read', billing: 'projectBilling:read', financials: 'report:readFinancial' }
+  const labels: Record<Tab, string> = { tasks: 'Tasks', milestones: 'Milestones', time: 'Time', quotes: 'Quotes', revisions: 'Revisions', billing: 'Billing', financials: 'Financials', team: 'Team', updates: 'Updates', files: 'Files', details: 'Details' }
+  const visible: Partial<Record<Tab, Permission>> = { milestones: 'milestone:read', time: 'timeEntry:read', quotes: 'quote:read', revisions: 'projectRevision:read', billing: 'projectBilling:read', financials: 'report:readFinancial' }
   const tabs: SectionTab[] = TABS.filter((t) => !visible[t] || can(visible[t])).map((t) => ({
     key: t,
     label: labels[t],
@@ -89,7 +93,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<'/
     ...(t === 'tasks' ? { count: project.progress.tasksTotal } : t === 'milestones' ? { count: project.progress.milestonesTotal } : {}),
   }))
 
-  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, revisions: Revisions, billing: Billing, financials: Financials, team: Team, updates: Updates, files: Files, details: Details }
+  const content: Record<Tab, (ctx: Context) => Promise<ReactNode>> = { tasks: Tasks, milestones: Milestones, time: Time, quotes: Quotes, revisions: Revisions, billing: Billing, financials: Financials, team: Team, updates: Updates, files: Files, details: Details }
   const live = !project.archivedAt
 
   return (
@@ -388,6 +392,7 @@ async function Billing({ project, can }: Context) {
     id: s.id,
     name: s.name,
     basis: s.basis,
+    invoiceStyle: s.invoiceStyle,
     percent: s.percent ?? '',
     amount: decimal(s.amountMinor),
     trigger: s.trigger,
@@ -553,8 +558,11 @@ async function Financials({ project, can }: Context) {
       ? (await call(expenseList, { projectId: project.id, category: 'contractor', limit: 1 })).data.length
       : 0
 
+  const budget = await call(projectBudget, { id: project.id })
+
   return (
     <div className="space-y-6">
+      <BudgetCard budget={budget} />
       {report.currencies.map((figures) => {
         const money_ = (minor: number) => money(minor, figures.currency)
         const negative = figures.marginMinor < 0
@@ -1003,6 +1011,7 @@ async function Files({ project, can, timezone }: Context) {
 async function Details({ project, can, members }: Context) {
   const financial = can('report:readFinancial')
   const companies = can('company:read') ? await call(companyList, { limit: 100 }) : { data: [] }
+  const types = await call(projectTypeList, { includeArchived: true })
   const companyChoices = companies.data.map((c) => ({ id: c.id, name: c.name }))
   if (project.companyId && project.companyName && !companyChoices.some((c) => c.id === project.companyId)) {
     companyChoices.unshift({ id: project.companyId, name: project.companyName })
@@ -1024,6 +1033,7 @@ async function Details({ project, can, members }: Context) {
               members={members.choices}
               companies={companyChoices}
               financial={financial}
+              projectTypes={types.data.filter((t) => !t.archived || t.id === project.projectTypeId).map((t) => ({ id: t.id, name: t.name }))}
             />
           ) : (
             <p className="whitespace-pre-wrap text-sm">{project.description ?? 'No description.'}</p>
@@ -1039,3 +1049,111 @@ async function Details({ project, can, members }: Context) {
   )
 }
 
+
+/** Cost and hours against the budget, for the whole project or this period of a retainer. */
+function BudgetCard({ budget }: { budget: Awaited<ReturnType<typeof call<typeof projectBudget>>> }) {
+  const tone = (percent: number | null) => (percent === null ? 'accent' : percent >= 100 ? 'critical' : percent >= 80 ? 'caution' : 'positive')
+  const when = budget.window ? `${formatDate(budget.window.from)} – ${formatDate(budget.window.to)}` : 'Over the whole project.'
+  if (budget.level === 'none') {
+    return (
+      <Card>
+        <CardHeader title="Budget" description="No budget set. Add a cost or hours budget in Details to be warned at 80% and 100%." />
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <CardHeader title="Budget" description={when} />
+      <div className="grid gap-6 p-5 sm:grid-cols-2">
+        {budget.budgetMinor !== null && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="font-medium">Cost</span>
+              <span className="tabular-nums">
+                {money(budget.costMinor, budget.currency)} of {money(budget.budgetMinor, budget.currency)} ({budget.costPercent}%)
+              </span>
+            </div>
+            <Meter value={budget.costPercent ?? 0} tone={tone(budget.costPercent)} label="Cost against budget" />
+            <p className="text-xs text-muted">
+              {money(budget.labourCostMinor, budget.currency)} time · {money(budget.expenseCostMinor, budget.currency)} expenses
+              {budget.fixedCostMinor > 0 ? ` · ${money(budget.fixedCostMinor, budget.currency)} fixed fees` : ''}
+            </p>
+          </div>
+        )}
+        {budget.budgetHours !== null && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="font-medium">Hours</span>
+              <span className="tabular-nums">
+                {budget.loggedHours} h of {budget.budgetHours} h ({budget.hoursPercent}%)
+              </span>
+            </div>
+            <Meter value={budget.hoursPercent ?? 0} tone={tone(budget.hoursPercent)} label="Hours against budget" />
+            <p className="text-xs text-muted">{budget.hoursSource === 'estimates' ? "Against the tasks' estimates." : 'Against the hours budget.'}</p>
+          </div>
+        )}
+      </div>
+      {budget.level === 'over' && (
+        <div className="px-5 pb-5">
+          <Alert tone="error">Over budget. Raise a revision, renegotiate, or decide to absorb it.</Alert>
+        </div>
+      )}
+      {budget.level === 'warning' && (
+        <div className="px-5 pb-5">
+          <Alert tone="warning">Past 80% of the budget. Act while there is still room.</Alert>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/** The quotes for this project: alternatives side by side, what was accepted, and a new one. */
+async function Quotes({ project, can }: Context) {
+  const quotes = await call(quoteList, { projectId: project.id, limit: 100 })
+  const groups = new Map<string, typeof quotes.data>()
+  for (const quote of quotes.data) {
+    const key = quote.optionGroupId ?? quote.id
+    groups.set(key, [...(groups.get(key) ?? []), quote])
+  }
+  return (
+    <Card>
+      <CardHeader
+        title="Quotes"
+        description="The first one accepted sets the project's price; each one after adds to it as a revision. Recurring lines become billing schedules."
+        action={
+          can('quote:create') && project.companyId && !project.archivedAt ? (
+            <Link href={`/quotes/new?projectId=${project.id}`} className={buttonStyles({ size: 'sm' })}>New quote</Link>
+          ) : null
+        }
+      />
+      {quotes.data.length === 0 ? (
+        <EmptyState>No quotes for this project yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead>
+            <tr><Th>Quote</Th><Th>Status</Th><Th className="text-right">Total</Th></tr>
+          </thead>
+          <tbody>
+            {[...groups.values()].flatMap((group) =>
+              group.map((q, i) => (
+                <Tr key={q.id}>
+                  <Td>
+                    <Link href={`/quotes/${q.id}`} className="font-medium hover:underline">{q.number ?? 'Draft'} · {q.title}</Link>
+                    {q.optionLabel && (
+                      <div className="text-xs text-muted">
+                        {q.optionLabel}
+                        {i === 0 && group.length > 1 ? ` — one of ${group.length} options` : ''}
+                      </div>
+                    )}
+                  </Td>
+                  <Td><QuoteStatusBadge status={q.status} /></Td>
+                  <Td className="whitespace-nowrap text-right tabular-nums">{money(q.totalMinor, q.currency)}</Td>
+                </Tr>
+              )),
+            )}
+          </tbody>
+        </Table>
+      )}
+    </Card>
+  )
+}

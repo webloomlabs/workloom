@@ -9,10 +9,14 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   // procedure that checks the permission again.
   const items = [
     { href: '/settings/organization', label: 'Organization', permission: 'organization:read' },
+    { href: '/settings/numbering', label: 'Numbering', permission: 'organization:read' },
     { href: '/settings/members', label: 'Members', permission: 'member:read' },
     { href: '/settings/rates', label: 'Rates', permission: 'report:readFinancial' },
     { href: '/settings/services', label: 'Services', permission: 'service:read' },
+    { href: '/settings/project-types', label: 'Project types', permission: 'project:read' },
     { href: '/settings/tax-rates', label: 'Tax rates', permission: 'taxRate:read' },
+    { href: '/settings/expense-categories', label: 'Expense categories', permission: 'expense:read' },
+    { href: '/settings/telegram', label: 'Telegram', permission: 'expense:create' },
     { href: '/settings/api-keys', label: 'API keys', permission: 'apiKey:read' },
     { href: '/settings/webhooks', label: 'Webhooks', permission: 'webhook:read' },
     { href: '/settings/audit-log', label: 'Audit log', permission: 'auditLog:read' },

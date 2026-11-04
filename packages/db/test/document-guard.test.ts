@@ -118,11 +118,11 @@ describe('the quote guard', () => {
     // never delete audit entries -- so today no one can remove an organization
     // (see S7a notes). Granting that one right here isolates what this test is
     // about: the quote guard itself does not stand in the way.
-    await admin.query('grant delete on audit_logs to workloom_app_test')
+    await admin.query('grant delete on audit_logs, audit_seals to workloom_app_test')
     try {
       await admin.query(`delete from organization where id = $1`, [org])
     } finally {
-      await admin.query('revoke delete on audit_logs from workloom_app_test')
+      await admin.query('revoke delete on audit_logs, audit_seals from workloom_app_test')
     }
     const { rowCount } = await admin.query(`select 1 from quotes where id = $1`, [quote])
     expect(rowCount).toBe(0)

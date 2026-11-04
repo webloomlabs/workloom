@@ -35,6 +35,8 @@ import {
   taskDependencyAdd,
   taskDependencyRemove,
   taskUpdate,
+  projectTypeCreate,
+  projectTypeUpdate,
 } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -116,6 +118,10 @@ export async function createProjectAction(_: ActionState, form: FormData): Promi
       budgetMinor: money(form, 'budget', currency || text(form, 'baseCurrency')) ?? null,
       contractValueMinor: money(form, 'contractValue', currency || text(form, 'baseCurrency')) ?? null,
       ownerId: nullable(form, 'ownerId'),
+      projectTypeId: text(form, 'projectTypeId') || null,
+      ...(text(form, 'billingModel') ? { billingModel: text(form, 'billingModel') as never } : {}),
+      ...(text(form, 'budgetPeriod') ? { budgetPeriod: text(form, 'budgetPeriod') as never } : {}),
+      budgetHours: text(form, 'budgetHours') || null,
     })
   } catch (error) {
     return failed(error, form)
@@ -139,6 +145,10 @@ export async function updateProjectAction(_: ActionState, form: FormData): Promi
       budgetMinor: money(form, 'budget', currency),
       contractValueMinor: money(form, 'contractValue', currency),
       ownerId: nullable(form, 'ownerId'),
+      projectTypeId: nullable(form, 'projectTypeId'),
+      ...(text(form, 'billingModel') ? { billingModel: text(form, 'billingModel') as never } : {}),
+      ...(text(form, 'budgetPeriod') ? { budgetPeriod: text(form, 'budgetPeriod') as never } : {}),
+      ...(form.has('budgetHours') ? { budgetHours: text(form, 'budgetHours') || null } : {}),
     })
   } catch (error) {
     return failed(error, form)
@@ -496,11 +506,12 @@ export async function deleteRevisionAction(form: FormData): Promise<void> {
  * sent as null and the procedure clears it.
  */
 function stageWorth(form: FormData, currency: string) {
-  const percent = text(form, 'basis') === 'percent'
+  const basis = (['percent', 'balance'].includes(text(form, 'basis')) ? text(form, 'basis') : 'amount') as 'percent' | 'amount' | 'balance'
   return {
-    basis: (percent ? 'percent' : 'amount') as 'percent' | 'amount',
-    percent: percent ? text(form, 'percent') : null,
-    amountMinor: percent ? null : (money(form, 'amount', currency) ?? 0),
+    basis,
+    percent: basis === 'percent' ? text(form, 'percent') : null,
+    amountMinor: basis === 'amount' ? (money(form, 'amount', currency) ?? 0) : null,
+    ...(text(form, 'invoiceStyle') ? { invoiceStyle: text(form, 'invoiceStyle') as 'single_line' | 'statement' } : {}),
   }
 }
 
@@ -568,6 +579,7 @@ export async function releaseStageAction(_: ActionState, form: FormData): Promis
       contactId: text(form, 'contactId') || null,
       taxRateId: text(form, 'taxRateId') || null,
       ...(text(form, 'paymentTermsDays') ? { paymentTermsDays: Number(text(form, 'paymentTermsDays')) } : {}),
+      ...(text(form, 'dueLabel') ? { dueLabel: text(form, 'dueLabel') } : {}),
     })
   } catch (error) {
     return failed(error, form)
@@ -576,4 +588,34 @@ export async function releaseStageAction(_: ActionState, form: FormData): Promis
   revalidatePath('/invoices')
   // The next thing anyone does is read the draft, so go there.
   redirect(`/invoices/${raised.invoiceId}`)
+}
+
+export async function createProjectTypeAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    await call(projectTypeCreate, {
+      name: text(form, 'name'),
+      defaultBillingModel: (text(form, 'defaultBillingModel') || undefined) as never,
+      defaultBudgetPeriod: (text(form, 'defaultBudgetPeriod') || undefined) as never,
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/settings/project-types')
+  return { status: 'success', message: 'Added.' }
+}
+
+export async function updateProjectTypeAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    await call(projectTypeUpdate, {
+      id: id(form),
+      name: text(form, 'name') || undefined,
+      defaultBillingModel: (text(form, 'defaultBillingModel') || undefined) as never,
+      defaultBudgetPeriod: (text(form, 'defaultBudgetPeriod') || undefined) as never,
+      archived: text(form, 'archived') === 'true',
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/settings/project-types')
+  return { status: 'success', message: 'Saved.' }
 }

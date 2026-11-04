@@ -1,4 +1,5 @@
-import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * Authentication and organization membership.
@@ -122,8 +123,55 @@ export const organization = pgTable(
     paymentInstructions: text('payment_instructions'),
     /** Days from issue to due, unless an invoice says otherwise. */
     paymentTermsDays: integer('payment_terms_days').notNull().default(14),
+
+    /**
+     * The month the financial year starts in: 1 for January, 4 for a
+     * Sri Lankan or UK April year. Numbering resets and the tax pack use it.
+     */
+    fiscalYearStartMonth: integer('fiscal_year_start_month').notNull().default(1),
+    /**
+     * The printed logo, as a key in file storage -- never a URL, so rendering a
+     * document cannot be made to fetch something of someone else's choosing.
+     * Better Auth's `logo` column above is left to Better Auth.
+     */
+    logoKey: text('logo_key'),
+    /** The accent on printed documents, as "#0b8a5e". */
+    brandColor: text('brand_color'),
+    /**
+     * How to pay, as ordered label/value rows printed in a box: Account Name,
+     * Account Number, Bank, Branch. Validated in core; at most eight rows.
+     */
+    paymentDetails: jsonb('payment_details').$type<Array<{ label: string; value: string }>>().notNull().default([]),
+    /** What a new invoice or quote says unless someone writes otherwise. */
+    invoiceNotesDefault: text('invoice_notes_default'),
+    invoiceTermsDefault: text('invoice_terms_default'),
+    quoteTermsDefault: text('quote_terms_default'),
+    /** The last line of every printed page: "This is a computer-generated invoice…". */
+    documentFooter: text('document_footer'),
+    /**
+     * Whether tax paid on expenses is claimed back. When it is not -- an agency
+     * below the VAT threshold -- that tax is part of what the expense cost.
+     */
+    reclaimsInputTax: boolean('reclaims_input_tax').notNull().default(true),
+    /**
+     * Whether receipts are sent to Claude to be read, from Telegram or the
+     * expense form. Off until someone turns it on: it sends the receipt to
+     * Anthropic, and the installation needs an API key for it.
+     */
+    receiptReadingEnabled: boolean('receipt_reading_enabled').notNull().default(false),
+    /**
+     * The books are closed up to and including this day: invoices issued,
+     * payments received, and expenses incurred on or before it can no longer
+     * be added, changed, or removed. Enforced by triggers, not only here.
+     */
+    booksLockedThrough: date('books_locked_through', { mode: 'string' }),
   },
-  (t) => [uniqueIndex('organization_slug_key').on(t.slug)],
+  (t) => [
+    uniqueIndex('organization_slug_key').on(t.slug),
+    check('organization_fiscal_year_start_month_check', sql`${t.fiscalYearStartMonth} between 1 and 12`),
+    check('organization_brand_color_check', sql`${t.brandColor} ~ '^#[0-9a-f]{6}$'`),
+    check('organization_payment_details_check', sql`jsonb_typeof(${t.paymentDetails}) = 'array' and jsonb_array_length(${t.paymentDetails}) <= 8`),
+  ],
 )
 
 export const member = pgTable(

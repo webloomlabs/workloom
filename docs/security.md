@@ -95,6 +95,27 @@ all. This is a deliberate trade and is documented as one.
 - Neither image contains a `.env`; `.dockerignore` keeps it out of the build
   context entirely.
 
+## The Telegram bot
+
+- **The bot decides the organization.** Each organization brings its own bot;
+  an update is stored only for the organization whose bot received it — by the
+  webhook's secret header (compared in constant time, per organization) or by
+  that bot's own poll. The right secret at another organization's address is
+  refused.
+- **A stranger can do nothing.** Only a Telegram account linked by a one-time
+  code (hashed at rest, ten minutes, single use) is acted on; everyone else is
+  told how to link. A link dies with the person's membership, and can be
+  revoked by them or by an admin.
+- **Every change is made as the person**, through the same procedures as the
+  web, with their permissions — a Confirm button is checked against whoever
+  pressed it — and audited with `source = telegram`.
+- **The bot token** is encrypted like webhook secrets, and kept out of every
+  error and log line.
+- **Receipts** are held to the same rules as uploads: 10 MB, type decided by the
+  bytes. Reading them with AI sends them to the configured provider
+  (Anthropic, OpenAI, Google, or Groq); it is off until an owner or admin turns
+  it on, and needs that provider's key on the installation.
+
 ## Webhook delivery
 
 Signed Stripe-style: `Workloom-Signature: t=<unix>,v1=<hmac_sha256(secret,
@@ -116,6 +137,24 @@ signed URL issued after a permission check, served as an attachment with
 application role has `UPDATE` and `DELETE` revoked on `audit_logs`: an audit log
 the application can rewrite is not an audit log. Every entry carries the request
 id that also appears on the API response.
+
+Since S20:
+
+- `TRUNCATE` is revoked too, on the log and on its seals.
+- Creating or deleting a money record (an invoice issued or a draft deleted, a
+  payment, an expense) keeps the **whole record** on the entry (`snapshot`), so
+  a deletion leaves behind what was there.
+- Every entry records the **door it came in by** (`source`: web, API,
+  Telegram, worker, system).
+- Each finished day (UTC) is **sealed**: a SHA-256 over that day's entries,
+  chained to the day before (`audit_seals`, written by the worker's hourly
+  pass). Someone with direct database access could still rewrite an entry;
+  `auditSeal.verify` would then report the first day that no longer matches,
+  or a past day that has gained entries since it was sealed.
+- **The books can be closed** through a date (`books.lock`, owners and admins,
+  with a reason). Triggers then refuse to add, change, or remove invoices,
+  payments, and expenses dated on or before it, or to move one into or out of
+  the closed period. Reopening is audited with its reason.
 
 ## Rate limiting
 

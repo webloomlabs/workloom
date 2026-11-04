@@ -141,7 +141,17 @@ export const projectRevisions = pgTable(
  * invoice issues; keeping the link on the child dodges the freeze entirely.
  */
 
-export const BILLING_STAGE_BASIS = ['amount', 'percent'] as const
+/**
+ * What a stage bills: a fixed amount, a share of the contract, or the balance
+ * -- whatever the contract has left once every other stage is counted.
+ */
+export const BILLING_STAGE_BASIS = ['amount', 'percent', 'balance'] as const
+/**
+ * How a stage's invoice reads: one line for the stage, or a statement of the
+ * whole project with every earlier stage's invoice taken off -- the final
+ * invoice an agency sends at launch.
+ */
+export const BILLING_STAGE_INVOICE_STYLES = ['single_line', 'statement'] as const
 export const BILLING_STAGE_STATUSES = ['pending', 'invoiced', 'cancelled'] as const
 
 export const projectBillingStages = pgTable(
@@ -156,6 +166,7 @@ export const projectBillingStages = pgTable(
     basis: text('basis').notNull().default('amount'),
     percent: numeric('percent', { precision: 7, scale: 4 }),
     amountMinor: bigint('amount_minor', { mode: 'number' }),
+    invoiceStyle: text('invoice_style').notNull().default('single_line'),
     /** Part of the foreign key to the project: never another currency. */
     currency: text('currency').notNull(),
 
@@ -181,6 +192,9 @@ export const projectBillingStages = pgTable(
     uniqueIndex('project_billing_stages_project_position_key').on(t.organizationId, t.projectId, t.position),
     /** One stage per invoice: releasing the same stage twice is impossible, not merely refused. */
     uniqueIndex('project_billing_stages_invoice_key').on(t.organizationId, t.invoiceId),
+    /** One balance per plan: two stages cannot each be "whatever is left". */
+    uniqueIndex('project_billing_stages_one_balance_key').on(t.organizationId, t.projectId).where(sql`${t.basis} = 'balance' and ${t.status} <> 'cancelled'`),
+    check('project_billing_stages_invoice_style_check', sql`${t.invoiceStyle} in ${oneOf(BILLING_STAGE_INVOICE_STYLES)}`),
     index('project_billing_stages_organization_project_status_idx').on(t.organizationId, t.projectId, t.status),
     foreignKey({
       name: 'project_billing_stages_project_fk',

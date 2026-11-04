@@ -1,8 +1,10 @@
 'use client'
 
-import { Button, Field, Input, Select } from '@workloom/ui'
+import { Button, Field, Input, Select, buttonStyles } from '@workloom/ui'
 import { useActionState, useState } from 'react'
 import {
+  acceptQuoteAction,
+  emailQuoteAction,
   addQuoteLineAction,
   answerQuoteAction,
   createQuoteAction,
@@ -170,12 +172,29 @@ export function ServiceControls({ service, taxRates, canEdit, canArchive, archiv
 
 // Quotes
 
-export function CreateQuoteForm({ companies, companyId, deal, currency, validUntil }: { companies: Choice[]; companyId: string | null; deal: { id: string; name: string; companyName: string } | null; currency: string; validUntil: string }) {
+export function CreateQuoteForm({
+  companies,
+  companyId,
+  deal,
+  currency,
+  validUntil,
+  project = null,
+}: {
+  companies: Choice[]
+  companyId: string | null
+  deal: { id: string; name: string; companyName: string } | null
+  currency: string
+  validUntil: string
+  /** The project it prices, when started from one. */
+  project?: { id: string; name: string } | null
+}) {
   const [state, action] = useActionState(createQuoteAction, idle)
   return (
     <form action={action} className="space-y-5" noValidate>
       <FormMessage state={state} />
       {deal && <input type="hidden" name="dealId" value={deal.id} />}
+      {project && <input type="hidden" name="projectId" value={project.id} />}
+      {project && <p className="text-sm text-muted">For the project <span className="font-medium text-ink">{project.name}</span>. Accepting it adds to the project's contract.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField state={state} name="title" label="Title" required placeholder="Website rebuild" defaultValue={deal?.name} />
         {deal ? (
@@ -219,8 +238,8 @@ export function QuoteDetailsForm({
   quote: QuoteDetails
   contacts: Choice[]
   save?: (state: ActionState, form: FormData) => Promise<ActionState>
-  /** An invoice's payment terms, in place of a quote's valid-until date. */
-  terms?: { label: string; value: string }
+  /** An invoice's payment terms, in place of a quote's valid-until date, and when it is due in words. */
+  terms?: { label: string; value: string; dueLabel?: string | null }
 }) {
   const [state, action] = useActionState(save, idle)
   const [discountType, setDiscountType] = useState(quote.discountPercent !== null ? 'percent' : quote.discountAmount !== null ? 'amount' : 'none')
@@ -235,7 +254,17 @@ export function QuoteDetailsForm({
         <SelectField state={state} name="contactId" label="Contact" defaultValue={quote.contactId} empty="No contact" options={choices(contacts)} />
         <SelectField state={state} name="taxMode" label="Tax" defaultValue={quote.taxMode} options={options(TAX_MODE_LABELS)} />
         {terms ? (
-          <TextField state={state} name="paymentTermsDays" label={terms.label} defaultValue={terms.value} hint="The due date is this many days after issuing." />
+          <>
+            <TextField state={state} name="paymentTermsDays" label={terms.label} defaultValue={terms.value} hint="The due date is this many days after issuing." />
+            <TextField
+              state={state}
+              name="dueLabel"
+              label="Due on an event instead"
+              defaultValue={terms.dueLabel ?? null}
+              placeholder="At launch"
+              hint="Prints in place of a date. Give it a date later, once the event has one."
+            />
+          </>
         ) : (
           <TextField state={state} name="validUntil" label="Valid until" type="date" defaultValue={quote.validUntil} />
         )}
@@ -273,6 +302,8 @@ export function AddLineForm({
   services,
   taxRates,
   add = addQuoteLineAction,
+  periods = false,
+  intervals = false,
 }: {
   documentId: string
   currency: string
@@ -280,6 +311,10 @@ export function AddLineForm({
   taxRates: TaxChoice[]
   /** Quotes and invoices differ only in which procedure the form calls. */
   add?: (state: ActionState, form: FormData) => Promise<ActionState>
+  /** Offer a service period: invoice lines can say which month they pay for. */
+  periods?: boolean
+  /** Offer how often a recurring line recurs: quote lines become billing schedules. */
+  intervals?: boolean
 }) {
   const [state, action] = useActionState(add, idle)
   return (
@@ -290,6 +325,37 @@ export function AddLineForm({
         <SelectField state={state} id="add-serviceId" name="serviceId" label="Service" empty="None" options={services.map((s) => ({ value: s.id, label: `${s.name}${s.hint}` }))} />
         <TextField state={state} id="add-description" name="description" label="Description" placeholder="From the service if blank" />
       </div>
+      <div className="grid gap-3 sm:grid-cols-[3fr_2fr]">
+        <TextField state={state} id="add-detail" name="detail" label="Detail (optional)" placeholder="Additional scope" hint="A quieter second line under the description." />
+        <SelectField
+          state={state}
+          id="add-billingType"
+          name="billingType"
+          label="Billing"
+          defaultValue="default"
+          options={[{ value: 'default', label: "Service's default" }, { value: 'one_off', label: 'One-time' }, { value: 'recurring', label: 'Recurring' }, { value: '', label: 'Not shown' }]}
+        />
+      </div>
+      {periods && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField state={state} id="add-periodStart" name="periodStart" label="Period from (optional)" type="date" />
+          <TextField state={state} id="add-periodEnd" name="periodEnd" label="Period to" type="date" />
+        </div>
+      )}
+      {intervals && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField state={state} id="add-intervalCount" name="intervalCount" label="If recurring: every" type="number" defaultValue="1" />
+          <SelectField
+            state={state}
+            id="add-intervalUnit"
+            name="intervalUnit"
+            label="Period"
+            defaultValue="month"
+            options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'quarter', label: 'Quarter' }, { value: 'year', label: 'Year' }]}
+            hint="Accepting the quote sets up a billing schedule for it, paused until launch."
+          />
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1fr_2fr_1fr_2fr]">
         <TextField state={state} id="add-quantity" name="quantity" label="Qty" defaultValue="1" />
         <TextField state={state} id="add-unitAmount" name="unitAmount" label={`Unit price (${currency})`} placeholder="From the service" />
@@ -314,6 +380,10 @@ export function AddLineForm({
 export type EditableLine = {
   id: string
   description: string
+  detail: string | null
+  billingType: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
   quantity: string
   /** Decimal string in the quote's currency. */
   unitAmount: string
@@ -328,6 +398,8 @@ export function LineControls({
   taxRates,
   save = updateQuoteLineAction,
   remove = removeQuoteLineAction,
+  periods = false,
+  editable = true,
 }: {
   documentId: string
   currency: string
@@ -335,15 +407,20 @@ export function LineControls({
   taxRates: TaxChoice[]
   save?: (state: ActionState, form: FormData) => Promise<ActionState>
   remove?: (form: FormData) => Promise<void>
+  periods?: boolean
+  /** False for a line that can only be removed, such as a deduction. */
+  editable?: boolean
 }) {
   const [state, action] = useActionState(save, idle)
   const [open, setOpen] = useState(false)
   const prefix = `line-${line.id}`
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
-      <Button type="button" size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Edit ${line.description}`}>
-        {open ? 'Close' : 'Edit'}
-      </Button>
+      {editable && (
+        <Button type="button" size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Edit ${line.description}`}>
+          {open ? 'Close' : 'Edit'}
+        </Button>
+      )}
       <form action={remove}>
         <input type="hidden" name="id" value={line.id} />
         <input type="hidden" name="documentId" value={documentId} />
@@ -366,6 +443,25 @@ export function LineControls({
             defaultValue={line.taxRateId ?? ''}
             options={[{ value: '', label: 'No tax' }, ...taxRates.map((t) => ({ value: t.id, label: taxLabel(t) }))]}
           />
+          <div className="sm:col-span-2 lg:col-span-3">
+            <TextField state={state} id={`${prefix}-detail`} name="detail" label="Detail" defaultValue={line.detail} />
+          </div>
+          <div className="lg:col-span-2">
+            <SelectField
+              state={state}
+              id={`${prefix}-billingType`}
+              name="billingType"
+              label="Billing"
+              defaultValue={line.billingType ?? ''}
+              options={[{ value: 'one_off', label: 'One-time' }, { value: 'recurring', label: 'Recurring' }, { value: '', label: 'Not shown' }]}
+            />
+          </div>
+          {periods && (
+            <>
+              <TextField state={state} id={`${prefix}-periodStart`} name="periodStart" label="Period from" type="date" defaultValue={line.periodStart ?? null} />
+              <TextField state={state} id={`${prefix}-periodEnd`} name="periodEnd" label="Period to" type="date" defaultValue={line.periodEnd ?? null} />
+            </>
+          )}
           <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-5">
             <SubmitButton size="sm" pendingLabel="Saving…">Save line</SubmitButton>
             <FormMessage state={state} />
@@ -392,6 +488,9 @@ export function SendQuoteForm({ quoteId, currency, baseCurrency }: { quoteId: st
       {foreign && (
         <TextField state={state} name="exchangeRate" label={`1 ${currency} in ${baseCurrency}`} hint="Fixed on the quote when it is sent." placeholder="1.52" />
       )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="email" /> Email it to the client with its PDF
+      </label>
       <div className="flex flex-wrap items-center gap-3">
         <SubmitButton pendingLabel="Sending…">Mark as sent</SubmitButton>
         <FormMessage state={state} />
@@ -400,17 +499,19 @@ export function SendQuoteForm({ quoteId, currency, baseCurrency }: { quoteId: st
   )
 }
 
-export function AnswerControls({ quoteId }: { quoteId: string }) {
+export function AnswerControls({ quoteId, declineOnly = false }: { quoteId: string; declineOnly?: boolean }) {
   const [state, action] = useActionState(answerQuoteAction, idle)
   const [declining, setDeclining] = useState(false)
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <form action={action}>
-          <input type="hidden" name="id" value={quoteId} />
-          <input type="hidden" name="answer" value="accept" />
-          <SubmitButton size="sm" pendingLabel="Saving…">Accepted</SubmitButton>
-        </form>
+        {!declineOnly && (
+          <form action={action}>
+            <input type="hidden" name="id" value={quoteId} />
+            <input type="hidden" name="answer" value="accept" />
+            <SubmitButton size="sm" pendingLabel="Saving…">Accepted</SubmitButton>
+          </form>
+        )}
         <Button type="button" size="sm" variant="secondary" aria-expanded={declining} onClick={() => setDeclining(!declining)}>Declined…</Button>
       </div>
       {declining && (
@@ -445,6 +546,111 @@ export function DeleteDraftButton({ quoteId }: { quoteId: string }) {
     >
       <input type="hidden" name="id" value={quoteId} />
       <Button type="submit" size="sm" variant="ghost">Delete draft</Button>
+    </form>
+  )
+}
+
+/**
+ * Accepting a quote: which project it is for, and how it is billed. What it
+ * will do is said before it is done.
+ */
+export function AcceptQuoteForm({
+  quoteId,
+  currency,
+  projects,
+  quoteProject,
+  oneTime,
+  recurring,
+}: {
+  quoteId: string
+  currency: string
+  /** The client's projects, when the quote is not already for one. */
+  projects: Choice[]
+  quoteProject: { id: string; name: string; contractSet: boolean } | null
+  /** The one-time part, as a decimal string. */
+  oneTime: string
+  /** "3,000.00 a month", one per recurring part. */
+  recurring: string[]
+}) {
+  const [state, action] = useActionState(acceptQuoteAction, idle)
+  const [target, setTarget] = useState(quoteProject ? quoteProject.id : projects.length > 0 ? '' : 'new')
+  const [preset, setPreset] = useState('none')
+  const existing = quoteProject ?? null
+  const willSetContract = target === 'new' || (existing ? !existing.contractSet : target !== '' && target !== 'none')
+  return (
+    <form action={action} className="space-y-4" noValidate>
+      <FormMessage state={state} />
+      <input type="hidden" name="id" value={quoteId} />
+      {existing ? (
+        <input type="hidden" name="target" value={existing.id} />
+      ) : (
+        <Field id="accept-target" label="The project it is for">
+          <Select id="accept-target" name="target" value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
+            <option value="new">Start a new project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            <option value="none">Not for a project</option>
+          </Select>
+        </Field>
+      )}
+      {target === 'new' && <TextField state={state} id="accept-projectName" name="projectName" label="Project name" placeholder="From the quote's title" />}
+      {target !== 'none' && (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+          <li>{willSetContract ? `Sets the contract value to ${oneTime} ${currency}.` : `Adds ${oneTime} ${currency} to the contract, as an accepted revision.`}</li>
+          {recurring.map((r) => (
+            <li key={r}>Sets up a billing schedule of {r}, paused until you resume it at launch.</li>
+          ))}
+        </ul>
+      )}
+      {target !== 'none' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field id="accept-preset" label="Billing plan">
+            <Select id="accept-preset" name="stagePreset" value={preset} onChange={(e) => setPreset(e.currentTarget.value)}>
+              <option value="none">Leave as it is</option>
+              <option value="deposit_balance">A deposit, then the balance at launch</option>
+              <option value="halves">Half now, half at the end</option>
+            </Select>
+          </Field>
+          {preset === 'deposit_balance' && (
+            <TextField state={state} id="accept-deposit" name="deposit" label={`Deposit (${currency}, or a % like 40%)`} placeholder="26,000.00" />
+          )}
+        </div>
+      )}
+      {preset !== 'none' && target !== 'none' && (
+        <p className="text-xs text-muted">The last stage invoices as a statement: the whole project, the deposit taken off, and the balance due.</p>
+      )}
+      <SubmitButton pendingLabel="Accepting…">Accept the quote</SubmitButton>
+    </form>
+  )
+}
+
+/** Download, email, and offer an alternative: what can be done with a sent quote. */
+export function QuoteDocumentControls({ quoteId, canEmail, suggestedEmail }: { quoteId: string; canEmail: boolean; suggestedEmail: string | null }) {
+  const [state, action] = useActionState(emailQuoteAction, idle)
+  return (
+    <div className="space-y-3">
+      <a href={`/quotes/${quoteId}/pdf`} className={buttonStyles({ variant: 'secondary', size: 'sm' })}>Download PDF</a>
+      {canEmail && (
+        <form action={action} className="space-y-2" noValidate>
+          <input type="hidden" name="id" value={quoteId} />
+          <TextField state={state} id="quote-email-to" name="to" label="Email it to" defaultValue={suggestedEmail} placeholder="client@example.com" />
+          <div className="flex flex-wrap items-center gap-3">
+            <SubmitButton size="sm" variant="secondary" pendingLabel="Sending…">Send the quote</SubmitButton>
+            <FormMessage state={state} />
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
+export function OfferAlternativeButton({ quoteId }: { quoteId: string }) {
+  return (
+    <form action={duplicateQuoteAction}>
+      <input type="hidden" name="id" value={quoteId} />
+      <input type="hidden" name="asOption" value="1" />
+      <Button type="submit" size="sm" variant="secondary">Offer an alternative</Button>
     </form>
   )
 }

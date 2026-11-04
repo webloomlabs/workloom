@@ -1,11 +1,15 @@
 'use server'
 
+import { installReceiptReader } from '@workloom/ai'
 import { AmountFormatError, parseAmount } from '@workloom/core'
-import { expenseCreate, expenseDelete, expenseUpdate, invoiceBillExpenses } from '@workloom/core/modules'
+import { readReceiptFor } from '@workloom/core/modules'
+import { sniffContentType } from '@workloom/storage'
+import { expenseCreateFromReceipt, expenseCategoryCreate, expenseCategoryUpdate, expenseConfirm, expenseCreate, expenseDelete, expenseReceiptDelete, expenseReceiptUpload, expenseUpdate, invoiceBillExpenses } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { call } from '../server/procedures.ts'
+import { requireViewer } from '../server/viewer.ts'
 import { toActionError } from './errors.ts'
 import type { ActionState } from './state.ts'
 
@@ -50,7 +54,10 @@ function fields(form: FormData, currency: string) {
   return {
     description: text(form, 'description'),
     supplier: text(form, 'supplier'),
-    category: (text(form, 'category') || 'other') as never,
+    category: text(form, 'category') || 'other',
+    paymentMethod: (text(form, 'paymentMethod') || null) as never,
+    paidOn: text(form, 'paidOn') || null,
+    reimbursable: checked(form, 'reimbursable'),
     ...(text(form, 'incurredOn') ? { incurredOn: text(form, 'incurredOn') } : {}),
     projectId: text(form, 'projectId') || null,
     companyId: text(form, 'companyId') || null,
@@ -65,22 +72,103 @@ function fields(form: FormData, currency: string) {
   }
 }
 
+/** The files picked in a receipts input. A browser posts an empty file when none was chosen. */
+const receiptFiles = (form: FormData) => form.getAll('receipts').filter((f): f is File => f instanceof File && f.size > 0)
+
+/** The currency to read amounts in: the expense's own, else the organization's base currency. */
+const currencyOf = (form: FormData) => (text(form, 'currency') || text(form, 'baseCurrency')).toUpperCase()
+
 export async function createExpenseAction(_: ActionState, form: FormData): Promise<ActionState> {
   const returnTo = text(form, 'returnTo')
+  let created: { id: string }
   try {
-    const currency = text(form, 'currency').toUpperCase() || 'AUD'
-    await call(expenseCreate, { ...fields(form, currency), ...(text(form, 'currency') ? { currency } : {}) })
+    const currency = currencyOf(form)
+    created = await call(expenseCreate, {
+      ...fields(form, currency),
+      amountIncludesTax: text(form, 'amountMode') === 'gross',
+      ...(text(form, 'currency') ? { currency } : {}),
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  // The expense is recorded; a receipt that is refused is reported on its page, not lost with the form.
+  const refused: string[] = []
+  for (const file of receiptFiles(form)) {
+    try {
+      await call(expenseReceiptUpload, { expenseId: created.id, file })
+    } catch {
+      refused.push(file.name)
+    }
+  }
+  revalidatePath('/expenses')
+  redirect(refused.length > 0 ? `/expenses/${created.id}?refused=${encodeURIComponent(refused.join(', '))}` : returnTo || '/expenses')
+}
+
+/**
+ * A receipt in, a draft expense out: read by AI first when the
+ * organization has turned that on, then saved as a draft to check and confirm.
+ */
+export async function startFromReceiptAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const file = form.get('receipt')
+  if (!(file instanceof File) || file.size === 0) return { status: 'error', message: 'Choose a photo or PDF of the receipt.', fieldErrors: { receipt: 'Choose a file.' } }
+  let created: { expense: { id: string } }
+  try {
+    const viewer = await requireViewer()
+    installReceiptReader()
+    const bytes = Buffer.from(await file.arrayBuffer())
+    const type = sniffContentType(bytes)
+    // Reading happens before the expense is saved, outside its transaction; a failure leaves a blank draft.
+    const draft = type ? await readReceiptFor({ organizationId: viewer.organizationId, actor: viewer.actor, role: viewer.role as never, permissions: viewer.permissions }, { bytes, contentType: type }) : null
+    created = await call(expenseCreateFromReceipt, { file, draft, note: text(form, 'note') || null })
   } catch (error) {
     return failed(error, form)
   }
   revalidatePath('/expenses')
-  redirect(returnTo || '/expenses')
+  redirect(`/expenses/${created.expense.id}?fromReceipt=1`)
+}
+
+export async function confirmExpenseAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const expenseId = id(form)
+  try {
+    await call(expenseConfirm, { id: expenseId })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/expenses')
+  revalidatePath(`/expenses/${expenseId}`)
+  return { status: 'success', message: 'Confirmed.' }
+}
+
+export async function uploadReceiptsAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const expenseId = id(form)
+  const files = receiptFiles(form)
+  if (files.length === 0) return { status: 'error', message: 'Choose a photo or PDF of the receipt.' }
+  const duplicates: string[] = []
+  try {
+    for (const file of files) {
+      const stored = await call(expenseReceiptUpload, { expenseId, file })
+      if (stored.duplicateOf) duplicates.push(`${file.name} is also on ${stored.duplicateOf.number ?? stored.duplicateOf.description}`)
+    }
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath(`/expenses/${expenseId}`)
+  revalidatePath('/expenses')
+  return duplicates.length > 0
+    ? { status: 'success', message: `Attached. Check for a duplicate: ${duplicates.join('; ')}.` }
+    : { status: 'success', message: files.length === 1 ? 'Receipt attached.' : `${files.length} receipts attached.` }
+}
+
+export async function deleteReceiptAction(form: FormData): Promise<void> {
+  await call(expenseReceiptDelete, { id: id(form) })
+  revalidatePath(`/expenses/${id(form, 'expenseId')}`)
+  revalidatePath('/expenses')
 }
 
 export async function updateExpenseAction(_: ActionState, form: FormData): Promise<ActionState> {
   const expenseId = id(form)
   try {
-    await call(expenseUpdate, { id: expenseId, ...fields(form, text(form, 'currency').toUpperCase() || 'AUD') })
+    await call(expenseUpdate, { id: expenseId, ...fields(form, currencyOf(form)) })
   } catch (error) {
     return failed(error, form)
   }
@@ -114,4 +202,29 @@ export async function billExpensesAction(_: ActionState, form: FormData): Promis
   revalidatePath('/expenses')
   const { linesAdded } = result.rebilled
   return { status: 'success', message: linesAdded === 0 ? 'No unbilled expenses to add.' : `Rebilled ${linesAdded} expenses.` }
+}
+
+export async function createCategoryAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    await call(expenseCategoryCreate, { name: text(form, 'name'), taxTreatment: (text(form, 'taxTreatment') || 'deductible') as never })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/settings/expense-categories')
+  return { status: 'success', message: 'Category added.' }
+}
+
+export async function updateCategoryAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    await call(expenseCategoryUpdate, {
+      key: text(form, 'key'),
+      name: text(form, 'name') || undefined,
+      taxTreatment: (text(form, 'taxTreatment') || undefined) as never,
+      archived: text(form, 'archived') === 'true',
+    })
+  } catch (error) {
+    return failed(error, form)
+  }
+  revalidatePath('/settings/expense-categories')
+  return { status: 'success', message: 'Saved.' }
 }

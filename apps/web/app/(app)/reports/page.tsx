@@ -40,7 +40,10 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
         title="Reports"
         description={`${formatDate(revenue.from)} to ${formatDate(revenue.to)}`}
         actions={
-          <PeriodPicker from={revenue.from} to={revenue.to} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/reports/tax" className="text-sm font-medium hover:underline">Income tax pack</Link>
+            <PeriodPicker from={revenue.from} to={revenue.to} />
+          </div>
         }
       />
 

@@ -100,7 +100,9 @@ test('a quote is priced from the catalogue, sent, accepted, and duplicated', asy
   await expect(page.getByRole('button', { name: 'Edit Website design' })).toHaveCount(0)
   const sentUrl = page.url()
 
-  await page.getByRole('button', { name: 'Accepted' }).click()
+  // Accepted, for no project in particular: the quote is simply marked so.
+  await page.getByLabel('The project it is for').selectOption('none')
+  await page.getByRole('button', { name: 'Accept the quote' }).click()
   await expect(page.getByRole('status').filter({ hasText: /^Accepted/ })).toBeVisible()
 
   // Duplicated into a new draft to offer again.

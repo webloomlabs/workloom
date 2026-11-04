@@ -3,6 +3,8 @@
 import { AmountFormatError, parseAmount } from '@workloom/core'
 import {
   quoteAccept,
+  quoteEmail,
+  quoteGet,
   quoteCreate,
   quoteDecline,
   quoteDelete,
@@ -80,6 +82,14 @@ function amount(form: FormData, name: string, currency: string, options: { allow
     if (error instanceof AmountFormatError) throw new FieldError(name, error.message)
     throw error
   }
+}
+
+/** The billing select: "default" leaves it to the service, "" shows nothing. */
+function billingChoice(form: FormData): 'one_off' | 'recurring' | null | undefined {
+  if (!form.has('billingType')) return undefined
+  const value = String(form.get('billingType') ?? '')
+  if (value === 'default') return undefined
+  return value === 'one_off' || value === 'recurring' ? value : null
 }
 
 /** A tax select: "" for none, "default" to leave it to the service, or a tax rate's id. */
@@ -177,11 +187,13 @@ export async function createQuoteAction(_: ActionState, form: FormData): Promise
       ...(currency ? { currency } : {}),
       taxMode: (text(form, 'taxMode') || 'exclusive') as never,
       ...(text(form, 'validUntil') ? { validUntil: text(form, 'validUntil') } : {}),
+      projectId: text(form, 'projectId') || null,
     })
   } catch (error) {
     return failed(error, form)
   }
   revalidatePath('/quotes')
+  if (text(form, 'projectId')) revalidatePath(`/projects/${text(form, 'projectId')}`)
   redirect(quotePath(created.id))
 }
 
@@ -222,6 +234,9 @@ export async function addQuoteLineAction(_: ActionState, form: FormData): Promis
       id: quoteId,
       serviceId: text(form, 'serviceId') || null,
       description: text(form, 'description') || undefined,
+      detail: text(form, 'detail') || null,
+      billingType: billingChoice(form),
+      ...(form.has('intervalUnit') && text(form, 'intervalUnit') ? { intervalUnit: text(form, 'intervalUnit') as never, intervalCount: Number(text(form, 'intervalCount') || '1') } : {}),
       quantity: text(form, 'quantity') || '1',
       unitAmountMinor: amount(form, 'unitAmount', currency, { allowNegative: true }),
       discountPercent: text(form, 'discountPercent') || null,
@@ -243,6 +258,8 @@ export async function updateQuoteLineAction(_: ActionState, form: FormData): Pro
     await call(quoteLineUpdate, {
       id: id(form),
       description: text(form, 'description'),
+      ...(form.has('detail') ? { detail: text(form, 'detail') || null } : {}),
+      billingType: billingChoice(form),
       quantity: text(form, 'quantity'),
       unitAmountMinor: unitAmount,
       discountPercent: text(form, 'discountPercent') || null,
@@ -263,7 +280,7 @@ export async function removeQuoteLineAction(form: FormData): Promise<void> {
 export async function sendQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {
   const quoteId = id(form)
   try {
-    await call(quoteSend, { id: quoteId, ...(text(form, 'exchangeRate') ? { exchangeRate: text(form, 'exchangeRate') } : {}) })
+    await call(quoteSend, { id: quoteId, ...(text(form, 'exchangeRate') ? { exchangeRate: text(form, 'exchangeRate') } : {}), email: form.get('email') === 'on' })
   } catch (error) {
     return failed(error, form)
   }
@@ -285,7 +302,7 @@ export async function answerQuoteAction(_: ActionState, form: FormData): Promise
 }
 
 export async function duplicateQuoteAction(form: FormData): Promise<void> {
-  const copy = await call(quoteDuplicate, { id: id(form) })
+  const copy = await call(quoteDuplicate, { id: id(form), ...(form.get('asOption') ? { asOption: true } : {}) })
   revalidatePath('/quotes')
   redirect(quotePath(copy.id))
 }
@@ -294,4 +311,44 @@ export async function deleteQuoteAction(form: FormData): Promise<void> {
   await call(quoteDelete, { id: id(form) })
   revalidatePath('/quotes')
   redirect('/quotes')
+}
+
+export async function acceptQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const quoteId = id(form)
+  let projectId: string | null = null
+  try {
+    const target = text(form, 'target')
+    const deposit = text(form, 'deposit')
+    const preset = (text(form, 'stagePreset') || 'none') as 'none' | 'deposit_balance' | 'halves'
+    const quote = await call(quoteGet, { id: quoteId })
+    const result = await call(quoteAccept, {
+      id: quoteId,
+      ...(target === 'new' ? { createProject: { name: text(form, 'projectName') || null } } : target && target !== 'none' ? { projectId: target } : {}),
+      stagePreset: target === 'none' ? 'none' : preset,
+      ...(preset === 'deposit_balance' && deposit
+        ? deposit.endsWith('%')
+          ? { depositPercent: deposit.slice(0, -1).trim() }
+          : { depositAmountMinor: amount(form, 'deposit', quote.currency) }
+        : {}),
+    })
+    projectId = result.applied.projectId
+  } catch (error) {
+    return failed(error, form)
+  }
+  refreshQuote(quoteId)
+  if (projectId) {
+    revalidatePath(`/projects/${projectId}`)
+    redirect(`/projects/${projectId}?tab=billing`)
+  }
+  return { status: 'success', message: 'Accepted.' }
+}
+
+export async function emailQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const quoteId = id(form)
+  try {
+    await call(quoteEmail, { id: quoteId, ...(text(form, 'to') ? { to: text(form, 'to') } : {}) })
+  } catch (error) {
+    return failed(error, form)
+  }
+  return { status: 'success', message: 'Sent.' }
 }

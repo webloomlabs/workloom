@@ -1,3 +1,5 @@
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -10,6 +12,8 @@ import { env } from '@workloom/config'
 import {
   assertSafeKey,
   attachmentDisposition,
+  inlineDisposition,
+  servesInline,
   type PutOptions,
   type SignedUrlOptions,
   type Storage,
@@ -49,6 +53,24 @@ export class S3Storage implements Storage {
     return { key, size: body.byteLength, contentType }
   }
 
+  async putFile(key: string, path: string, options?: PutOptions): Promise<StoredObject> {
+    assertSafeKey(key)
+    const contentType = options?.contentType ?? 'application/octet-stream'
+    const { size } = await stat(path)
+    // A stream with its length known: S3 takes up to 5 GB in one request, and nothing is buffered here.
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: createReadStream(path),
+        ContentLength: size,
+        ContentType: contentType,
+        ...(options?.filename ? { ContentDisposition: attachmentDisposition(options.filename) } : {}),
+      }),
+    )
+    return { key, size, contentType }
+  }
+
   async get(key: string): Promise<Buffer> {
     assertSafeKey(key)
     const result = await this.client.send(
@@ -77,7 +99,7 @@ export class S3Storage implements Storage {
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
-      ResponseContentDisposition: attachmentDisposition(options.filename ?? key.split('/').pop()!),
+      ResponseContentDisposition: (servesInline(options) ? inlineDisposition : attachmentDisposition)(options.filename ?? key.split('/').pop()!),
       ResponseContentType: options.contentType ?? 'application/octet-stream',
     })
     return getSignedUrl(this.client, command, { expiresIn: options.expiresInSeconds ?? 300 })

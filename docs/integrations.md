@@ -16,9 +16,59 @@ you need to connect, you can connect today. See [automation.md](automation.md).
 | File storage | A disk, or any S3-compatible service |
 | Accounting (Xero, QuickBooks) | The API and webhooks — read invoices and payments out |
 | Chat notifications | A webhook endpoint |
+| Receipts from a phone | The Telegram bot, below |
 | Forms and lead capture | `POST /api/v1/leads` with a narrowly scoped key |
 | Reporting and BI | The CSV/JSON exports, or read PostgreSQL directly |
 | Payment collection | Out of scope in v0.1. Record payments through the API. |
+
+## Telegram: receipts from a phone
+
+Each organization can connect **its own** Telegram bot (Settings → Telegram).
+Make one with [@BotFather](https://t.me/BotFather), paste its token, and choose
+how messages arrive:
+
+- **Polling** (the default): the worker asks Telegram for new messages every
+  few seconds. Works behind NAT and on a laptop.
+- **Webhook**: Telegram sends each message to
+  `https://<APP_URL>/api/integrations/telegram/<organization id>`. Needs Workloom
+  served over public HTTPS.
+
+Each person then links their own Telegram account: **Link my Telegram** shows
+a one-time code (ten minutes) to send the bot. After that, a photo or PDF they
+send becomes a **draft** expense with the receipt attached, made as them, with
+Confirm and Discard buttons under the bot's reply. Anyone else who messages the
+bot only gets told how to link; nothing they send is stored as an expense.
+
+Messages are stored first and handled by the worker, so the worker must be
+running. Telegram's update id makes a message delivered twice create one
+expense, not two.
+
+### Reading receipts with AI
+
+Receipts can be read by **Anthropic Claude, OpenAI, Google Gemini, or Groq**.
+Set the key for one of them on the app and worker (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `GEMINI_API_KEY`, or `GROQ_API_KEY`; `RECEIPT_PROVIDER` picks
+one when several are set, `RECEIPT_MODEL` changes the model — see
+[configuration.md](configuration.md)). An owner or admin can then turn on
+**Reading receipts**. Each receipt — from Telegram or dropped on a new
+expense — is sent to that provider, and what the model reads (supplier, date,
+total, tax, category) fills in the draft.
+
+| Provider | Default model | Reads |
+| --- | --- | --- |
+| Anthropic | `claude-opus-5-5` | photos and PDFs |
+| OpenAI | `gpt-6-luna` | photos and PDFs |
+| Google Gemini | `gemini-3.5-flash-lite` | photos and PDFs |
+| Groq | `qwen/qwen3.8-27b` | photos only; a PDF is stored unread |
+
+Every provider gets the same instructions and must answer in the same JSON
+schema. It is a suggestion: every value
+is checked before it is saved, a person confirms the draft, and if reading
+fails the draft is simply left blank. HEIC photos are stored but not read.
+
+It is **off by default** for every organization, because it sends receipts —
+which can carry names and card digits — to a third party. The settings page
+names the provider and model before anyone turns it on.
 
 ## Reading the database directly
 

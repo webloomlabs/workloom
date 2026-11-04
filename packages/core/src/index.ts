@@ -7,6 +7,8 @@ export {
   type Actor,
   type ActorContext,
   type AuditEntry,
+  type AuditSource,
+  defaultSource,
 } from './context.ts'
 export { writeAuditEntry, diff } from './audit.ts'
 export {

@@ -1,8 +1,10 @@
+import { installReceiptReader } from '@workloom/ai'
 import { loadEnv } from '@workloom/config'
 import { assertIsolationIntact, closePool } from '@workloom/db'
 import { runMaintenance } from './maintenance.ts'
 import { deliverDue } from './outbox/deliver.ts'
 import { publishPendingEvents } from './outbox/publish.ts'
+import { runTaxPacks, runTelegram } from './background.ts'
 
 /**
  * The worker: publishes the outbox, delivers webhooks, and tidies up.
@@ -16,6 +18,10 @@ import { publishPendingEvents } from './outbox/publish.ts'
 
 const POLL_MS = 1000
 const MAINTENANCE_MS = 60 * 60 * 1000
+/** Telegram: how often polled bots are asked for new messages, and the inbox is worked. */
+const TELEGRAM_MS = 3000
+/** How often to look for tax packs waiting to be built. */
+const TAX_PACK_MS = 30_000
 const BATCH = 100
 
 const stop = new AbortController()
@@ -43,8 +49,12 @@ async function main() {
   // it refuses exactly as the web app does.
   await assertIsolationIntact()
   console.log('worker: tenant isolation verified, dispatching')
+  const reader = installReceiptReader()
+  console.log(reader ? `worker: receipts are read by ${reader.provider} (${reader.model}) where organizations allow it` : 'worker: no AI provider key, receipts are stored unread')
 
   let lastMaintenance = 0
+  let lastTelegram = 0
+  let lastTaxPacks = 0
   let consecutiveErrors = 0
 
   while (!stop.signal.aborted) {
@@ -60,6 +70,17 @@ async function main() {
 
       if (published > 0 || attempted > 0) {
         console.log(`worker: published ${published} event(s), attempted ${attempted} delivery(ies)`)
+      }
+
+      if (Date.now() - lastTelegram > TELEGRAM_MS) {
+        // Its own failures are its own: a Telegram outage must not stall the outbox.
+        await runTelegram()
+        lastTelegram = Date.now()
+      }
+
+      if (Date.now() - lastTaxPacks > TAX_PACK_MS) {
+        await runTaxPacks()
+        lastTaxPacks = Date.now()
       }
 
       if (Date.now() - lastMaintenance > MAINTENANCE_MS) {

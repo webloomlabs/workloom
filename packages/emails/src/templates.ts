@@ -100,12 +100,23 @@ export function invoiceEmail(options: {
   number: string
   title: string
   total: number
+  /**
+   * What is still to pay: less than the total when part has been paid, or
+   * when the invoice takes an earlier one off. Defaults to the total.
+   */
+  amountDue?: number
   currency: string
-  dueDate: string
+  /** Null for an invoice due on an event without a date yet. */
+  dueDate: string | null
+  /** When it is due, in words: "At launch". */
+  dueLabel?: string | null
   url: string
 }): Email {
-  const amount = formatAmount(options.total, options.currency)
+  const due = options.amountDue ?? options.total
+  const amount = formatAmount(due, options.currency)
   const org = escapeHtml(options.organization)
+  const when = options.dueDate ? `due ${options.dueDate}` : options.dueLabel ? `due ${options.dueLabel.charAt(0).toLowerCase()}${options.dueLabel.slice(1)}` : null
+  const balance = due !== options.total ? ` (balance due on a total of ${formatAmount(options.total, options.currency)})` : ''
   return {
     to: options.to,
     subject: `Invoice ${options.number} from ${options.organization} — ${amount}`,
@@ -113,8 +124,8 @@ export function invoiceEmail(options: {
       heading: `Invoice ${escapeHtml(options.number)}`,
       body: `
         <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
-          ${org} has sent you an invoice for <strong>${escapeHtml(amount)}</strong>
-          (${escapeHtml(options.title)}), due ${escapeHtml(options.dueDate)}.
+          ${org} has sent you an invoice for <strong>${escapeHtml(amount)}</strong>${escapeHtml(balance)}
+          (${escapeHtml(options.title)})${when ? `, ${escapeHtml(when)}` : ''}.
         </p>
         <p style="margin:0 0 24px;">${button(options.url, 'View the invoice')}</p>
         <p style="margin:0;font-size:13px;color:#78716c;line-height:1.6;">
@@ -122,12 +133,75 @@ export function invoiceEmail(options: {
         </p>`,
     }),
     text: [
-      `${options.organization} has sent you invoice ${options.number} for ${amount} (${options.title}).`,
-      `Due ${options.dueDate}.`,
+      `${options.organization} has sent you invoice ${options.number} for ${amount}${balance} (${options.title}).`,
+      ...(when ? [`${when.charAt(0).toUpperCase()}${when.slice(1)}.`] : []),
       '',
       `View it: ${options.url}`,
       '',
       'The invoice is attached as a PDF.',
+    ].join('\n'),
+  }
+}
+
+/**
+ * A project has crossed a budget threshold. Sent to its owner, once per
+ * threshold per budget period, while there is still room to act.
+ */
+export function budgetAlertEmail(options: {
+  to: string
+  project: string
+  measure: 'cost' | 'hours'
+  percent: number
+  threshold: number
+  used: { minor: number; currency: string } | { hours: number }
+  limit: { minor: number; currency: string } | { hours: number }
+  /** The budget period, for a budget that is per period: "2026-11-01 to 2026-11-30". */
+  period: string | null
+  url: string
+}): Email {
+  const show = (v: { minor: number; currency: string } | { hours: number }) => ('hours' in v ? `${v.hours} h` : formatAmount(v.minor, v.currency))
+  const what = options.measure === 'cost' ? 'its cost budget' : 'its hours budget'
+  const over = options.threshold >= 100
+  const headline = over ? `${options.project} is over ${what}` : `${options.project} has used ${options.percent}% of ${what}`
+  const when = options.period ? ` for ${options.period}` : ''
+  const sentence = `${show(options.used)} of ${show(options.limit)}${when} (${options.percent}%).`
+  return {
+    to: options.to,
+    subject: headline,
+    html: layout({
+      heading: escapeHtml(headline),
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">${escapeHtml(sentence)}</p>
+        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
+          ${over ? 'Raise a revision, renegotiate, or decide to absorb it.' : 'There is still room to act: check the scope and the time being logged.'}
+        </p>
+        <p style="margin:0 0 24px;">${button(options.url, 'Open the project')}</p>`,
+    }),
+    text: [headline, '', sentence, '', `Open the project: ${options.url}`].join('\n'),
+  }
+}
+
+export function quoteEmail(options: { to: string; organization: string; number: string; title: string; total: number; currency: string; validUntil: string }): Email {
+  const amount = formatAmount(options.total, options.currency)
+  const org = escapeHtml(options.organization)
+  return {
+    to: options.to,
+    subject: `Quote ${options.number} from ${options.organization} — ${amount}`,
+    html: layout({
+      heading: `Quote ${escapeHtml(options.number)}`,
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
+          ${org} has sent you a quote for <strong>${escapeHtml(amount)}</strong> (${escapeHtml(options.title)}), valid until ${escapeHtml(options.validUntil)}.
+        </p>
+        <p style="margin:0;font-size:13px;color:#78716c;line-height:1.6;">
+          The quote is attached as a PDF. Reply to this email to accept it or with any questions.
+        </p>`,
+    }),
+    text: [
+      `${options.organization} has sent you quote ${options.number} for ${amount} (${options.title}).`,
+      `Valid until ${options.validUntil}.`,
+      '',
+      'The quote is attached as a PDF. Reply to this email to accept it or with any questions.',
     ].join('\n'),
   }
 }

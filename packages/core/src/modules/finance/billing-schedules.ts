@@ -23,8 +23,9 @@ import {
 import { loadProject } from '../projects/projects.ts'
 import { lineInput, newLineValues, today, type LineInput } from './documents.ts'
 import { getInvoice, recalculate, type Invoice } from './invoices.ts'
-import { periodEnd, periodIndexOf, periodStart, type Interval } from './recurrence.ts'
-import { fromNumeric } from './shared.ts'
+import { formatDecimal, parseDecimal } from '../../money/money.ts'
+import { contiguous, periodEnd, periodIndexOf, periodStart, remainingOccurrences, unbilledPeriods, nextUnbilledIndex, type Interval, type Period } from './recurrence.ts'
+import { fromNumeric, percentInput } from './shared.ts'
 
 /**
  * Recurring billing.
@@ -98,6 +99,7 @@ export const billingScheduleLineOutput = z.object({
   position: z.number().int(),
   serviceId: z.uuid().nullable(),
   description: z.string(),
+  detail: z.string().nullable(),
   quantity: z.string(),
   unitAmountMinor: z.number().int(),
   discountPercent: z.string().nullable(),
@@ -124,8 +126,12 @@ export const billingScheduleOutput = z.object({
   /** The last day of that period. */
   nextPeriodEndsOn: z.iso.date().nullable(),
   endOn: z.iso.date().nullable(),
+  /** Stops after this many periods have been billed. */
   maxOccurrences: z.number().int().nullable(),
+  /** Periods billed so far. */
   generatedCount: z.number().int(),
+  /** How many periods each invoice bills in advance. */
+  periodsPerInvoice: z.number().int(),
   /** What one period comes to, before tax and before any document discount. */
   periodSubtotalMinor: z.number().int(),
   /** Why this schedule cannot bill, where it cannot. Null when it is fine. */
@@ -208,6 +214,7 @@ function presentSchedule(row: ScheduleJoin, lines: ScheduleLineRow[], blocker: S
     endOn: s.endOn,
     maxOccurrences: s.maxOccurrences,
     generatedCount: s.generatedCount,
+    periodsPerInvoice: s.periodsPerInvoice,
     periodSubtotalMinor: subtotal(lines),
     blocker,
     blockerMessage: blocker ? BLOCKER_MESSAGES[blocker] : null,
@@ -216,6 +223,7 @@ function presentSchedule(row: ScheduleJoin, lines: ScheduleLineRow[], blocker: S
       position: line.position,
       serviceId: line.serviceId,
       description: line.description,
+      detail: line.detail,
       quantity: fromNumeric(line.quantity) ?? '1',
       unitAmountMinor: line.unitAmountMinor,
       discountPercent: fromNumeric(line.discountPercent),
@@ -349,8 +357,10 @@ const scheduleFields = {
   paymentTermsDays: z.number().int().min(0).max(365).optional(),
   /** Stops on or before this date. */
   endOn: z.iso.date().nullish(),
-  /** Stops after this many invoices. */
+  /** Stops after this many periods. */
   maxOccurrences: z.number().int().min(1).max(1000).nullish(),
+  /** How many periods each invoice bills in advance: 3 for a client who pays a quarter at a time. */
+  periodsPerInvoice: z.number().int().min(1).max(12).optional(),
   notes: optionalText(10_000),
   terms: optionalText(10_000),
   ownerId: z.uuid().nullish(),
@@ -419,6 +429,7 @@ export const billingScheduleCreate = defineProcedure({
       nextRunOn: startOn,
       endOn: input.endOn ?? null,
       maxOccurrences: input.maxOccurrences ?? null,
+      periodsPerInvoice: input.periodsPerInvoice ?? 1,
       notes: input.notes ?? null,
       terms: input.terms ?? null,
       ownerId: input.ownerId ?? null,
@@ -447,6 +458,7 @@ async function insertLine(ctx: ActorContext, schedule: { id: string; currency: s
     position,
     serviceId: values.serviceId,
     description: values.description,
+    detail: values.detail,
     quantity: values.quantity,
     unitAmountMinor: values.unitAmountMinor,
     discountPercent: values.discountPercent,
@@ -526,7 +538,8 @@ export const billingScheduleChangeStatus = defineProcedure({
     const nextRunOn =
       input.status === 'ended'
         ? null
-        : (before.nextRunOn ?? periodStart(before.startOn, unit, before.intervalCount, before.generatedCount))
+        : (before.nextRunOn ??
+          periodStart(before.startOn, unit, before.intervalCount, nextUnbilledIndex(before.startOn, unit, before.intervalCount, 0, await billedStarts(ctx, before.id))))
 
     await ctx.tx
       .update(schema.billingSchedules)
@@ -612,6 +625,52 @@ export const billingScheduleLineRemove = defineProcedure({
   },
 })
 
+export const billingScheduleLineUpdate = defineProcedure({
+  name: 'billingScheduleLine.update',
+  summary: 'Change a line of what each period bills. Invoices already raised keep what they said.',
+  permission: 'billingSchedule:update',
+  input: lineInput
+    .omit({ serviceId: true, billingType: true })
+    .extend({ scheduleId: z.uuid(), lineId: z.uuid(), description: requiredText(2000, 'Description').optional() }),
+  output: billingScheduleOutput,
+  http: { method: 'PATCH', path: '/billing-schedules/{scheduleId}/lines/{lineId}' },
+  emits: ['billing_schedule.updated'],
+  async handler(ctx, input) {
+    const { scheduleId, lineId, taxRateId, ...fields } = input
+    await loadSchedule(ctx, scheduleId, { lock: true })
+    const l = schema.billingScheduleLines
+    const [before] = await ctx.tx.select().from(l).where(and(eq(l.id, lineId), eq(l.scheduleId, scheduleId))).limit(1)
+    if (!before) throw new NotFoundError('Billing schedule line', lineId)
+    const patch = provided(fields) as Partial<ScheduleLineRow>
+    if (taxRateId !== undefined) patch.taxRateId = taxRateId ? (await loadTaxRateId(ctx, taxRateId)) : null
+    const comparable = { ...before, quantity: fromNumeric(before.quantity), discountPercent: fromNumeric(before.discountPercent) }
+    const changes = diff(comparable as Record<string, unknown>, patch)
+    if (!changes) return getSchedule(ctx, scheduleId)
+    await ctx.tx.update(l).set({ ...patch, updatedAt: ctx.now }).where(eq(l.id, lineId))
+    const updated = await getSchedule(ctx, scheduleId)
+    await ctx.audit({ action: 'billing_schedule.updated', entityType: 'billing_schedule', entityId: scheduleId, entityLabel: updated.name, changes })
+    await ctx.emit('billing_schedule.updated', updated)
+    return updated
+  },
+})
+
+async function loadTaxRateId(ctx: ActorContext, id: string): Promise<string> {
+  const { loadTaxRate } = await import('./tax-rates.ts')
+  return (await loadTaxRate(ctx, id, { active: true, field: 'taxRateId' })).id
+}
+
+/** The start dates of every period this schedule has billed. */
+export async function billedStarts(ctx: ActorContext, scheduleId: string): Promise<Set<string>> {
+  const b = schema.billingScheduleInvoices
+  const rows = await ctx.tx.select({ start: b.periodStart }).from(b).where(eq(b.scheduleId, scheduleId))
+  return new Set(rows.map((r) => r.start))
+}
+
+/** A decimal quantity times a whole number of periods, exactly. */
+function timesPeriods(quantity: string, periods: number): string {
+  return formatDecimal(parseDecimal(quantity, 4) * BigInt(periods), 4)
+}
+
 // Generation
 
 /**
@@ -622,13 +681,28 @@ export const billingScheduleLineRemove = defineProcedure({
  * demand. The schedule row is locked for the whole thing, so two callers
  * cannot decide at the same moment that the same period is unbilled.
  */
-export async function raiseInvoiceFor(ctx: ActorContext, scheduleId: string, options: { force?: boolean } = {}): Promise<Invoice | null> {
+export type RaiseOptions = {
+  /** Bill the next period even though its start date has not arrived. */
+  force?: boolean | undefined
+  /**
+   * How many periods this invoice bills: 3 for a client prepaying a quarter.
+   * Defaults to the schedule's own `periods_per_invoice`.
+   */
+  periods?: number | undefined
+  /** One line per schedule line for the whole stretch, or one per period. */
+  layout?: 'combined' | 'per_period' | undefined
+  /** A discount for paying ahead, as a percentage off the invoice. */
+  discountPercent?: string | null | undefined
+}
+
+export async function raiseInvoiceFor(ctx: ActorContext, scheduleId: string, options: RaiseOptions = {}): Promise<Invoice | null> {
   const schedule = await loadSchedule(ctx, scheduleId, { lock: true })
   const todayOn = await today(ctx)
 
   if (schedule.status !== 'active' || !schedule.nextRunOn) return null
   if (!options.force && schedule.nextRunOn > todayOn) return null
-  if (schedule.maxOccurrences !== null && schedule.generatedCount >= schedule.maxOccurrences) {
+  const remaining = remainingOccurrences(schedule.maxOccurrences, schedule.generatedCount)
+  if (remaining === 0) {
     await endSchedule(ctx, schedule.id)
     return null
   }
@@ -650,9 +724,30 @@ export async function raiseInvoiceFor(ctx: ActorContext, scheduleId: string, opt
     .orderBy(asc(schema.billingScheduleLines.position))
 
   const unit = schedule.intervalUnit as Interval
-  const index = periodIndexOf(schedule.startOn, unit, schedule.intervalCount, schedule.nextRunOn)
-  const from = schedule.nextRunOn
-  const to = periodEnd(schedule.startOn, unit, schedule.intervalCount, index)
+  const billed = await billedStarts(ctx, schedule.id)
+  const firstIndex = periodIndexOf(schedule.startOn, unit, schedule.intervalCount, schedule.nextRunOn)
+  // Asked for explicitly, more periods than the agreement has left is a mistake
+  // to point out; the schedule's own default just bills what is left.
+  const wanted = options.periods ?? schedule.periodsPerInvoice
+  if (options.periods !== undefined && remaining !== null && options.periods > remaining) {
+    throw new DomainError(
+      `This schedule has ${remaining} ${remaining === 1 ? 'period' : 'periods'} left to bill, not ${options.periods}.`,
+      'periods_exceed_remaining',
+      'periods',
+    )
+  }
+  const periods = unbilledPeriods(schedule.startOn, unit, schedule.intervalCount, firstIndex, Math.min(wanted, remaining ?? wanted), billed, schedule.endOn)
+  if (periods.length === 0) {
+    await endSchedule(ctx, schedule.id)
+    return null
+  }
+  if (options.periods !== undefined && periods.length < options.periods) {
+    throw new DomainError(`Only ${periods.length} ${periods.length === 1 ? 'period falls' : 'periods fall'} before this schedule ends.`, 'periods_exceed_remaining', 'periods')
+  }
+  // A gap -- a period billed out of turn -- cannot be stated as one range.
+  const layout = periods.length > 1 && options.layout !== 'per_period' && contiguous(periods) ? 'combined' : 'per_period'
+  const from = periods[0]!.start
+  const to = periods[periods.length - 1]!.end
 
   const invoiceId = newId()
   await ctx.tx.insert(schema.invoices).values({
@@ -665,47 +760,62 @@ export async function raiseInvoiceFor(ctx: ActorContext, scheduleId: string, opt
     currency: schedule.currency,
     taxMode: schedule.taxMode,
     paymentTermsDays: schedule.paymentTermsDays,
+    discountPercent: options.discountPercent ?? null,
     notes: schedule.notes,
     terms: schedule.terms,
     createdBy: actingUserId(ctx),
   })
-  for (const [i, line] of lines.entries()) {
-    await ctx.tx.insert(schema.invoiceLines).values({
-      id: newId(),
-      organizationId: ctx.organizationId,
-      invoiceId,
-      position: i + 1,
-      ...(await newLineValues(
-        ctx,
-        { currency: schedule.currency },
-        {
-          serviceId: line.serviceId,
-          description: line.description,
-          quantity: fromNumeric(line.quantity) ?? '1',
-          unitAmountMinor: line.unitAmountMinor,
-          discountPercent: fromNumeric(line.discountPercent),
-          taxRateId: line.taxRateId,
-        },
-      )),
-    })
+  const groups: Array<{ periods: Period[]; times: number }> =
+    layout === 'combined' ? [{ periods, times: periods.length }] : periods.map((p) => ({ periods: [p], times: 1 }))
+  let position = 1
+  for (const group of groups) {
+    for (const line of lines) {
+      const quantity = fromNumeric(line.quantity) ?? '1'
+      await ctx.tx.insert(schema.invoiceLines).values({
+        id: newId(),
+        organizationId: ctx.organizationId,
+        invoiceId,
+        position: position++,
+        ...(await newLineValues(
+          ctx,
+          { currency: schedule.currency },
+          {
+            serviceId: line.serviceId,
+            description: line.description,
+            detail: line.detail,
+            billingType: 'recurring',
+            quantity: group.times === 1 ? quantity : timesPeriods(quantity, group.times),
+            unitAmountMinor: line.unitAmountMinor,
+            discountPercent: fromNumeric(line.discountPercent),
+            taxRateId: line.taxRateId,
+          },
+        )),
+        periodStart: group.periods[0]!.start,
+        periodEnd: group.periods[group.periods.length - 1]!.end,
+      })
+    }
   }
   await recalculate(ctx, invoiceId)
 
-  // The period, and the constraint that makes billing it twice impossible.
-  await ctx.tx.insert(schema.billingScheduleInvoices).values({
-    id: newId(),
-    organizationId: ctx.organizationId,
-    scheduleId: schedule.id,
-    invoiceId,
-    periodStart: from,
-    periodEnd: to,
-  })
+  // The periods, and the constraint that makes billing any of them twice impossible.
+  for (const period of periods) {
+    await ctx.tx.insert(schema.billingScheduleInvoices).values({
+      id: newId(),
+      organizationId: ctx.organizationId,
+      scheduleId: schedule.id,
+      invoiceId,
+      periodStart: period.start,
+      periodEnd: period.end,
+    })
+  }
 
   // Advance in the same transaction: if the invoice rolls back, so does this.
-  const nextRunOn = periodStart(schedule.startOn, unit, schedule.intervalCount, index + 1)
-  const billed = schedule.generatedCount + 1
+  for (const period of periods) billed.add(period.start)
+  const nextIndex = nextUnbilledIndex(schedule.startOn, unit, schedule.intervalCount, periods[periods.length - 1]!.index + 1, billed)
+  const nextRunOn = periodStart(schedule.startOn, unit, schedule.intervalCount, nextIndex)
+  const billedCount = schedule.generatedCount + periods.length
   const finished =
-    (schedule.maxOccurrences !== null && billed >= schedule.maxOccurrences) || (schedule.endOn !== null && nextRunOn > schedule.endOn)
+    (schedule.maxOccurrences !== null && billedCount >= schedule.maxOccurrences) || (schedule.endOn !== null && nextRunOn > schedule.endOn)
   await ctx.tx
     .update(schema.billingSchedules)
     .set({
@@ -723,14 +833,64 @@ export async function raiseInvoiceFor(ctx: ActorContext, scheduleId: string, opt
     entityType: 'billing_schedule',
     entityId: schedule.id,
     entityLabel: schedule.name,
-    changes: { period: { from, to } },
+    changes: { period: { from, to }, ...(periods.length > 1 ? { periods: { from: null, to: periods.length } } : {}) },
   })
   await ctx.emit('invoice.created', invoice)
-  await ctx.emit('billing_schedule.invoiced', { schedule: after, invoice, periodStart: from, periodEnd: to })
+  await ctx.emit('billing_schedule.invoiced', { schedule: after, invoice, periodStart: from, periodEnd: to, periods: periods.length })
   // The last period of an agreement ends it, and that is a change an
   // automation watching for `status_changed` has to hear about.
   if (finished) await ctx.emit('billing_schedule.status_changed', after)
   return invoice
+}
+
+/**
+ * What happens to a schedule's periods when the draft that billed them is
+ * deleted. `rebill` (the default) puts the schedule back on the earliest of
+ * them, so they are raised again; `skip` leaves them unbilled for good -- the
+ * client was let off -- and says so in the audit log.
+ *
+ * Called before the draft is deleted, while its period rows still exist: the
+ * delete cascades them away, and with them the only record of what they were.
+ */
+export async function rewindSchedulesForInvoice(ctx: ActorContext, invoiceId: string, mode: 'rebill' | 'skip'): Promise<void> {
+  const b = schema.billingScheduleInvoices
+  const rows = await ctx.tx.select().from(b).where(eq(b.invoiceId, invoiceId)).orderBy(asc(b.periodStart))
+  const bySchedule = new Map<string, typeof rows>()
+  for (const row of rows) bySchedule.set(row.scheduleId, [...(bySchedule.get(row.scheduleId) ?? []), row])
+  for (const [scheduleId, periods] of bySchedule) {
+    const schedule = await loadSchedule(ctx, scheduleId, { lock: true })
+    const earliest = periods[0]!.periodStart
+    if (mode === 'skip') {
+      await ctx.audit({
+        action: 'billing_schedule.period_skipped',
+        entityType: 'billing_schedule',
+        entityId: scheduleId,
+        entityLabel: schedule.name,
+        changes: { period: { from: earliest, to: periods[periods.length - 1]!.periodEnd } },
+      })
+      continue
+    }
+    const nextRunOn = schedule.nextRunOn && schedule.nextRunOn < earliest ? schedule.nextRunOn : earliest
+    // An agreement that ended because these periods used it up has periods to bill again.
+    const reopen =
+      schedule.status === 'ended' &&
+      (schedule.endOn === null || earliest <= schedule.endOn) &&
+      (schedule.maxOccurrences === null || schedule.generatedCount - periods.length < schedule.maxOccurrences)
+    if (schedule.status === 'ended' && !reopen) continue
+    await ctx.tx
+      .update(schema.billingSchedules)
+      .set({ nextRunOn, status: reopen ? 'active' : schedule.status, updatedAt: ctx.now })
+      .where(eq(schema.billingSchedules.id, scheduleId))
+    await ctx.audit({
+      action: 'billing_schedule.rewound',
+      entityType: 'billing_schedule',
+      entityId: scheduleId,
+      entityLabel: schedule.name,
+      changes: { nextRunOn: { from: schedule.nextRunOn, to: nextRunOn }, ...(reopen ? { status: { from: 'ended', to: 'active' } } : {}) },
+    })
+    // Reopening is recorded above rather than announced: it is part of deleting
+    // a draft, and `invoice.delete` declares only `invoice.deleted`.
+  }
 }
 
 async function endSchedule(ctx: ActorContext, id: string): Promise<void> {
@@ -751,6 +911,12 @@ export const billingScheduleGenerate = defineProcedure({
     id: z.uuid(),
     /** Bill the next period even though its start date has not arrived. */
     force: z.boolean().optional(),
+    /** How many periods to bill on this one invoice: 3 for a client paying a quarter ahead. */
+    periods: z.number().int().min(1).max(12).optional(),
+    /** One line per schedule line for the whole stretch (the default), or one per period. */
+    layout: z.enum(['combined', 'per_period']).optional(),
+    /** A discount for paying ahead, as a percentage off the invoice. */
+    discountPercent: percentInput.nullish(),
   }),
   output: z.object({ invoiceId: z.uuid().nullable(), schedule: billingScheduleOutput }),
   http: { method: 'POST', path: '/billing-schedules/{id}/generate' },
@@ -759,7 +925,12 @@ export const billingScheduleGenerate = defineProcedure({
   async handler(ctx, input) {
     // Raising an invoice is creating one, whoever asked for it.
     ctx.require('invoice:create')
-    const invoice = await raiseInvoiceFor(ctx, input.id, { force: input.force ?? false })
+    const invoice = await raiseInvoiceFor(ctx, input.id, {
+      force: input.force ?? false,
+      periods: input.periods,
+      layout: input.layout,
+      discountPercent: input.discountPercent,
+    })
     return { invoiceId: invoice?.id ?? null, schedule: await getSchedule(ctx, input.id) }
   },
 })

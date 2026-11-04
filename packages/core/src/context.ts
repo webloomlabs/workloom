@@ -15,12 +15,28 @@ export type Actor =
   | { type: 'system'; label: string }
   | { type: 'job'; label: string }
 
+/** The door a change came in by, recorded on its audit entry. */
+export type AuditSource = 'web' | 'api' | 'telegram' | 'worker' | 'system'
+
+/** Where an actor's changes come from when the caller does not say. */
+export function defaultSource(actor: Actor): AuditSource {
+  if (actor.type === 'apiKey') return 'api'
+  if (actor.type === 'job') return 'worker'
+  if (actor.type === 'system') return 'system'
+  return 'web'
+}
+
 export type AuditEntry = {
   action: string
   entityType: string
   entityId?: string | undefined
   entityLabel?: string | undefined
   changes?: Record<string, { from: unknown; to: unknown }> | undefined
+  /**
+   * The whole record, when one is created or deleted -- for money records,
+   * whose deletion must leave behind what was there.
+   */
+  snapshot?: unknown
 }
 
 /**
@@ -51,6 +67,8 @@ export type ActorContext = {
   now: Date
   ipAddress?: string | undefined
   userAgent?: string | undefined
+  /** The door the change came in by. Defaults from the actor: a person on the web, a key through the API. */
+  source?: AuditSource | undefined
 
   has(permission: Permission): boolean
   /** Throws {@link ForbiddenError} unless the permission is held. */

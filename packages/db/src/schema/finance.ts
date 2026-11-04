@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   bigint,
+  jsonb,
   boolean,
   check,
   date,
@@ -51,7 +52,14 @@ export const SERVICE_BILLING_TYPES = ['one_off', 'recurring'] as const
  * share the mechanism because they need the same thing: a per-tenant counter
  * that does not skip and does not collide.
  */
-export const DOCUMENT_KINDS = ['quote', 'invoice', 'ticket'] as const
+export const DOCUMENT_KINDS = ['quote', 'invoice', 'ticket', 'expense'] as const
+/**
+ * When a sequence starts again from 1. A resetting format must say which year
+ * it is in, or the numbers it hands out would collide.
+ */
+export const SEQUENCE_RESETS = ['never', 'yearly', 'fiscal_yearly'] as const
+/** What an invoice line is: something billed, or an earlier invoice taken off it. */
+export const INVOICE_LINE_KINDS = ['item', 'deduction'] as const
 
 function oneOf(values: readonly string[]) {
   return sql.raw(`(${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`)
@@ -71,17 +79,34 @@ export const documentSequences = pgTable(
   {
     ...tenantColumn,
     kind: text('kind').notNull(),
+    /**
+     * Which run of numbers this row counts: '' for the settings row and for a
+     * sequence that never resets, '2026' or 'FY2025' for one that does. The
+     * settings row holds the format; the scoped rows only count.
+     */
+    scope: text('scope').notNull().default(''),
     prefix: text('prefix').notNull(),
     /** Digits the number is zero-padded to: 4 makes "Q-0001". */
     padding: integer('padding').notNull().default(4),
+    /**
+     * The whole number as a template, overriding prefix and padding:
+     * "WL-{YYYY}-{NNNN}". Tokens: {YYYY} {YY} for the issue year, {FY} for the
+     * financial year ("2025-26"), and a run of N for the zero-padded counter.
+     */
+    format: text('format'),
+    reset: text('reset').notNull().default('never'),
     nextValue: bigint('next_value', { mode: 'number' }).notNull().default(1),
     ...timestamps,
   },
   (t) => [
-    primaryKey({ name: 'document_sequences_pkey', columns: [t.organizationId, t.kind] }),
+    primaryKey({ name: 'document_sequences_pkey', columns: [t.organizationId, t.kind, t.scope] }),
     check('document_sequences_kind_check', sql`${t.kind} in ${oneOf(DOCUMENT_KINDS)}`),
     check('document_sequences_next_value_check', sql`${t.nextValue} >= 1`),
     check('document_sequences_padding_check', sql`${t.padding} between 1 and 12`),
+    check('document_sequences_reset_check', sql`${t.reset} in ${oneOf(SEQUENCE_RESETS)}`),
+    check('document_sequences_format_check', sql`${t.format} is null or (length(${t.format}) <= 60 and ${t.format} ~ '\\{N+\\}')`),
+    /** A sequence that starts again each year must print the year, or it repeats numbers. */
+    check('document_sequences_reset_year_check', sql`${t.reset} = 'never' or ${t.format} ~ '\\{(YYYY|YY|FY)\\}'`),
   ],
 )
 
@@ -144,6 +169,35 @@ export const services = pgTable(
   ],
 )
 
+/**
+ * Quotes offered as alternatives -- "Essentials", "Standard", "Premium" -- of
+ * which the client takes one. Accepting one declines the others still open,
+ * and the group is decided; a partial unique index on `quotes` makes a second
+ * accepted option impossible.
+ */
+export const quoteOptionGroups = pgTable(
+  'quote_option_groups',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    companyId: uuid('company_id').notNull(),
+    projectId: uuid('project_id'),
+    name: text('name').notNull(),
+    /** The option the client took. */
+    decidedQuoteId: uuid('decided_quote_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdBy: createdBy(),
+    ...timestamps,
+  },
+  (t) => [
+    unique('quote_option_groups_organization_id_id_key').on(t.organizationId, t.id),
+    index('quote_option_groups_organization_company_idx').on(t.organizationId, t.companyId),
+    foreignKey({ name: 'quote_option_groups_company_fk', columns: [t.organizationId, t.companyId], foreignColumns: [companies.organizationId, companies.id] }),
+    foreignKey({ name: 'quote_option_groups_project_fk', columns: [t.organizationId, t.projectId], foreignColumns: [projects.organizationId, projects.id] }),
+    check('quote_option_groups_decided_check', sql`(${t.decidedQuoteId} is null) = (${t.decidedAt} is null)`),
+  ],
+)
+
 export const quotes = pgTable(
   'quotes',
   {
@@ -154,7 +208,14 @@ export const quotes = pgTable(
     companyId: uuid('company_id').notNull(),
     contactId: uuid('contact_id'),
     dealId: uuid('deal_id'),
+    /**
+     * The project it prices. May be given once after the quote is sent -- a
+     * quote accepted before its project existed -- and never changed after.
+     */
     projectId: uuid('project_id'),
+    /** The group of alternatives it is one of, and what it is called there: "Option B — Standard". */
+    optionGroupId: uuid('option_group_id'),
+    optionLabel: text('option_label'),
     title: text('title').notNull(),
     status: text('status').notNull().default('draft'),
     currency: text('currency').notNull(),
@@ -202,6 +263,10 @@ export const quotes = pgTable(
     foreignKey({ name: 'quotes_contact_fk', columns: [t.organizationId, t.contactId], foreignColumns: [contacts.organizationId, contacts.id] }),
     foreignKey({ name: 'quotes_deal_fk', columns: [t.organizationId, t.dealId], foreignColumns: [deals.organizationId, deals.id] }),
     foreignKey({ name: 'quotes_project_fk', columns: [t.organizationId, t.projectId], foreignColumns: [projects.organizationId, projects.id] }),
+    foreignKey({ name: 'quotes_option_group_fk', columns: [t.organizationId, t.optionGroupId], foreignColumns: [quoteOptionGroups.organizationId, quoteOptionGroups.id] }),
+    index('quotes_organization_project_idx').on(t.organizationId, t.projectId),
+    /** Of a group of alternatives, the client takes one. */
+    uniqueIndex('quotes_one_accepted_option_key').on(t.organizationId, t.optionGroupId).where(sql`${t.status} = 'accepted' and ${t.optionGroupId} is not null`),
     check('quotes_status_check', sql`${t.status} in ${oneOf(QUOTE_STATUSES)}`),
     check('quotes_tax_mode_check', sql`${t.taxMode} in ${oneOf(TAX_MODES)}`),
     check('quotes_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and (${t.baseCurrency} is null or ${t.baseCurrency} ~ '^[A-Z]{3}$')`),
@@ -228,7 +293,18 @@ export const quoteLines = pgTable(
     quoteId: uuid('quote_id').notNull(),
     position: integer('position').notNull(),
     serviceId: uuid('service_id'),
+    /** The line's title, printed in bold. */
     description: text('description').notNull(),
+    /** A second, quieter line under the title: "Initially quoted project fee". */
+    detail: text('detail'),
+    /** One-off or recurring, as printed in the Billing column. Copied from the service. */
+    billingType: text('billing_type'),
+    /**
+     * For a recurring line, how often it recurs: every 1 month, every 3
+     * months. Accepting the quote sets up a billing schedule from it.
+     */
+    intervalUnit: text('interval_unit'),
+    intervalCount: integer('interval_count'),
     quantity: numeric('quantity', { precision: 14, scale: 4 }).notNull(),
     /** Minor units of the quote's currency; negative for a credit. */
     unitAmountMinor: bigint('unit_amount_minor', { mode: 'number' }).notNull(),
@@ -255,6 +331,8 @@ export const quoteLines = pgTable(
     foreignKey({ name: 'quote_lines_service_fk', columns: [t.organizationId, t.serviceId], foreignColumns: [services.organizationId, services.id] }),
     foreignKey({ name: 'quote_lines_tax_rate_fk', columns: [t.organizationId, t.taxRateId], foreignColumns: [taxRates.organizationId, taxRates.id] }),
     check('quote_lines_quantity_check', sql`${t.quantity} <> 0`),
+    check('quote_lines_billing_type_check', sql`${t.billingType} in ${oneOf(SERVICE_BILLING_TYPES)}`),
+    check('quote_lines_interval_check', sql`(${t.intervalUnit} is null) = (${t.intervalCount} is null) and (${t.intervalUnit} is null or (${t.billingType} = 'recurring' and ${t.intervalUnit} in ('week', 'month', 'quarter', 'year') and ${t.intervalCount} between 1 and 52))`),
     check('quote_lines_discount_check', sql`${t.discountPercent} between 0 and 100`),
     check('quote_lines_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
     check('quote_lines_totals_check', sql`${t.netMinor} = ${t.amountMinor} - ${t.lineDiscountMinor}`),
@@ -290,8 +368,14 @@ export const invoices = pgTable(
     currency: text('currency').notNull(),
     taxMode: text('tax_mode').notNull().default('exclusive'),
     issueDate: date('issue_date', { mode: 'string' }),
-    /** Issue date plus the payment terms, fixed when the invoice is issued. */
+    /**
+     * Issue date plus the payment terms, fixed when the invoice is issued --
+     * unless it is due on an event rather than a date ("At launch"), when it
+     * stays empty until the event has a date. Only then may it be set later.
+     */
     dueDate: date('due_date', { mode: 'string' }),
+    /** When the invoice is due, in words, for an event without a date yet: "At launch". */
+    dueLabel: text('due_label'),
     paymentTermsDays: integer('payment_terms_days').notNull().default(14),
 
     discountPercent: numeric('discount_percent', { precision: 7, scale: 4 }),
@@ -344,8 +428,11 @@ export const invoices = pgTable(
     check('invoices_number_check', sql`(${t.status} = 'draft') = (${t.number} is null)`),
     check(
       'invoices_issued_check',
-      sql`(${t.status} = 'draft') = (${t.sentAt} is null and ${t.issueDate} is null and ${t.dueDate} is null and ${t.exchangeRateToBase} is null and ${t.baseCurrency} is null and ${t.totalBaseMinor} is null)`,
+      sql`(${t.status} = 'draft') = (${t.sentAt} is null and ${t.issueDate} is null and ${t.exchangeRateToBase} is null and ${t.baseCurrency} is null and ${t.totalBaseMinor} is null)`,
     ),
+    /** A draft has no due date; an issued invoice has one, or says in words when it is due. */
+    check('invoices_due_check', sql`case when ${t.status} = 'draft' then ${t.dueDate} is null else ${t.dueDate} is not null or ${t.dueLabel} is not null end`),
+    check('invoices_due_label_check', sql`length(${t.dueLabel}) between 1 and 80`),
     check('invoices_exchange_rate_check', sql`${t.exchangeRateToBase} > 0`),
     check('invoices_due_date_check', sql`${t.dueDate} is null or ${t.dueDate} >= ${t.issueDate}`),
     check('invoices_payment_terms_check', sql`${t.paymentTermsDays} between 0 and 365`),
@@ -363,14 +450,36 @@ export const invoiceLines = pgTable(
     ...tenantColumn,
     invoiceId: uuid('invoice_id').notNull(),
     position: integer('position').notNull(),
+    /** Something billed, or an earlier invoice of the same client taken off this one. */
+    kind: text('kind').notNull().default('item'),
     serviceId: uuid('service_id'),
+    /** The line's title, printed in bold. */
     description: text('description').notNull(),
+    /** A second, quieter line under the title: "Additional scope", "Deposit -- WL-2026-0130". */
+    detail: text('detail'),
+    /** One-off or recurring, as printed in the Billing column. */
+    billingType: text('billing_type'),
+    /** The service period this line pays for, when it pays for one: a month, or three months prepaid. */
+    periodStart: date('period_start', { mode: 'string' }),
+    periodEnd: date('period_end', { mode: 'string' }),
     quantity: numeric('quantity', { precision: 14, scale: 4 }).notNull(),
     unitAmountMinor: bigint('unit_amount_minor', { mode: 'number' }).notNull(),
     discountPercent: numeric('discount_percent', { precision: 7, scale: 4 }),
     taxRateId: uuid('tax_rate_id'),
     taxName: text('tax_name'),
     taxRatePctSnapshot: numeric('tax_rate_pct_snapshot', { precision: 7, scale: 4 }),
+    /**
+     * For a deduction: the earlier invoice it takes off -- a deposit, a
+     * progress payment. The final invoice then states the whole project and
+     * demands only what is left, so nothing is billed twice.
+     */
+    deductsInvoiceId: uuid('deducts_invoice_id'),
+    /**
+     * Whether the deducted invoice had been paid in full when this one was
+     * issued, which decides whether it prints as "Already paid" or
+     * "Previously invoiced". Fixed at issue, like everything else on it.
+     */
+    deductionSettled: boolean('deduction_settled'),
 
     amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
     lineDiscountMinor: bigint('line_discount_minor', { mode: 'number' }).notNull(),
@@ -384,10 +493,20 @@ export const invoiceLines = pgTable(
     unique('invoice_lines_organization_id_id_key').on(t.organizationId, t.id),
     index('invoice_lines_organization_invoice_position_idx').on(t.organizationId, t.invoiceId, t.position),
     index('invoice_lines_organization_tax_rate_idx').on(t.organizationId, t.taxRateId),
+    index('invoice_lines_organization_deducts_idx').on(t.organizationId, t.deductsInvoiceId),
     foreignKey({ name: 'invoice_lines_invoice_fk', columns: [t.organizationId, t.invoiceId], foreignColumns: [invoices.organizationId, invoices.id] }).onDelete('cascade'),
     foreignKey({ name: 'invoice_lines_service_fk', columns: [t.organizationId, t.serviceId], foreignColumns: [services.organizationId, services.id] }),
     foreignKey({ name: 'invoice_lines_tax_rate_fk', columns: [t.organizationId, t.taxRateId], foreignColumns: [taxRates.organizationId, taxRates.id] }),
+    foreignKey({ name: 'invoice_lines_deducts_fk', columns: [t.organizationId, t.deductsInvoiceId], foreignColumns: [invoices.organizationId, invoices.id] }),
     check('invoice_lines_quantity_check', sql`${t.quantity} <> 0`),
+    check('invoice_lines_kind_check', sql`${t.kind} in ${oneOf(INVOICE_LINE_KINDS)}`),
+    check('invoice_lines_billing_type_check', sql`${t.billingType} in ${oneOf(SERVICE_BILLING_TYPES)}`),
+    check('invoice_lines_period_check', sql`(${t.periodStart} is null) = (${t.periodEnd} is null) and (${t.periodEnd} is null or ${t.periodEnd} >= ${t.periodStart})`),
+    check(
+      'invoice_lines_deduction_check',
+      sql`(${t.kind} = 'deduction') = (${t.deductsInvoiceId} is not null) and (${t.kind} = 'item' or (${t.unitAmountMinor} < 0 and ${t.quantity} = 1 and ${t.discountPercent} is null and ${t.serviceId} is null))`,
+    ),
+    check('invoice_lines_deduction_settled_check', sql`${t.deductionSettled} is null or ${t.kind} = 'deduction'`),
     check('invoice_lines_discount_check', sql`${t.discountPercent} between 0 and 100`),
     check('invoice_lines_tax_snapshot_check', sql`(${t.taxRateId} is null) = (${t.taxName} is null) and (${t.taxName} is null) = (${t.taxRatePctSnapshot} is null)`),
     check('invoice_lines_totals_check', sql`${t.netMinor} = ${t.amountMinor} - ${t.lineDiscountMinor}`),
@@ -524,6 +643,56 @@ export const paymentAllocations = pgTable(
  * A billable expense freezes once `invoice_line_id` is set, exactly as tracked
  * time does; removing the line releases it to be billed again.
  */
+/**
+ * How an expense counts towards the tax computation: deductible in the year,
+ * not deductible at all (fines, private use), or capital -- equipment that is
+ * claimed through capital allowances over several years instead.
+ */
+export const EXPENSE_TAX_TREATMENTS = ['deductible', 'non_deductible', 'capital'] as const
+/** A draft is a guess -- read from a receipt photo, say -- until a person confirms it. */
+export const EXPENSE_STATUSES = ['draft', 'confirmed'] as const
+/** Where an expense was entered from. */
+export const EXPENSE_SOURCES = ['web', 'api', 'telegram'] as const
+/** How an expense was paid: the payment methods, and a person's own card, to be reimbursed. */
+export const EXPENSE_PAYMENT_METHODS = [...PAYMENT_METHODS, 'personal_card'] as const
+
+/** The categories every organization starts with. Archived, never deleted, so old expenses keep theirs. */
+export const DEFAULT_EXPENSE_CATEGORIES: ReadonlyArray<{ key: string; name: string; taxTreatment: (typeof EXPENSE_TAX_TREATMENTS)[number] }> = [
+  { key: 'software', name: 'Software and subscriptions', taxTreatment: 'deductible' },
+  { key: 'hosting', name: 'Hosting', taxTreatment: 'deductible' },
+  { key: 'domains', name: 'Domains', taxTreatment: 'deductible' },
+  { key: 'hardware', name: 'Hardware and equipment', taxTreatment: 'capital' },
+  { key: 'contractor', name: 'Contractors', taxTreatment: 'deductible' },
+  { key: 'advertising', name: 'Advertising', taxTreatment: 'deductible' },
+  { key: 'travel', name: 'Travel', taxTreatment: 'deductible' },
+  { key: 'office', name: 'Office', taxTreatment: 'deductible' },
+  { key: 'fees', name: 'Bank and professional fees', taxTreatment: 'deductible' },
+  { key: 'other', name: 'Other', taxTreatment: 'deductible' },
+]
+
+/**
+ * The agency's own expense categories, keyed by a short stable slug that
+ * expenses reference. Each says how the tax pack treats what is in it.
+ */
+export const expenseCategories = pgTable(
+  'expense_categories',
+  {
+    ...tenantColumn,
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    taxTreatment: text('tax_treatment').notNull().default('deductible'),
+    position: integer('position').notNull().default(0),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    primaryKey({ name: 'expense_categories_pkey', columns: [t.organizationId, t.key] }),
+    check('expense_categories_key_check', sql`${t.key} ~ '^[a-z0-9_]{1,40}$'`),
+    check('expense_categories_tax_treatment_check', sql`${t.taxTreatment} in ${oneOf(EXPENSE_TAX_TREATMENTS)}`),
+  ],
+)
+
+/** The category keys expenses had before categories were the agency's own. */
 export const EXPENSE_CATEGORIES = [
   'software',
   'hosting',
@@ -549,6 +718,20 @@ export const expenses = pgTable(
     description: text('description').notNull(),
     supplier: text('supplier'),
     category: text('category').notNull().default('other'),
+    /** Draft until a person confirms it; only confirmed expenses count anywhere. */
+    status: text('status').notNull().default('confirmed'),
+    /** "EXP-0042", given when it is confirmed. Older expenses confirmed before numbering have none. */
+    number: text('number'),
+    /** How it was paid, and when, if not on the day it was incurred. */
+    paymentMethod: text('payment_method'),
+    paidOn: date('paid_on', { mode: 'string' }),
+    /** Paid by a person out of their own pocket, to be paid back. */
+    reimbursable: boolean('reimbursable').notNull().default(false),
+    source: text('source').notNull().default('web'),
+    /** What was read from the receipt and by what, kept as evidence beside what a person confirmed. */
+    extraction: jsonb('extraction'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmedBy: uuid('confirmed_by').references(() => user.id, { onDelete: 'set null' }),
     /** The day it was incurred, in the organization's time zone. */
     incurredOn: date('incurred_on', { mode: 'string' }).notNull(),
 
@@ -600,7 +783,16 @@ export const expenses = pgTable(
       columns: [t.organizationId, t.bankAccountId, t.currency],
       foreignColumns: [bankAccounts.organizationId, bankAccounts.id, bankAccounts.currency],
     }),
-    check('expenses_category_check', sql`${t.category} in ${oneOf(EXPENSE_CATEGORIES)}`),
+    uniqueIndex('expenses_organization_number_key').on(t.organizationId, t.number),
+    index('expenses_organization_status_idx').on(t.organizationId, t.status),
+    foreignKey({ name: 'expenses_category_fk', columns: [t.organizationId, t.category], foreignColumns: [expenseCategories.organizationId, expenseCategories.key] }),
+    check('expenses_status_check', sql`${t.status} in ${oneOf(EXPENSE_STATUSES)}`),
+    check('expenses_source_check', sql`${t.source} in ${oneOf(EXPENSE_SOURCES)}`),
+    check('expenses_payment_method_check', sql`${t.paymentMethod} in ${oneOf(EXPENSE_PAYMENT_METHODS)}`),
+    /** A draft has not been confirmed by anyone. (A confirmed one says when, where it was confirmed through Workloom.) */
+    check('expenses_confirmed_check', sql`${t.status} = 'confirmed' or ${t.confirmedAt} is null`),
+    /** A draft is not yet a cost: it has no number and cannot have been rebilled. */
+    check('expenses_draft_check', sql`${t.status} = 'confirmed' or (${t.number} is null and ${t.invoiceLineId} is null)`),
     check('expenses_currency_check', sql`${t.currency} ~ '^[A-Z]{3}$' and ${t.baseCurrency} ~ '^[A-Z]{3}$'`),
     check('expenses_amount_check', sql`${t.amountMinor} >= 0 and ${t.taxMinor} >= 0`),
     check('expenses_exchange_rate_check', sql`${t.exchangeRateToBase} > 0`),
@@ -608,5 +800,39 @@ export const expenses = pgTable(
     check('expenses_markup_check', sql`${t.markupPercent} between 0 and 1000`),
     /** Only a billable expense can have been rebilled. */
     check('expenses_billable_check', sql`${t.invoiceLineId} is null or ${t.billable}`),
+  ],
+)
+
+/**
+ * The receipts behind an expense: photos and PDFs, in file storage.
+ *
+ * Its own table with its own key, as S7c said receipts should be, rather than
+ * a polymorphic owner on `attachments`. The bytes were checked to be an image or
+ * a PDF when they arrived; `sha256` lets the same receipt sent twice be spotted.
+ */
+export const expenseReceipts = pgTable(
+  'expense_receipts',
+  {
+    id: uuid('id').primaryKey(),
+    ...tenantColumn,
+    expenseId: uuid('expense_id').notNull(),
+    storageKey: text('storage_key').notNull(),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    source: text('source').notNull().default('web'),
+    uploadedBy: uuid('uploaded_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('expense_receipts_organization_id_id_key').on(t.organizationId, t.id),
+    uniqueIndex('expense_receipts_storage_key_key').on(t.storageKey),
+    index('expense_receipts_organization_expense_idx').on(t.organizationId, t.expenseId),
+    index('expense_receipts_organization_sha256_idx').on(t.organizationId, t.sha256),
+    foreignKey({ name: 'expense_receipts_expense_fk', columns: [t.organizationId, t.expenseId], foreignColumns: [expenses.organizationId, expenses.id] }).onDelete('cascade'),
+    check('expense_receipts_source_check', sql`${t.source} in ${oneOf(EXPENSE_SOURCES)}`),
+    check('expense_receipts_size_check', sql`${t.sizeBytes} > 0`),
+    check('expense_receipts_content_type_check', sql`${t.contentType} in ('image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'application/pdf')`),
   ],
 )

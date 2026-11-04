@@ -1,3 +1,4 @@
+import { schema } from '@workloom/db'
 import { z } from 'zod'
 import { DomainError, type ActorContext } from '../../context.ts'
 import { formatDecimal, MoneyError, parseDecimal, RATE_SCALE } from '../../money/money.ts'
@@ -27,6 +28,8 @@ export type DocumentLineRow = {
   position: number
   serviceId: string | null
   description: string
+  detail: string | null
+  billingType: string | null
   quantity: string
   unitAmountMinor: number
   discountPercent: string | null
@@ -52,7 +55,12 @@ export const documentLineOutput = z.object({
   id: z.uuid(),
   position: z.number().int(),
   serviceId: z.uuid().nullable(),
+  /** The line's title. */
   description: z.string(),
+  /** A quieter second line under the title: "Initially quoted project fee". */
+  detail: z.string().nullable(),
+  /** One-off or recurring, for the Billing column. */
+  billingType: z.enum(schema.SERVICE_BILLING_TYPES).nullable(),
   /** Exact decimal string, up to four places. */
   quantity: z.string(),
   unitAmountMinor: z.number().int(),
@@ -87,6 +95,8 @@ export function presentLine(line: DocumentLineRow): DocumentLine {
     position: line.position,
     serviceId: line.serviceId,
     description: line.description,
+    detail: line.detail,
+    billingType: line.billingType as DocumentLine['billingType'],
     quantity: fromNumeric(line.quantity),
     unitAmountMinor: line.unitAmountMinor,
     discountPercent: fromNumeric(line.discountPercent),
@@ -159,6 +169,10 @@ export const lineInput = z.object({
   /** A catalogue service. Its name, price (in the document's currency), and default tax fill whatever the line leaves out. */
   serviceId: z.uuid().nullish(),
   description: optionalText(2000),
+  /** A quieter second line under the description: "Additional scope". */
+  detail: optionalText(500),
+  /** One-off or recurring, for the Billing column. Defaults to the service's. */
+  billingType: z.enum(schema.SERVICE_BILLING_TYPES).nullish(),
   /** Defaults to 1. */
   quantity: quantityInput.optional(),
   /** Minor units of the document's currency; negative for a credit. */
@@ -193,6 +207,8 @@ export async function newLineValues(ctx: ActorContext, document: { currency: str
   return {
     serviceId: service?.id ?? null,
     description,
+    detail: input.detail ?? null,
+    billingType: input.billingType !== undefined ? input.billingType : (service?.billingType ?? null),
     quantity: input.quantity ?? '1',
     unitAmountMinor,
     discountPercent: input.discountPercent ?? null,

@@ -51,6 +51,18 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
+/** How an expense was paid: the payment methods, and a person's own card, to be paid back. */
+export const EXPENSE_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  ...PAYMENT_METHOD_LABELS,
+  personal_card: 'Own card or cash (to reimburse)',
+}
+
+export const EXPENSE_TAX_TREATMENT_LABELS: Record<string, string> = {
+  deductible: 'Deductible',
+  non_deductible: 'Not deductible',
+  capital: 'Capital (allowances)',
+}
+
 export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
   software: 'Software',
   hosting: 'Hosting',

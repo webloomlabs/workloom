@@ -3,7 +3,7 @@
 import { auth, provisionMember } from '@workloom/auth'
 import { env } from '@workloom/config'
 import { ForbiddenError, ROLES } from '@workloom/core'
-import { apiKeyCreate, apiKeyRevoke, memberRemove, organizationUpdate } from '@workloom/core/modules'
+import { apiKeyCreate, apiKeyRevoke, documentSequenceUpdate, memberRemove, organizationRemoveLogo, organizationUpdate, organizationUploadLogo } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { z } from 'zod'
@@ -22,18 +22,81 @@ export async function updateOrganizationAction(_: ActionState, form: FormData): 
       name: optional(form.get('name')) as string | undefined,
       baseCurrency: (optional(form.get('baseCurrency')) as string | undefined)?.toUpperCase(),
       timezone: optional(form.get('timezone')) as string | undefined,
-      dateFormat: optional(form.get('dateFormat')) as string | undefined,
+      dateFormat: optional(form.get('dateFormat')) as z.input<typeof organizationUpdate.input>['dateFormat'],
       legalName: form.has('legalName') ? String(form.get('legalName') ?? '').trim() : undefined,
       billingAddress: form.has('billingAddress') ? String(form.get('billingAddress') ?? '').trim() : undefined,
       taxNumber: form.has('taxNumber') ? String(form.get('taxNumber') ?? '').trim() : undefined,
       paymentInstructions: form.has('paymentInstructions') ? String(form.get('paymentInstructions') ?? '').trim() : undefined,
       paymentTermsDays: optional(form.get('paymentTermsDays')) ? Number(form.get('paymentTermsDays')) : undefined,
+      fiscalYearStartMonth: optional(form.get('fiscalYearStartMonth')) ? Number(form.get('fiscalYearStartMonth')) : undefined,
+      // A checkbox posts nothing when unticked; the hidden "false" before it is the fallback.
+      reclaimsInputTax: form.has('reclaimsInputTax') ? form.getAll('reclaimsInputTax').includes('true') : undefined,
+      brandColor: form.has('brandColor') ? (String(form.get('brandColor') ?? '').trim() || null) : undefined,
+      paymentDetails: form.has('paymentDetail.0.label') || form.has('paymentInstructions') ? paymentDetailsFrom(form) : undefined,
+      invoiceNotesDefault: text(form, 'invoiceNotesDefault'),
+      invoiceTermsDefault: text(form, 'invoiceTermsDefault'),
+      quoteTermsDefault: text(form, 'quoteTermsDefault'),
+      documentFooter: text(form, 'documentFooter'),
     })
   } catch (error) {
     return toActionError(error)
   }
   revalidatePath('/settings', 'layout')
   return { status: 'success', message: 'Settings saved.' }
+}
+
+/** A text field that was on the form: trimmed, empty meaning cleared. */
+const text = (form: FormData, name: string) => (form.has(name) ? String(form.get(name) ?? '').trim() : undefined)
+
+/** The payment details rows, in order, without the ones left empty. */
+function paymentDetailsFrom(form: FormData): Array<{ label: string; value: string }> {
+  const rows: Array<{ label: string; value: string }> = []
+  for (let i = 0; i < 16; i++) {
+    if (!form.has(`paymentDetail.${i}.label`)) continue
+    const label = String(form.get(`paymentDetail.${i}.label`) ?? '').trim()
+    const value = String(form.get(`paymentDetail.${i}.value`) ?? '').trim()
+    if (label || value) rows.push({ label, value })
+  }
+  return rows
+}
+
+export async function uploadLogoAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const file = form.get('file')
+  if (!(file instanceof File) || file.size === 0) return { status: 'error', message: 'Choose a PNG or JPEG file to upload.' }
+  try {
+    await call(organizationUploadLogo, { file })
+  } catch (error) {
+    return toActionError(error)
+  }
+  revalidatePath('/settings/organization')
+  return { status: 'success', message: 'Logo uploaded. It prints on every quote and invoice.' }
+}
+
+export async function removeLogoAction(_: ActionState, _form: FormData): Promise<ActionState> {
+  try {
+    await call(organizationRemoveLogo, {})
+  } catch (error) {
+    return toActionError(error)
+  }
+  revalidatePath('/settings/organization')
+  return { status: 'success', message: 'Logo removed.' }
+}
+
+export async function updateDocumentSequenceAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const kind = String(form.get('kind') ?? '') as 'invoice' | 'quote' | 'ticket' | 'expense'
+  const next = optional(form.get('nextValue'))
+  try {
+    const result = await call(documentSequenceUpdate, {
+      kind,
+      format: optional(form.get('format')) as string | undefined,
+      reset: optional(form.get('reset')) as 'never' | 'yearly' | 'fiscal_yearly' | undefined,
+      nextValue: next === undefined ? undefined : Number(next),
+    })
+    revalidatePath('/settings/numbering')
+    return { status: 'success', message: `The next ${kind} will be ${result.nextNumber}.` }
+  } catch (error) {
+    return toActionError(error)
+  }
 }
 
 export async function inviteMemberAction(_: ActionState, form: FormData): Promise<ActionState> {

@@ -13,6 +13,8 @@ export type PutOptions = {
 
 export interface Storage {
   put(key: string, body: Buffer | Uint8Array, options?: PutOptions): Promise<StoredObject>
+  /** Stores a file from disk without reading it into memory: for large generated files such as a tax pack. */
+  putFile(key: string, path: string, options?: PutOptions): Promise<StoredObject>
   get(key: string): Promise<Buffer>
   delete(key: string): Promise<void>
   exists(key: string): Promise<boolean>
@@ -33,6 +35,25 @@ export type SignedUrlOptions = {
   /** The name the browser saves the file as. */
   filename?: string
   contentType?: string
+  /**
+   * Show the file in the browser rather than download it. Honoured only for
+   * the raster image types in `INLINE_TYPES`, whose bytes the caller has
+   * checked: an image cannot run script, an HTML or SVG file can.
+   */
+  inline?: boolean
+}
+
+/** The only types ever served inline: raster images, which cannot carry script. */
+export const INLINE_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+/** Whether a file of this type, asked to be shown inline, may be. */
+export function servesInline(options: { inline?: boolean | undefined; contentType?: string | undefined }): boolean {
+  return Boolean(options.inline && options.contentType && INLINE_TYPES.includes(options.contentType))
+}
+
+/** A Content-Disposition header that shows the file in the browser, for an inline-safe type. */
+export function inlineDisposition(filename: string): string {
+  return attachmentDisposition(filename).replace(/^attachment/, 'inline')
 }
 
 /** A Content-Disposition header value that is safe for any filename. */

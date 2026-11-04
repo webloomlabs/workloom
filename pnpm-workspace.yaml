@@ -16,3 +16,5 @@ allowBuilds:
   cpu-features: false
   ssh2: false
   protobufjs: false
+  # Declined: the Gemini SDK's install script is an echo that does nothing.
+  '@google/genai': false

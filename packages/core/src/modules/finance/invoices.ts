@@ -42,6 +42,8 @@ import {
   today,
   UNPRICED,
 } from './documents.ts'
+import { DeductionError, deductionLinesFor } from './deductions.ts'
+import { presentTotals } from './document-totals.ts'
 import { rebillAmount, releaseExpenses, unbilledExpenses } from './expenses.ts'
 import { issueNumber } from './numbering.ts'
 import { loadQuote } from './quotes.ts'
@@ -88,22 +90,47 @@ const PDF_PURPOSE = 'document-pdf'
  * the permission check happens when the link is issued, and the link itself
  * carries only what it opens and when it stops working.
  */
-export function invoicePdfLink(organizationId: string, invoiceId: string, expiresAt: Date): string {
-  const token = signLinkToken(PDF_PURPOSE, `invoice:${organizationId}:${invoiceId}:${expiresAt.getTime()}`)
+export function invoicePdfLink(organizationId: string, invoiceId: string, expiresAt: Date, kind: 'invoice' | 'quote' = 'invoice'): string {
+  const token = signLinkToken(PDF_PURPOSE, `${kind}:${organizationId}:${invoiceId}:${expiresAt.getTime()}`)
   return `${env.APP_URL.replace(/\/$/, '')}/api/documents/${token}`
 }
 
 /** What a PDF link opens, or null if it was altered or has expired. */
-export function readPdfToken(token: string, now = new Date()): { organizationId: string; documentId: string } | null {
+export function readPdfToken(token: string, now = new Date()): { kind: 'invoice' | 'quote'; organizationId: string; documentId: string } | null {
   const payload = readLinkToken(PDF_PURPOSE, token)
   if (!payload) return null
   const [kind, organizationId, documentId, expiresAt] = payload.split(':')
-  if (kind !== 'invoice' || !organizationId || !documentId || !expiresAt) return null
+  if ((kind !== 'invoice' && kind !== 'quote') || !organizationId || !documentId || !expiresAt) return null
   if (Number(expiresAt) < now.getTime()) return null
-  return { organizationId, documentId }
+  return { kind, organizationId, documentId }
 }
 
-export const invoiceLineOutput = documentLineOutput
+export const invoiceLineOutput = documentLineOutput.extend({
+  /** Something billed, or an earlier invoice taken off this one. */
+  kind: z.enum(schema.INVOICE_LINE_KINDS),
+  /** The service period the line pays for, when it pays for one. */
+  periodStart: z.iso.date().nullable(),
+  periodEnd: z.iso.date().nullable(),
+  /** For a deduction: the earlier invoice it takes off, and its number. */
+  deductsInvoiceId: z.uuid().nullable(),
+  deductsInvoiceNumber: z.string().nullable(),
+  /** For a deduction on an issued invoice: whether the earlier one had been paid in full by then. */
+  deductionSettled: z.boolean().nullable(),
+})
+
+export type InvoiceLine = z.infer<typeof invoiceLineOutput>
+
+function presentInvoiceLine(line: LineRow, deducted: Map<string, DeductedInvoice>): InvoiceLine {
+  return {
+    ...presentLine(line),
+    kind: line.kind as InvoiceLine['kind'],
+    periodStart: line.periodStart,
+    periodEnd: line.periodEnd,
+    deductsInvoiceId: line.deductsInvoiceId,
+    deductsInvoiceNumber: line.deductsInvoiceId ? (deducted.get(line.deductsInvoiceId)?.number ?? null) : null,
+    deductionSettled: line.deductionSettled,
+  }
+}
 
 export const invoiceSummaryOutput = z.object({
   id: z.uuid(),
@@ -121,7 +148,10 @@ export const invoiceSummaryOutput = z.object({
   currency: z.string().length(3),
   taxMode: z.enum(schema.TAX_MODES),
   issueDate: z.iso.date().nullable(),
+  /** Null for a draft, and for an invoice due on an event that has no date yet. */
   dueDate: z.iso.date().nullable(),
+  /** When it is due, in words, for an event without a date yet: "At launch". */
+  dueLabel: z.string().nullable(),
   paymentTermsDays: z.number().int(),
   discountPercent: z.string().nullable(),
   discountAmountMinor: z.number().int().nullable(),
@@ -151,8 +181,34 @@ export const invoiceSummaryOutput = z.object({
 export const invoiceOriginOutput = z.object({
   scheduleId: z.uuid(),
   scheduleName: z.string(),
+  /** The first day of the first period it bills, and the last day of the last. */
   periodStart: z.iso.date(),
   periodEnd: z.iso.date(),
+  /** How many periods it bills: more than one when the client paid ahead. */
+  periods: z.number().int(),
+})
+
+/**
+ * The bottom line read as a statement, for an invoice that takes earlier ones
+ * off: the whole project, what was already paid or invoiced, and the balance.
+ */
+export const invoiceStatementOutput = z.object({
+  /** True when earlier invoices are deducted. */
+  statement: z.boolean(),
+  /** The billed lines before anything is taken off. */
+  itemsTotalMinor: z.number().int(),
+  deductions: z.array(
+    z.object({
+      invoiceId: z.uuid(),
+      number: z.string().nullable(),
+      amountMinor: z.number().int(),
+      /** Paid in full when this invoice was issued. Null while this one is a draft. */
+      settled: z.boolean().nullable(),
+    }),
+  ),
+  balanceDueMinor: z.number().int(),
+  /** Already received towards what this invoice states: "After payment received of ...". */
+  receivedMinor: z.number().int(),
 })
 
 export const invoiceOutput = invoiceSummaryOutput.extend({
@@ -160,6 +216,7 @@ export const invoiceOutput = invoiceSummaryOutput.extend({
   terms: z.string().nullable(),
   lines: z.array(invoiceLineOutput),
   taxes: z.array(documentTaxOutput),
+  totals: invoiceStatementOutput,
   /** The schedule and period that raised it, for one that was not written by hand. */
   recurring: invoiceOriginOutput.nullable(),
   /** The link a client opens to see and pay it. Null while the invoice is a draft. */
@@ -201,6 +258,7 @@ function presentSummary(row: { invoice: InvoiceRow; companyName: string; contact
     taxMode: i.taxMode as InvoiceSummary['taxMode'],
     issueDate: i.issueDate,
     dueDate: i.dueDate,
+    dueLabel: i.dueLabel,
     paymentTermsDays: i.paymentTermsDays,
     discountPercent: fromNumeric(i.discountPercent),
     discountAmountMinor: i.discountAmountMinor,
@@ -233,16 +291,40 @@ async function loadLines(ctx: ActorContext, invoiceId: string): Promise<LineRow[
 export async function getInvoice(ctx: ActorContext, id: string): Promise<Invoice> {
   const [row] = await selectInvoices(ctx).where(eq(schema.invoices.id, id)).limit(1)
   if (!row) throw new NotFoundError('Invoice', id)
-  const lines = (await loadLines(ctx, id)).map(presentLine)
+  const rows = await loadLines(ctx, id)
+  const deducted = await deductedInvoices(ctx, rows.map((l) => l.deductsInvoiceId).filter((v): v is string => v !== null))
+  const lines = rows.map((l) => presentInvoiceLine(l, deducted))
+  // An issued invoice says what was true when it was issued. A draft shows
+  // what is true now, which is what issuing it will record.
+  const draft = row.invoice.status === 'draft'
+  const totals = presentTotals({
+    totalMinor: row.invoice.totalMinor,
+    amountPaidMinor: row.invoice.amountPaidMinor,
+    lines: lines.map((l) => ({ ...l, deductionSettled: draft && l.deductsInvoiceId ? (deducted.get(l.deductsInvoiceId)?.settledNow ?? null) : l.deductionSettled })),
+  })
   return {
     ...presentSummary(row),
     notes: row.invoice.notes,
     terms: row.invoice.terms,
     lines,
     taxes: taxesFromLines(lines),
+    totals: { ...totals, deductions: totals.deductions.map((d) => ({ ...d, number: deducted.get(d.invoiceId)?.number ?? null })) },
     recurring: await originOf(ctx, id),
     publicUrl: row.invoice.status === 'draft' ? null : documentLink('invoice', ctx.organizationId, id),
   }
+}
+
+type DeductedInvoice = { number: string | null; settledNow: boolean }
+
+/** The invoices deducted from one, by id: their numbers, and whether each is paid in full now. */
+async function deductedInvoices(ctx: ActorContext, ids: string[]): Promise<Map<string, DeductedInvoice>> {
+  if (ids.length === 0) return new Map()
+  const i = schema.invoices
+  const rows = await ctx.tx
+    .select({ id: i.id, number: i.number, totalMinor: i.totalMinor, amountPaidMinor: i.amountPaidMinor })
+    .from(i)
+    .where(inArray(i.id, [...new Set(ids)]))
+  return new Map(rows.map((r) => [r.id, { number: r.number, settledNow: r.totalMinor > 0 && r.amountPaidMinor >= r.totalMinor }]))
 }
 
 /**
@@ -258,12 +340,14 @@ async function originOf(ctx: ActorContext, invoiceId: string) {
     .select({
       scheduleId: b.scheduleId,
       scheduleName: schema.billingSchedules.name,
-      periodStart: b.periodStart,
-      periodEnd: b.periodEnd,
+      periodStart: sql<string>`min(${b.periodStart})::text`,
+      periodEnd: sql<string>`max(${b.periodEnd})::text`,
+      periods: sql<number>`count(*)::int`,
     })
     .from(b)
     .innerJoin(schema.billingSchedules, eq(schema.billingSchedules.id, b.scheduleId))
     .where(eq(b.invoiceId, invoiceId))
+    .groupBy(b.scheduleId, schema.billingSchedules.name)
     .limit(1)
   return row ?? null
 }
@@ -287,6 +371,12 @@ function requireDraft(invoice: InvoiceRow): void {
 export async function recalculate(ctx: ActorContext, invoiceId: string): Promise<void> {
   const invoice = await loadInvoice(ctx, invoiceId)
   const lines = await loadLines(ctx, invoiceId)
+  // A discount on a statement would be shared across the deductions too, and
+  // so change what the earlier invoice is said to have demanded. Discount the
+  // lines instead.
+  if ((invoice.discountPercent !== null || invoice.discountAmountMinor !== null) && lines.some((l) => l.kind === 'deduction')) {
+    throw new DomainError('An invoice that takes off an earlier one cannot also have an invoice discount. Discount the lines instead.', 'deduction_with_discount', 'discountPercent')
+  }
   const result = priceDocument(invoice, lines)
   for (const [i, line] of lines.entries()) {
     await ctx.tx.update(schema.invoiceLines).set(pricedLineValues(result.lines[i]!)).where(eq(schema.invoiceLines.id, line.id))
@@ -300,6 +390,19 @@ export async function recalculate(ctx: ActorContext, invoiceId: string): Promise
 async function nextPosition(ctx: ActorContext, invoiceId: string): Promise<number> {
   const [row] = await ctx.tx.select({ last: max(schema.invoiceLines.position) }).from(schema.invoiceLines).where(eq(schema.invoiceLines.invoiceId, invoiceId))
   return (row?.last ?? 0) + 1
+}
+
+/** A new invoice's notes and terms: what was given, else the organization's defaults. */
+export async function documentDefaults(ctx: ActorContext, input: { notes?: string | null | undefined; terms?: string | null | undefined }) {
+  const [org] = await ctx.tx
+    .select({ notes: schema.organization.invoiceNotesDefault, terms: schema.organization.invoiceTermsDefault })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, ctx.organizationId))
+    .limit(1)
+  return {
+    notes: input.notes !== undefined ? input.notes : (org?.notes ?? null),
+    terms: input.terms !== undefined ? input.terms : (org?.terms ?? null),
+  }
 }
 
 /** The organization's default payment terms, for a new invoice. */
@@ -370,12 +473,31 @@ export const invoiceGet = defineProcedure({
 
 // Drafts
 
+/** An invoice line may also say which service period it pays for. */
+const invoiceLineInput = lineInput.extend({
+  periodStart: z.iso.date().nullish(),
+  periodEnd: z.iso.date().nullish(),
+})
+
+function periodValues(input: { periodStart?: string | null | undefined; periodEnd?: string | null | undefined }, field = '') {
+  const start = input.periodStart ?? null
+  const end = input.periodEnd ?? null
+  if ((start === null) !== (end === null)) throw new DomainError('Give the period both a start and an end, or neither.', 'period_incomplete', `${field}periodEnd`)
+  if (start && end && end < start) throw new DomainError('The period cannot end before it starts.', 'period_order', `${field}periodEnd`)
+  return { periodStart: start, periodEnd: end }
+}
+
 const header = {
   contactId: z.uuid().nullish(),
   projectId: z.uuid().nullish(),
   taxMode: z.enum(schema.TAX_MODES).optional(),
   /** Days from issue to due. Defaults to the organization's terms. */
   paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  /**
+   * Due on an event rather than after the terms: "At launch". The invoice is
+   * then issued without a due date, and given one when the event has a date.
+   */
+  dueLabel: optionalText(80),
   discountPercent: percentInput.nullish(),
   discountAmountMinor: minorAmount.nullish(),
   notes: optionalText(10_000),
@@ -394,7 +516,7 @@ export const invoiceCreate = defineProcedure({
     ...header,
     /** Defaults to the deal's currency, or the organization's base currency. */
     currency: currencyCode.optional(),
-    lines: z.array(lineInput).max(500).default([]),
+    lines: z.array(invoiceLineInput).max(500).default([]),
   }),
   output: invoiceOutput,
   http: { method: 'POST', path: '/invoices', successStatus: 201 },
@@ -416,10 +538,10 @@ export const invoiceCreate = defineProcedure({
       currency: input.currency ?? deal?.currency ?? (await baseCurrency(ctx)),
       taxMode: input.taxMode ?? 'exclusive',
       paymentTermsDays: input.paymentTermsDays ?? (await defaultTerms(ctx)),
+      dueLabel: input.dueLabel ?? null,
       discountPercent: input.discountPercent ?? null,
       discountAmountMinor: input.discountAmountMinor ?? null,
-      notes: input.notes ?? null,
-      terms: input.terms ?? null,
+      ...(await documentDefaults(ctx, input)),
       createdBy: actingUserId(ctx),
     })
     const invoice = await loadInvoice(ctx, id)
@@ -430,6 +552,7 @@ export const invoiceCreate = defineProcedure({
         invoiceId: id,
         position: i + 1,
         ...(await newLineValues(ctx, invoice, line, `lines.${i}.`)),
+        ...periodValues(line, `lines.${i}.`),
       })
     }
     await recalculate(ctx, id)
@@ -481,6 +604,10 @@ export const invoiceUpdate = defineProcedure({
     if (patch.currency && patch.currency !== before.currency && (await loadLines(ctx, id)).length > 0) {
       throw new DomainError(`Remove the lines before changing the currency: their prices were entered in ${before.currency}.`, 'currency_locked', 'currency')
     }
+    const hasDeductions = (await loadLines(ctx, id)).some((l) => l.kind === 'deduction')
+    if (hasDeductions && ((patch.companyId && patch.companyId !== before.companyId) || (patch.taxMode && patch.taxMode !== before.taxMode))) {
+      throw new DomainError('Remove the deductions first: they were worked out for this client and tax mode.', 'deductions_locked')
+    }
 
     const changes = diff({ ...before, discountPercent: fromNumeric(before.discountPercent) } as Record<string, unknown>, patch)
     if (!changes) return getInvoice(ctx, id)
@@ -511,7 +638,14 @@ export const invoiceDelete = defineProcedure({
   name: 'invoice.delete',
   summary: 'Delete a draft invoice. An issued invoice is a demand for payment and is never deleted.',
   permission: 'invoice:delete',
-  input: z.object({ id: z.uuid() }),
+  input: z.object({
+    id: z.uuid(),
+    /**
+     * For a draft a recurring schedule raised: bill its periods again
+     * (`rebill`, the default) or leave them unbilled for good (`skip`).
+     */
+    schedulePeriods: z.enum(['rebill', 'skip']).default('rebill'),
+  }),
   output: z.object({ deleted: z.boolean() }),
   http: { method: 'DELETE', path: '/invoices/{id}' },
   emits: ['invoice.deleted'],
@@ -525,8 +659,12 @@ export const invoiceDelete = defineProcedure({
     // A billing stage that raised this draft goes back to pending: the money
     // was never demanded, so the plan must stop saying it was.
     await releaseStageForInvoice(ctx, before.id)
+    // A schedule that raised it is put back on its periods -- before the delete
+    // cascades the record of which periods they were.
+    const { rewindSchedulesForInvoice } = await import('./billing-schedules.ts')
+    await rewindSchedulesForInvoice(ctx, before.id, input.schedulePeriods)
     await ctx.tx.delete(schema.invoices).where(eq(schema.invoices.id, before.id))
-    await ctx.audit({ action: 'invoice.deleted', entityType: 'invoice', entityId: before.id, entityLabel: before.title })
+    await ctx.audit({ action: 'invoice.deleted', entityType: 'invoice', entityId: before.id, entityLabel: before.title, snapshot: invoice })
     await ctx.emit('invoice.deleted', invoice)
     return { deleted: true }
   },
@@ -538,7 +676,7 @@ export const invoiceLineAdd = defineProcedure({
   name: 'invoiceLine.add',
   summary: 'Add a line to a draft invoice',
   permission: 'invoice:update',
-  input: lineInput.extend({ id: z.uuid() }),
+  input: invoiceLineInput.extend({ id: z.uuid() }),
   output: invoiceOutput,
   http: { method: 'POST', path: '/invoices/{id}/lines', successStatus: 201 },
   emits: ['invoice.updated'],
@@ -552,11 +690,83 @@ export const invoiceLineAdd = defineProcedure({
       invoiceId: id,
       position: await nextPosition(ctx, id),
       ...(await newLineValues(ctx, invoice, line)),
+      ...periodValues(line),
     }
     await ctx.tx.insert(schema.invoiceLines).values(values)
     await recalculate(ctx, id)
     const updated = await getInvoice(ctx, id)
     await ctx.audit({ action: 'invoice.updated', entityType: 'invoice', entityId: id, entityLabel: updated.title, changes: { lines: { from: null, to: values.description } } })
+    await ctx.emit('invoice.updated', updated)
+    return updated
+  },
+})
+
+/**
+ * Lines that take an earlier invoice off this one, worked out from that
+ * invoice's own priced lines. The earlier invoice must already be issued, to
+ * the same client, in the same currency and tax mode, and not be taken off
+ * anything else -- checked again, under lock, when this invoice is issued.
+ */
+export async function deductionValues(ctx: ActorContext, invoice: InvoiceRow, deductsInvoiceId: string) {
+  if (deductsInvoiceId === invoice.id) throw new DomainError('An invoice cannot take itself off.', 'deduction_self', 'deductsInvoiceId')
+  const prior = await loadInvoice(ctx, deductsInvoiceId)
+  if (prior.status === 'draft') throw new DomainError('Issue that invoice before taking it off another.', 'deduction_not_issued', 'deductsInvoiceId')
+  if (prior.status === 'cancelled') throw new DomainError(`${prior.number} was cancelled, so there is nothing to take off.`, 'deduction_cancelled', 'deductsInvoiceId')
+  if (prior.companyId !== invoice.companyId) throw new DomainError(`${prior.number} is for a different client.`, 'deduction_company_mismatch', 'deductsInvoiceId')
+  if (prior.currency !== invoice.currency) throw new DomainError(`${prior.number} is in ${prior.currency}, not ${invoice.currency}.`, 'deduction_currency_mismatch', 'deductsInvoiceId')
+  const existing = await ctx.tx
+    .select({ id: schema.invoiceLines.id })
+    .from(schema.invoiceLines)
+    .where(and(eq(schema.invoiceLines.invoiceId, invoice.id), eq(schema.invoiceLines.deductsInvoiceId, prior.id)))
+    .limit(1)
+  if (existing.length > 0) throw new DomainError(`${prior.number} is already taken off this invoice.`, 'deduction_duplicate', 'deductsInvoiceId')
+  const lines = (await loadLines(ctx, prior.id)).map(presentLine)
+  try {
+    return deductionLinesFor({ id: prior.id, number: prior.number!, title: prior.title, taxMode: prior.taxMode, lines }, invoice.taxMode)
+  } catch (error) {
+    if (error instanceof DeductionError) throw new DomainError(error.message, error.code, 'deductsInvoiceId')
+    throw error
+  }
+}
+
+export async function insertDeductions(ctx: ActorContext, invoice: InvoiceRow, deductsInvoiceId: string): Promise<number> {
+  const lines = await deductionValues(ctx, invoice, deductsInvoiceId)
+  let position = await nextPosition(ctx, invoice.id)
+  for (const line of lines) {
+    await ctx.tx.insert(schema.invoiceLines).values({
+      ...line,
+      id: newId(),
+      organizationId: ctx.organizationId,
+      invoiceId: invoice.id,
+      position: position++,
+      ...UNPRICED,
+    })
+  }
+  return lines.length
+}
+
+export const invoiceLineAddDeduction = defineProcedure({
+  name: 'invoiceLine.addDeduction',
+  summary: 'Take an earlier invoice -- a deposit, a progress payment -- off a draft invoice, so it reads as a statement',
+  permission: 'invoice:update',
+  input: z.object({ id: z.uuid(), deductsInvoiceId: z.uuid() }),
+  output: invoiceOutput,
+  http: { method: 'POST', path: '/invoices/{id}/deductions', successStatus: 201 },
+  emits: ['invoice.updated'],
+  async handler(ctx, input) {
+    const invoice = await loadInvoice(ctx, input.id, { lock: true })
+    requireDraft(invoice)
+    await insertDeductions(ctx, invoice, input.deductsInvoiceId)
+    await recalculate(ctx, invoice.id)
+    const updated = await getInvoice(ctx, invoice.id)
+    const deducted = updated.totals.deductions.find((d) => d.invoiceId === input.deductsInvoiceId)
+    await ctx.audit({
+      action: 'invoice.updated',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      entityLabel: updated.title,
+      changes: { deductions: { from: null, to: deducted?.number ?? input.deductsInvoiceId } },
+    })
     await ctx.emit('invoice.updated', updated)
     return updated
   },
@@ -574,14 +784,26 @@ export const invoiceLineUpdate = defineProcedure({
   name: 'invoiceLine.update',
   summary: 'Change a line on a draft invoice',
   permission: 'invoice:update',
-  input: lineInput.omit({ serviceId: true }).extend({ id: z.uuid(), description: requiredText(2000, 'Description').optional() }),
+  input: invoiceLineInput.omit({ serviceId: true }).extend({ id: z.uuid(), description: requiredText(2000, 'Description').optional() }),
   output: invoiceOutput,
   http: { method: 'PATCH', path: '/invoice-lines/{id}' },
   emits: ['invoice.updated'],
   async handler(ctx, input) {
     const { id, taxRateId, ...fields } = input
     const { line, invoice } = await loadLineForChange(ctx, id)
+    if (line.kind === 'deduction') {
+      throw new DomainError('A deduction is worked out from the invoice it takes off. Remove it and add it again instead.', 'deduction_not_editable')
+    }
     const patch: Partial<LineRow> = provided(fields) as Partial<LineRow>
+    if (fields.periodStart !== undefined || fields.periodEnd !== undefined) {
+      Object.assign(
+        patch,
+        periodValues({
+          periodStart: fields.periodStart !== undefined ? fields.periodStart : line.periodStart,
+          periodEnd: fields.periodEnd !== undefined ? fields.periodEnd : line.periodEnd,
+        }),
+      )
+    }
     if (taxRateId !== undefined && taxRateId !== line.taxRateId) Object.assign(patch, await taxSnapshot(ctx, taxRateId))
 
     const comparable = { ...line, quantity: fromNumeric(line.quantity), discountPercent: fromNumeric(line.discountPercent) }
@@ -608,7 +830,14 @@ export const invoiceLineRemove = defineProcedure({
   async handler(ctx, input) {
     const { line, invoice } = await loadLineForChange(ctx, input.id)
     await releaseBilled(ctx, [line.id])
-    await ctx.tx.delete(schema.invoiceLines).where(eq(schema.invoiceLines.id, line.id))
+    // A deduction is one line per tax of the invoice it takes off; they go together.
+    await ctx.tx
+      .delete(schema.invoiceLines)
+      .where(
+        line.deductsInvoiceId
+          ? and(eq(schema.invoiceLines.invoiceId, invoice.id), eq(schema.invoiceLines.deductsInvoiceId, line.deductsInvoiceId))
+          : eq(schema.invoiceLines.id, line.id),
+      )
     await recalculate(ctx, invoice.id)
     const updated = await getInvoice(ctx, invoice.id)
     await ctx.audit({ action: 'invoice.updated', entityType: 'invoice', entityId: invoice.id, entityLabel: updated.title, changes: { lines: { from: line.description, to: null } } })
@@ -827,7 +1056,7 @@ export const invoiceBillExpenses = defineProcedure({
 
 export const invoiceFromQuote = defineProcedure({
   name: 'invoice.fromQuote',
-  summary: 'Raise a draft invoice from a sent or accepted quote, copying its lines exactly',
+  summary: 'Raise a draft invoice from an accepted quote, copying its one-time lines exactly. A quote is invoiced once.',
   permission: 'invoice:create',
   input: z.object({
     id: z.uuid(),
@@ -838,9 +1067,18 @@ export const invoiceFromQuote = defineProcedure({
   http: { method: 'POST', path: '/quotes/{id}/invoice', successStatus: 201 },
   emits: ['invoice.created'],
   async handler(ctx, input) {
-    const quote = await loadQuote(ctx, input.id)
-    if (quote.status === 'draft') throw new DomainError('Send the quote before invoicing it.', 'quote_not_sent')
-    if (quote.status === 'declined') throw new DomainError('That quote was declined.', 'quote_declined')
+    const quote = await loadQuote(ctx, input.id, { lock: true })
+    if (quote.status === 'draft' || quote.status === 'sent') {
+      throw new DomainError('Record that the client accepted the quote before invoicing it.', 'quote_not_accepted')
+    }
+    if (quote.status !== 'accepted') throw new DomainError(`That quote was ${quote.status}.`, 'quote_declined')
+    // A quote is billed once; staged billing or a statement does the rest.
+    const [already] = await ctx.tx
+      .select({ number: schema.invoices.number })
+      .from(schema.invoices)
+      .where(and(eq(schema.invoices.quoteId, quote.id), sql`${schema.invoices.status} <> 'cancelled'`))
+      .limit(1)
+    if (already) throw new DomainError(`This quote has already been invoiced${already.number ? ` on ${already.number}` : ''}.`, 'quote_already_invoiced')
     refuseArchived(await loadCompany(ctx, quote.companyId), 'company')
 
     const id = newId()
@@ -865,8 +1103,13 @@ export const invoiceFromQuote = defineProcedure({
     // Copied as they stand, tax snapshots included: an invoice must say what
     // the client agreed to, whatever the catalogue says now.
     const q = schema.quoteLines
-    for (const line of await ctx.tx.select().from(q).where(eq(q.quoteId, quote.id)).orderBy(asc(q.position), asc(q.id))) {
-      const { id: _id, quoteId: _quoteId, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = line
+    // The one-time part only: what recurs is billed by the schedule acceptance set up.
+    const oneTime = (await ctx.tx.select().from(q).where(eq(q.quoteId, quote.id)).orderBy(asc(q.position), asc(q.id))).filter(
+      (l) => !(l.billingType === 'recurring' && l.intervalUnit),
+    )
+    if (oneTime.length === 0) throw new DomainError('Everything on this quote recurs, so its billing schedule bills it.', 'quote_all_recurring')
+    for (const line of oneTime) {
+      const { id: _id, quoteId: _quoteId, createdAt: _createdAt, updatedAt: _updatedAt, intervalUnit: _unit, intervalCount: _count, ...rest } = line
       await ctx.tx.insert(schema.invoiceLines).values({ ...rest, id: newId(), invoiceId: id })
     }
     await recalculate(ctx, id)
@@ -894,6 +1137,11 @@ export const invoiceSend = defineProcedure({
     id: z.uuid(),
     /** Defaults to today in the organization's time zone. */
     issueDate: z.iso.date().optional(),
+    /**
+     * A due date other than issue date plus the terms. For an invoice due on
+     * an event ("At launch"), leave it out: it is set later, once.
+     */
+    dueDate: z.iso.date().optional(),
     /** How many units of the base currency one unit of the invoice's currency is worth. */
     exchangeRate: exchangeRateInput.optional(),
     /** Email it to the client as well. */
@@ -908,10 +1156,14 @@ export const invoiceSend = defineProcedure({
   async handler(ctx, input) {
     const invoice = await loadInvoice(ctx, input.id, { lock: true })
     requireDraft(invoice)
-    if ((await loadLines(ctx, invoice.id)).length === 0) throw new DomainError('Add at least one line before issuing.', 'no_lines')
+    const lines = await loadLines(ctx, invoice.id)
+    if (lines.length === 0) throw new DomainError('Add at least one line before issuing.', 'no_lines')
     refuseArchived(await loadCompany(ctx, invoice.companyId), 'company')
 
     const issueDate = input.issueDate ?? (await today(ctx))
+    if (input.dueDate && input.dueDate < issueDate) throw new DomainError('The due date cannot be before the issue date.', 'due_before_issue', 'dueDate')
+    const dueDate = input.dueDate ?? (invoice.dueLabel ? null : addDays(issueDate, invoice.paymentTermsDays))
+    await settleDeductions(ctx, invoice, lines)
     const base = await baseCurrency(ctx)
     const rate = invoice.currency === base ? '1' : input.exchangeRate
     if (!rate) {
@@ -920,15 +1172,18 @@ export const invoiceSend = defineProcedure({
 
     await recalculate(ctx, invoice.id)
     const priced = await loadInvoice(ctx, invoice.id)
+    if (priced.totalMinor < 0 && lines.some((l) => l.kind === 'deduction')) {
+      throw new DomainError('The earlier invoices taken off come to more than this invoice. Remove a deduction.', 'deductions_exceed_total')
+    }
     const totalBaseMinor = toSafeNumber(convert(BigInt(priced.totalMinor), priced.currency, base, rate))
 
     await ctx.tx
       .update(schema.invoices)
       .set({
         status: 'sent',
-        number: await issueNumber(ctx, 'invoice'),
+        number: await issueNumber(ctx, 'invoice', issueDate),
         issueDate,
-        dueDate: addDays(issueDate, invoice.paymentTermsDays),
+        dueDate,
         sentAt: ctx.now,
         baseCurrency: base,
         exchangeRateToBase: rate,
@@ -944,10 +1199,80 @@ export const invoiceSend = defineProcedure({
       entityId: invoice.id,
       entityLabel: `${sent.number} ${sent.title}`,
       changes: { status: { from: 'draft', to: 'sent' }, number: { from: null, to: sent.number } },
+      // Issuing is when an invoice enters the books: what it said then is kept.
+      snapshot: sent,
     })
     await ctx.emit('invoice.sent', sent)
     if (input.email) await emailDocument(ctx, sent, input.to)
     return getInvoice(ctx, invoice.id)
+  },
+})
+
+/**
+ * Checks each invoice taken off this one again, under lock, and records
+ * whether it had been paid: the add-time checks were made in another
+ * transaction, and things may have moved since. An invoice can be taken off
+ * only one other: two final invoices each deducting the same deposit would
+ * give the money back twice.
+ */
+async function settleDeductions(ctx: ActorContext, invoice: InvoiceRow, lines: LineRow[]): Promise<void> {
+  const deducted = [...new Set(lines.map((l) => l.deductsInvoiceId).filter((v): v is string => v !== null))].sort()
+  for (const priorId of deducted) {
+    const prior = await loadInvoice(ctx, priorId, { lock: true })
+    if (prior.status === 'draft' || prior.status === 'cancelled') {
+      throw new DomainError(`${prior.number ?? 'An invoice taken off this one'} is ${prior.status}, so it cannot be taken off. Remove the deduction.`, 'deduction_not_issued')
+    }
+    if (prior.companyId !== invoice.companyId || prior.currency !== invoice.currency) {
+      throw new DomainError(`${prior.number} is for a different client or currency. Remove the deduction.`, 'deduction_company_mismatch')
+    }
+    const [elsewhere] = await ctx.tx
+      .select({ number: schema.invoices.number })
+      .from(schema.invoiceLines)
+      .innerJoin(schema.invoices, eq(schema.invoices.id, schema.invoiceLines.invoiceId))
+      .where(
+        and(
+          eq(schema.invoiceLines.deductsInvoiceId, priorId),
+          sql`${schema.invoiceLines.invoiceId} <> ${invoice.id}`,
+          sql`${schema.invoices.status} not in ('draft', 'cancelled')`,
+        ),
+      )
+      .limit(1)
+    if (elsewhere) throw new DomainError(`${prior.number} is already taken off ${elsewhere.number}.`, 'deduction_already_used')
+    const settled = prior.totalMinor > 0 && prior.amountPaidMinor >= prior.totalMinor
+    await ctx.tx
+      .update(schema.invoiceLines)
+      .set({ deductionSettled: settled, updatedAt: ctx.now })
+      .where(and(eq(schema.invoiceLines.invoiceId, invoice.id), eq(schema.invoiceLines.deductsInvoiceId, priorId)))
+  }
+}
+
+export const invoiceSetDueDate = defineProcedure({
+  name: 'invoice.setDueDate',
+  summary: 'Give an issued invoice that was due on an event ("At launch") its due date, once the event has one',
+  permission: 'invoice:send',
+  input: z.object({ id: z.uuid(), dueDate: z.iso.date() }),
+  output: invoiceOutput,
+  http: { method: 'POST', path: '/invoices/{id}/due-date' },
+  emits: ['invoice.updated'],
+  async handler(ctx, input) {
+    const invoice = await loadInvoice(ctx, input.id, { lock: true })
+    if (invoice.status === 'draft') throw new DomainError('A draft gets its due date when it is issued.', 'invoice_not_sent')
+    if (invoice.status === 'cancelled') throw new DomainError('This invoice is cancelled.', 'invoice_cancelled')
+    if (!invoice.dueLabel || invoice.dueDate) {
+      throw new DomainError('This invoice already has its due date, and an issued due date does not change.', 'due_date_fixed', 'dueDate')
+    }
+    if (input.dueDate < invoice.issueDate!) throw new DomainError('The due date cannot be before the issue date.', 'due_before_issue', 'dueDate')
+    await ctx.tx.update(schema.invoices).set({ dueDate: input.dueDate, updatedAt: ctx.now }).where(eq(schema.invoices.id, invoice.id))
+    const updated = await getInvoice(ctx, invoice.id)
+    await ctx.audit({
+      action: 'invoice.due_date_set',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      entityLabel: `${invoice.number} ${invoice.title}`,
+      changes: { dueDate: { from: null, to: input.dueDate } },
+    })
+    await ctx.emit('invoice.updated', updated)
+    return updated
   },
 })
 
@@ -983,6 +1308,15 @@ export const invoiceCancel = defineProcedure({
     if (invoice.status === 'cancelled') throw new DomainError('This invoice is already cancelled.', 'invoice_cancelled')
     if (invoice.amountPaidMinor > 0) {
       throw new DomainError('Money has been received against this invoice. Refund the payment first.', 'invoice_has_payments')
+    }
+    const [deductedBy] = await ctx.tx
+      .select({ number: schema.invoices.number })
+      .from(schema.invoiceLines)
+      .innerJoin(schema.invoices, eq(schema.invoices.id, schema.invoiceLines.invoiceId))
+      .where(and(eq(schema.invoiceLines.deductsInvoiceId, invoice.id), sql`${schema.invoices.status} not in ('draft', 'cancelled')`))
+      .limit(1)
+    if (deductedBy) {
+      throw new DomainError(`${invoice.number} is taken off ${deductedBy.number}. Cancel that one first, or the client would be credited for nothing.`, 'invoice_deducted')
     }
     await ctx.tx
       .update(schema.invoices)
@@ -1074,8 +1408,10 @@ async function documentEmailPayload(ctx: ActorContext, invoice: Invoice, to: str
       number: invoice.number!,
       title: invoice.title,
       total: invoice.totalMinor,
+      amountDue: invoice.amountDueMinor,
       currency: invoice.currency,
-      dueDate: invoice.dueDate!,
+      dueDate: invoice.dueDate,
+      dueLabel: invoice.dueLabel,
       url: invoice.publicUrl!,
     }),
     attachments: [{ filename: `${invoice.number}.pdf`, content: pdf, contentType: 'application/pdf' }],

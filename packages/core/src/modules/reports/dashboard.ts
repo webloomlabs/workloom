@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, schema, sql } from '@workloom/db'
 import { z } from 'zod'
+import { countsAsCost, expenseBaseCostSql } from '../finance/expense-cost.ts'
 import type { ActorContext } from '../../context.ts'
 import { roundDiv } from '../../money/money.ts'
 import { changePercent, PERIODS, periodRange, type PeriodRange } from '../../reports/period.ts'
@@ -215,11 +216,11 @@ async function moneyCards(ctx: ActorContext, range: PeriodRange, now: string, ba
     // Expenses store their net amount already converted, so no apportioning.
     ctx.tx
       .select({
-        now: sql<string>`coalesce(sum(${e.amountBaseMinor}) filter (where ${inNow(e.incurredOn)}), 0)`,
-        then: sql<string>`coalesce(sum(${e.amountBaseMinor}) filter (where ${inPrevious(e.incurredOn)}), 0)`,
+        now: sql<string>`coalesce(sum(${expenseBaseCostSql}) filter (where ${inNow(e.incurredOn)}), 0)`,
+        then: sql<string>`coalesce(sum(${expenseBaseCostSql}) filter (where ${inPrevious(e.incurredOn)}), 0)`,
       })
       .from(e)
-      .where(within(e.incurredOn, range.previousFrom, range.to)),
+      .where(and(countsAsCost, within(e.incurredOn, range.previousFrom, range.to))),
 
     ctx.tx
       .select({

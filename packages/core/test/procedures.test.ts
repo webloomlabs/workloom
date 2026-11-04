@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ZodError } from 'zod'
 import { sql } from '@workloom/db'
 import { startTestDatabase, loadDbWithEnv, type TestDatabase } from '@workloom/db/testing'
+import { FAKE_TOKEN, FakeTelegram } from './fake-telegram.ts'
 
 /**
  * Procedure-level guarantees, run against every registered procedure.
@@ -25,8 +26,10 @@ const ORG_B = '01a0a400-0000-7000-8000-00000000000b'
 let ownerA: string
 let ownerB: string
 let developerA: string
+const telegram = new FakeTelegram()
 
 beforeAll(async () => {
+  process.env.TELEGRAM_API_BASE = await telegram.start()
   database = await startTestDatabase()
   mod = await loadDbWithEnv(database.url)
   await mod.runMigrations()
@@ -56,6 +59,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await telegram.stop()
   await mod?.closePool()
   await database?.stop()
 })
@@ -249,6 +253,11 @@ async function createExpense(input: Record<string, unknown> = {}): Promise<strin
 }
 
 const aFile = () => new File([`hello ${unique()}`], 'notes.txt', { type: 'text/plain' })
+/** A real 1×1 PNG: the logo is drawn into every PDF rendered afterwards, so it must decode. */
+const ONE_PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+const aLogo = () => new File([Buffer.from(ONE_PIXEL_PNG, 'base64')], 'logo.png', { type: 'image/png' })
+/** A receipt: a PDF, distinct each time so it is never flagged as a duplicate. */
+const aReceipt = () => new File([`%PDF-1.4\n% receipt ${unique()}\n`], 'receipt.pdf', { type: 'application/pdf' })
 
 async function archived(procedure: string, id: string): Promise<{ id: string }> {
   await run(procedure, ownerOfA(), { id })
@@ -380,6 +389,34 @@ async function createSchedule(input: Record<string, unknown> = {}): Promise<{ id
 
 type Fixture = () => Promise<unknown>
 
+let botPaused = false
+let lockOffset = 0
+let packYear = 2001
+const lockDay = () => new Date(Date.UTC(2001, 0, 1 + lockOffset++)).toISOString().slice(0, 10)
+
+async function disconnectBot(): Promise<void> {
+  const { bot } = (await run('telegramBot.get', ownerOfA(), {})) as { bot: unknown }
+  if (bot) await run('telegramBot.disconnect', ownerOfA(), {})
+}
+
+async function ensureBot(): Promise<void> {
+  const { bot } = (await run('telegramBot.get', ownerOfA(), {})) as { bot: { status: string } | null }
+  if (!bot) {
+    await run('telegramBot.connect', ownerOfA(), { token: FAKE_TOKEN, mode: 'poll' })
+    botPaused = false
+  } else botPaused = bot.status === 'paused'
+}
+
+/** A Telegram account linked to org A's owner, as linking it from the chat would leave it. */
+async function linkedIdentity(): Promise<string> {
+  const id = core.newId()
+  await mod.withTenant(ORG_A, (tx) =>
+    tx.execute(sql`insert into messaging_identities (id, organization_id, user_id, provider, external_user_id, chat_id)
+                   values (${id}::uuid, ${ORG_A}::uuid, ${ownerA}::uuid, 'telegram', ${unique()}, '1')`),
+  )
+  return id
+}
+
 /**
  * How to exercise each mutation against org A. Returning the input lets one
  * fixture create what the next one acts on.
@@ -392,6 +429,13 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   // A different name each call: an update that changes nothing correctly emits
   // nothing, which would make a repeated fixture look like a missing event.
   'organization.update': async () => ({ name: `Org A ${core.newId().slice(-6)}` }),
+  'organization.uploadLogo': async () => ({ file: aLogo() }),
+  'organization.removeLogo': async () => {
+    await run('organization.uploadLogo', asOwner(ORG_A, ownerA), { file: aLogo() })
+    return {}
+  },
+  // A count no invoice has reached, different each call so that each one changes something.
+  'documentSequence.update': async () => ({ kind: 'invoice', nextValue: 100_000 + Math.floor(Math.random() * 800_000) }),
   'apiKey.create': async () => ({ name: 'fixture key' }),
   'apiKey.revoke': async () => {
     const created = (await run('apiKey.create', asOwner(ORG_A, ownerA), {
@@ -610,7 +654,41 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'quote.update': async () => ({ id: await createQuote(), title: `Retitled ${unique()}`, discountPercent: '5' }),
   'quote.delete': async () => ({ id: await createQuote() }),
   'quote.send': async () => ({ id: await createQuote() }),
-  'quote.accept': async () => ({ id: await sentQuote() }),
+  'quote.accept': [
+    // Chosen from alternatives, with a new project, a recurring part, and a plan.
+    async () => {
+      const companyId = await createCompany()
+      const make = async (title: string) =>
+        ((await run('quote.create', ownerOfA(), {
+          companyId,
+          title,
+          lines: [
+            { description: 'Store build', unitAmountMinor: 65_000_00, billingType: 'one_off' },
+            { description: 'Hosting', unitAmountMinor: 3_000_00, billingType: 'recurring', intervalUnit: 'month', intervalCount: 1 },
+          ],
+        })) as { id: string }).id
+      const chosen = await make(`Standard ${unique()}`)
+      const other = await make(`Premium ${unique()}`)
+      await run('quoteOptionGroup.create', ownerOfA(), { companyId, name: `Options ${unique()}`, quotes: [{ id: chosen }, { id: other }] })
+      await run('quote.send', ownerOfA(), { id: chosen })
+      await run('quote.send', ownerOfA(), { id: other })
+      return { id: chosen, createProject: { name: `Store ${unique()}` }, stagePreset: 'deposit_balance', depositAmountMinor: 26_000_00 }
+    },
+    // Scope added to a project that already has its price: a revision.
+    async () => {
+      const projectId = await createPricedProject()
+      const project = (await run('project.get', ownerOfA(), { id: projectId })) as { companyId: string }
+      const quote = (await run('quote.create', ownerOfA(), { companyId: project.companyId, projectId, title: `Extra ${unique()}`, lines: [{ description: 'Gift vouchers', unitAmountMinor: 5_000_00 }] })) as { id: string }
+      await run('quote.send', ownerOfA(), { id: quote.id })
+      return { id: quote.id }
+    },
+  ],
+  'quote.email': async () => ({ id: await sentQuote(), to: 'client@example.com' }),
+  'quoteOptionGroup.create': async () => {
+    const companyId = await createCompany()
+    const quote = (await run('quote.create', ownerOfA(), { companyId, title: `Option ${unique()}`, lines: [{ description: 'Work', unitAmountMinor: 1_00 }] })) as { id: string }
+    return { companyId, name: `Options ${unique()}`, quotes: [{ id: quote.id }] }
+  },
   'quote.decline': async () => ({ id: await sentQuote(), reason: 'Budget moved to next year' }),
   'quote.duplicate': async () => ({ id: await sentQuote() }),
   'quoteLine.add': async () => ({ id: await createQuote(), serviceId: await createService(), quantity: 3 }),
@@ -647,7 +725,11 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     const invoice = (await run('invoice.create', ownerOfA(), { companyId, title: `Time ${unique()}` })) as { id: string }
     return { id: invoice.id, projectId }
   },
-  'invoice.fromQuote': async () => ({ id: await sentQuote() }),
+  'invoice.fromQuote': async () => {
+    const id = await sentQuote()
+    await run('quote.accept', ownerOfA(), { id })
+    return { id }
+  },
   'invoice.send': async () => ({ id: await createInvoice() }),
   'invoice.email': async () => ({ id: await sentInvoice(), to: 'client@example.com' }),
   'invoice.cancel': async () => ({ id: await sentInvoice(), reason: 'Raised in error' }),
@@ -656,6 +738,25 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     await createExpense({ companyId, billable: true, markupPercent: '10' })
     const invoice = (await run('invoice.create', ownerOfA(), { companyId, title: `Expenses ${unique()}` })) as { id: string }
     return { id: invoice.id }
+  },
+  'invoiceLine.addDeduction': async () => {
+    const deposit = await issuedInvoice()
+    const final = (await run('invoice.create', ownerOfA(), {
+      companyId: deposit.companyId,
+      title: `Final ${unique()}`,
+      lines: [{ description: 'The whole project', unitAmountMinor: 8_000_00 }],
+    })) as { id: string }
+    return { id: final.id, deductsInvoiceId: deposit.id }
+  },
+  'invoice.setDueDate': async () => {
+    const invoice = (await run('invoice.create', ownerOfA(), {
+      companyId: await createCompany(),
+      title: `At launch ${unique()}`,
+      dueLabel: 'At launch',
+      lines: [{ description: 'Balance', unitAmountMinor: 5_000_00 }],
+    })) as { id: string }
+    await run('invoice.send', ownerOfA(), { id: invoice.id })
+    return { id: invoice.id, dueDate: '2099-12-31' }
   },
 
   // One fixture per settled state each of these can leave an invoice in, so
@@ -747,6 +848,49 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'expense.create': async () => ({ description: `Stock photography ${unique()}`, amountMinor: 49_00, category: 'software', billable: true, markupPercent: '15' }),
   'expense.update': async () => ({ id: await createExpense(), supplier: `Supplier ${unique()}`, billable: true }),
   'expense.delete': async () => ({ id: await createExpense() }),
+  'expense.confirm': async () => ({ id: await createExpense({ status: 'draft' }) }),
+  'expense.createFromReceipt': async () => ({ file: aReceipt(), draft: null, note: 'Taxi to the client' }),
+  'telegramBot.connect': async () => {
+    await disconnectBot()
+    return { token: FAKE_TOKEN, mode: 'poll' }
+  },
+  // Paused, then active again: each call changes something, so each is audited.
+  'telegramBot.update': async () => {
+    await ensureBot()
+    botPaused = !botPaused
+    return { paused: botPaused }
+  },
+  'telegramBot.disconnect': async () => {
+    await ensureBot()
+    return {}
+  },
+  'messagingIdentity.createLinkCode': async () => {
+    await ensureBot()
+    return {}
+  },
+  'messagingIdentity.revoke': async () => ({ id: await linkedIdentity() }),
+  // Far in the past, a day further each time: nothing else in this file is dated then.
+  'books.lock': async () => ({ through: lockDay(), reason: 'Year closed' }),
+  'books.unlock': async () => {
+    await run('books.lock', ownerOfA(), { through: lockDay(), reason: 'Closing to reopen' })
+    return { reason: 'A late invoice came in' }
+  },
+  'taxPack.request': async () => ({ startYear: packYear++ }),
+  'expenseReceipt.upload': async () => ({ expenseId: await createExpense(), file: aReceipt() }),
+  'expenseReceipt.delete': async () => {
+    const receipt = (await run('expenseReceipt.upload', ownerOfA(), { expenseId: await createExpense(), file: aReceipt() })) as { id: string }
+    return { id: receipt.id }
+  },
+  'expenseCategory.create': async () => ({ name: `Category ${unique()}` }),
+  'projectType.create': async () => ({ name: `Type ${unique()}`, defaultBillingModel: 'retainer' }),
+  'projectType.update': async () => {
+    const type = (await run('projectType.create', ownerOfA(), { name: `Type ${unique()}` })) as { id: string }
+    return { id: type.id, name: `Renamed ${unique()}` }
+  },
+  'expenseCategory.update': async () => {
+    const category = (await run('expenseCategory.create', ownerOfA(), { name: `Category ${unique()}` })) as { key: string }
+    return { key: category.key, name: `Renamed ${unique()}` }
+  },
 
 
   'ticket.create': async () => ({ companyId: await createCompany(), title: `Contact form broken ${unique()}`, body: 'Nothing arrives.', priority: 'high', type: 'bug' }),
@@ -855,6 +999,14 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   ],
   'billingSchedule.delete': async () => ({ id: (await createSchedule()).id }),
   'billingScheduleLine.add': async () => ({ scheduleId: (await createSchedule()).id, description: `Extra hours ${unique()}`, unitAmountMinor: 150_00 }),
+  'billingScheduleLine.update': async () => {
+    const schedule = (await run('billingSchedule.create', ownerOfA(), {
+      companyId: await createCompany(),
+      name: `Retainer ${unique()}`,
+      lines: [{ description: 'Care plan', unitAmountMinor: 500_00 }],
+    })) as { id: string; lines: Array<{ id: string }> }
+    return { scheduleId: schedule.id, lineId: schedule.lines[0]!.id, detail: `Detail ${unique()}` }
+  },
   'billingScheduleLine.remove': async () => {
     const schedule = (await run('billingSchedule.create', ownerOfA(), {
       companyId: await createCompany(),
@@ -877,6 +1029,10 @@ const fixturesFor = (name: string): Fixture[] => [MUTATIONS[name]!].flat()
 
 /** Reads that take a record reference, exercised by the cross-tenant probe. */
 const READS: Record<string, Fixture> = {
+  'taxPack.download': async () => {
+    const pack = (await run('taxPack.request', ownerOfA(), { startYear: packYear++ })) as { id: string }
+    return { id: pack.id }
+  },
   'webhook.get': async () => ({ id: await createHook() }),
   'webhookDelivery.list': async () => ({ id: await createHook() }),
   'company.get': async () => ({ id: await createCompany() }),
@@ -897,15 +1053,22 @@ const READS: Record<string, Fixture> = {
   'timeEntry.summary': async () => ({ id: await createProject() }),
   'service.get': async () => ({ id: await createService() }),
   'quote.get': async () => ({ id: await createQuote() }),
+  'quote.download': async () => ({ id: await createQuote() }),
   'invoice.get': async () => ({ id: await createInvoice() }),
   'invoice.download': async () => ({ id: await createInvoice() }),
   'invoice.list': async () => ({ companyId: await createCompany() }),
   'payment.get': async () => ({ id: await createPayment() }),
   'payment.list': async () => ({ companyId: await createCompany() }),
   'expense.get': async () => ({ id: await createExpense() }),
+  'expenseReceipt.list': async () => ({ expenseId: await createExpense() }),
+  'expenseReceipt.download': async () => {
+    const receipt = (await run('expenseReceipt.upload', ownerOfA(), { expenseId: await createExpense(), file: aReceipt() })) as { id: string }
+    return { id: receipt.id }
+  },
   'expense.list': async () => ({ companyId: await createCompany() }),
   'quote.list': async () => ({ companyId: await createCompany() }),
   'project.financials': async () => ({ id: await createProject() }),
+  'project.budget': async () => ({ id: await createProject() }),
   'report.projects': async () => ({ companyId: await createCompany() }),
   'report.revenue': async () => ({ companyId: await createCompany() }),
   'dashboard.get': async () => ({ period: 'month' }),
@@ -1007,7 +1170,7 @@ describe('event coverage', () => {
   })
 })
 
-const REFERENCE_KEYS = ['id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId', 'revisionId', 'stageId']
+const REFERENCE_KEYS = ['expenseId', 'deductsInvoiceId', 'lineId', 'id', 'companyId', 'contactId', 'leadId', 'dealId', 'projectId', 'taskId', 'milestoneId', 'serviceId', 'taxRateId', 'defaultTaxRateId', 'ticketId', 'planId', 'scheduleId', 'billingScheduleId', 'revisionId', 'stageId']
 
 describe('cross-tenant access through procedures', () => {
   it('has a cross-tenant fixture for every read that takes a record id', () => {
@@ -1092,6 +1255,17 @@ describe('authorisation', () => {
         procedure.name,
       ).rejects.toBeInstanceOf(core.ForbiddenError)
     }
+  })
+})
+
+describe('telegram', () => {
+  it('refuses webhook mode where Workloom is not served over HTTPS', async () => {
+    await ensureBot()
+    await expect(run('telegramBot.update', ownerOfA(), { mode: 'webhook' })).rejects.toMatchObject({ code: 'webhook_needs_https' })
+  })
+
+  it.skipIf(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY'].some((k) => process.env[k]))('refuses to turn on receipt reading without an AI provider key', async () => {
+    await expect(run('organization.update', ownerOfA(), { receiptReadingEnabled: true })).rejects.toMatchObject({ code: 'ai_unavailable' })
   })
 })
 

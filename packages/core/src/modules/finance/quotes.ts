@@ -40,6 +40,7 @@ import {
 } from './documents.ts'
 import { loadProject } from '../projects/projects.ts'
 import { issueNumber } from './numbering.ts'
+import { quoteSplit } from './quote-split.ts'
 import { fromNumeric, percentInput, pricingRefusal } from './shared.ts'
 
 /**
@@ -57,7 +58,30 @@ type LineRow = typeof schema.quoteLines.$inferSelect
 /** How long a new quote stays open unless told otherwise. */
 const DEFAULT_VALID_DAYS = 30
 
-export const quoteLineOutput = documentLineOutput
+export const quoteLineOutput = documentLineOutput.extend({
+  /** For a recurring line: how often it recurs. Accepting the quote sets up a billing schedule from it. */
+  intervalUnit: z.enum(schema.BILLING_INTERVALS).nullable(),
+  intervalCount: z.number().int().nullable(),
+})
+
+/** A quote line may recur: every month, every 3 months. */
+export const quoteLineInput = lineInput.extend({
+  intervalUnit: z.enum(schema.BILLING_INTERVALS).nullish(),
+  intervalCount: z.number().int().min(1).max(52).nullish(),
+})
+
+function presentQuoteLine(line: LineRow) {
+  return { ...presentLine(line), intervalUnit: line.intervalUnit as (typeof schema.BILLING_INTERVALS)[number] | null, intervalCount: line.intervalCount }
+}
+
+/** A recurring line needs an interval; a one-off line has none. Monthly unless said otherwise. */
+function intervalValues(
+  billingType: string | null,
+  input: { intervalUnit?: string | null | undefined; intervalCount?: number | null | undefined },
+): { intervalUnit: string | null; intervalCount: number | null } {
+  if (billingType !== 'recurring') return { intervalUnit: null, intervalCount: null }
+  return { intervalUnit: input.intervalUnit ?? 'month', intervalCount: input.intervalCount ?? 1 }
+}
 export const quoteSummaryOutput = z.object({
   id: z.uuid(),
   /** Assigned when sent. Null for drafts. */
@@ -70,6 +94,9 @@ export const quoteSummaryOutput = z.object({
   contactName: z.string().nullable(),
   dealId: z.uuid().nullable(),
   projectId: z.uuid().nullable(),
+  /** The group of alternatives it is one of, and its label there. */
+  optionGroupId: z.uuid().nullable(),
+  optionLabel: z.string().nullable(),
   currency: z.string().length(3),
   taxMode: z.enum(schema.TAX_MODES),
   issueDate: z.iso.date().nullable(),
@@ -100,6 +127,15 @@ export const quoteOutput = quoteSummaryOutput.extend({
   lines: z.array(quoteLineOutput),
   /** One entry per tax, in order of first use. `amountMinor` is what it is charged on. */
   taxes: z.array(documentTaxOutput),
+  /**
+   * What it is for: the one-time price, which becomes a project's contract,
+   * and each recurring part, which becomes a billing schedule.
+   */
+  split: z.object({
+    oneTimeNetMinor: z.number().int(),
+    oneTimeTotalMinor: z.number().int(),
+    recurring: z.array(z.object({ unit: z.enum(schema.BILLING_INTERVALS), count: z.number().int(), perPeriodNetMinor: z.number().int() })),
+  }),
 })
 
 export type Quote = z.infer<typeof quoteOutput>
@@ -132,6 +168,8 @@ function presentSummary(row: { quote: QuoteRow; companyName: string; contactName
     contactName: row.contactName,
     dealId: q.dealId,
     projectId: q.projectId,
+    optionGroupId: q.optionGroupId,
+    optionLabel: q.optionLabel,
     currency: q.currency,
     taxMode: q.taxMode as QuoteSummary['taxMode'],
     issueDate: q.issueDate,
@@ -160,11 +198,25 @@ async function loadLines(ctx: ActorContext, quoteId: string): Promise<LineRow[]>
   return ctx.tx.select().from(l).where(eq(l.quoteId, quoteId)).orderBy(asc(l.position), asc(l.id))
 }
 
+export { loadLines as loadQuoteLines }
+
 export async function getQuote(ctx: ActorContext, id: string): Promise<Quote> {
   const [row] = await selectQuotes(ctx).where(eq(schema.quotes.id, id)).limit(1)
   if (!row) throw new NotFoundError('Quote', id)
-  const lines = (await loadLines(ctx, id)).map(presentLine)
-  return { ...presentSummary(row), notes: row.quote.notes, terms: row.quote.terms, lines, taxes: taxesFromLines(lines) }
+  const lines = (await loadLines(ctx, id)).map(presentQuoteLine)
+  const split = quoteSplit(lines)
+  return {
+    ...presentSummary(row),
+    notes: row.quote.notes,
+    terms: row.quote.terms,
+    lines,
+    taxes: taxesFromLines(lines),
+    split: {
+      oneTimeNetMinor: split.oneTimeNetMinor,
+      oneTimeTotalMinor: split.oneTimeTotalMinor,
+      recurring: split.recurring.map((r) => ({ unit: r.unit, count: r.count, perPeriodNetMinor: r.perPeriodNetMinor })),
+    },
+  }
 }
 
 export async function loadQuote(ctx: ActorContext, id: string, options: { lock?: boolean } = {}): Promise<QuoteRow> {
@@ -214,6 +266,7 @@ export const quoteList = defineProcedure({
     companyId: z.uuid().optional(),
     dealId: z.uuid().optional(),
     projectId: z.uuid().optional(),
+    optionGroupId: z.uuid().optional(),
     /** Matches the title or number. */
     q: searchInput,
     ...pageInput,
@@ -231,6 +284,7 @@ export const quoteList = defineProcedure({
       input.companyId ? eq(q.companyId, input.companyId) : undefined,
       input.dealId ? eq(q.dealId, input.dealId) : undefined,
       input.projectId ? eq(q.projectId, input.projectId) : undefined,
+      input.optionGroupId ? eq(q.optionGroupId, input.optionGroupId) : undefined,
       input.q ? or(ilike(q.title, contains(input.q)), ilike(q.number, contains(input.q))) : undefined,
       input.cursor ? lt(q.id, input.cursor) : undefined,
     ]
@@ -263,6 +317,19 @@ const header = {
   discountAmountMinor: minorAmount.nullish(),
   notes: optionalText(10_000),
   terms: optionalText(10_000),
+  /** One of a group of alternatives the client chooses between. */
+  optionGroupId: z.uuid().nullish(),
+  /** What it is called among them: "Option B — Standard". */
+  optionLabel: optionalText(120),
+}
+
+/** A group a quote can join: the same client's, and not yet decided. */
+async function openGroup(ctx: ActorContext, groupId: string, companyId: string) {
+  const [group] = await ctx.tx.select().from(schema.quoteOptionGroups).where(eq(schema.quoteOptionGroups.id, groupId)).limit(1)
+  if (!group) throw new NotFoundError('Quote option group', groupId)
+  if (group.companyId !== companyId) throw new DomainError('That group of options is for a different client.', 'option_group_company_mismatch', 'optionGroupId')
+  if (group.decidedQuoteId) throw new DomainError('The client has already chosen from that group of options.', 'option_group_decided', 'optionGroupId')
+  return group
 }
 
 export const quoteCreate = defineProcedure({
@@ -277,7 +344,7 @@ export const quoteCreate = defineProcedure({
     ...header,
     /** Defaults to the deal's currency, or the organization's base currency. */
     currency: currencyCode.optional(),
-    lines: z.array(lineInput).max(500).default([]),
+    lines: z.array(quoteLineInput).max(500).default([]),
   }),
   output: quoteOutput,
   http: { method: 'POST', path: '/quotes', successStatus: 201 },
@@ -286,6 +353,8 @@ export const quoteCreate = defineProcedure({
     const { company, deal } = await resolveLinks(ctx, input)
     refuseArchived(company, 'company')
     assertOneDiscount(input.discountPercent, input.discountAmountMinor)
+    if (input.optionGroupId) await openGroup(ctx, input.optionGroupId, company.id)
+    const [org] = await ctx.tx.select({ terms: schema.organization.quoteTermsDefault }).from(schema.organization).where(eq(schema.organization.id, ctx.organizationId)).limit(1)
 
     const id = newId()
     await ctx.tx.insert(schema.quotes).values({
@@ -301,18 +370,22 @@ export const quoteCreate = defineProcedure({
       validUntil: input.validUntil ?? addDays(await today(ctx), DEFAULT_VALID_DAYS),
       discountPercent: input.discountPercent ?? null,
       discountAmountMinor: input.discountAmountMinor ?? null,
+      optionGroupId: input.optionGroupId ?? null,
+      optionLabel: input.optionLabel ?? null,
       notes: input.notes ?? null,
-      terms: input.terms ?? null,
+      terms: input.terms !== undefined ? input.terms : (org?.terms ?? null),
       createdBy: actingUserId(ctx),
     })
     const quote = await loadQuote(ctx, id)
     for (const [i, line] of input.lines.entries()) {
+      const values = await newLineValues(ctx, quote, line, `lines.${i}.`)
       await ctx.tx.insert(schema.quoteLines).values({
         id: newId(),
         organizationId: ctx.organizationId,
         quoteId: quote.id,
         position: i + 1,
-        ...(await newLineValues(ctx, quote, line, `lines.${i}.`)),
+        ...values,
+        ...intervalValues(values.billingType, line),
       })
     }
     await recalculate(ctx, id)
@@ -358,6 +431,7 @@ export const quoteUpdate = defineProcedure({
     }
     const { company } = await resolveLinks(ctx, links)
     if (company.id !== before.companyId) refuseArchived(company, 'company')
+    if (patch.optionGroupId && patch.optionGroupId !== before.optionGroupId) await openGroup(ctx, patch.optionGroupId, company.id)
 
     if (patch.currency && patch.currency !== before.currency && (await loadLines(ctx, id)).length > 0) {
       throw new DomainError("Remove the lines before changing the currency: their prices were entered in " + before.currency + '.', 'currency_locked', 'currency')
@@ -403,7 +477,7 @@ export const quoteLineAdd = defineProcedure({
   name: 'quoteLine.add',
   summary: 'Add a line to a draft quote',
   permission: 'quote:update',
-  input: lineInput.extend({ id: z.uuid() }),
+  input: quoteLineInput.extend({ id: z.uuid() }),
   output: quoteOutput,
   http: { method: 'POST', path: '/quotes/{id}/lines', successStatus: 201 },
   emits: ['quote.updated'],
@@ -411,7 +485,8 @@ export const quoteLineAdd = defineProcedure({
     const { id, ...line } = input
     const quote = await loadQuote(ctx, id, { lock: true })
     requireDraft(quote)
-    const values = { id: newId(), organizationId: ctx.organizationId, quoteId: id, position: await nextPosition(ctx, id), ...(await newLineValues(ctx, quote, line)) }
+    const priced = await newLineValues(ctx, quote, line)
+    const values = { id: newId(), organizationId: ctx.organizationId, quoteId: id, position: await nextPosition(ctx, id), ...priced, ...intervalValues(priced.billingType, line) }
     await ctx.tx.insert(schema.quoteLines).values(values)
     await recalculate(ctx, id)
     const updated = await getQuote(ctx, id)
@@ -433,14 +508,24 @@ export const quoteLineUpdate = defineProcedure({
   name: 'quoteLine.update',
   summary: 'Change a line on a draft quote',
   permission: 'quote:update',
-  input: lineInput.omit({ serviceId: true }).extend({ id: z.uuid(), description: requiredText(2000, 'Description').optional(), position: z.number().int().min(1).max(10_000).optional() }),
+  input: quoteLineInput.omit({ serviceId: true }).extend({ id: z.uuid(), description: requiredText(2000, 'Description').optional(), position: z.number().int().min(1).max(10_000).optional() }),
   output: quoteOutput,
   http: { method: 'PATCH', path: '/quote-lines/{id}' },
   emits: ['quote.updated'],
   async handler(ctx, input) {
-    const { id, taxRateId, ...fields } = input
+    const { id, taxRateId, intervalUnit, intervalCount, ...fields } = input
     const { line, quote } = await loadLineForChange(ctx, id)
     const patch: Partial<LineRow> = provided(fields) as Partial<LineRow>
+    const billingType = patch.billingType !== undefined ? patch.billingType : line.billingType
+    if (billingType !== line.billingType || intervalUnit !== undefined || intervalCount !== undefined) {
+      Object.assign(
+        patch,
+        intervalValues(billingType, {
+          intervalUnit: intervalUnit !== undefined ? intervalUnit : line.intervalUnit,
+          intervalCount: intervalCount !== undefined ? intervalCount : line.intervalCount,
+        }),
+      )
+    }
     if (taxRateId !== undefined && taxRateId !== line.taxRateId) Object.assign(patch, await taxSnapshot(ctx, taxRateId))
     const comparable = { ...line, quantity: fromNumeric(line.quantity), discountPercent: fromNumeric(line.discountPercent) }
     const changes = diff(comparable as Record<string, unknown>, patch)
@@ -489,6 +574,10 @@ export const quoteSend = defineProcedure({
      * currency is worth. Required when they differ; ignored when they are the same.
      */
     exchangeRate: exchangeRateInput.optional(),
+    /** Email it to the client as well, with its PDF. */
+    email: z.boolean().default(false),
+    /** Where to send it. Defaults to the quote's contact. */
+    to: z.email().optional(),
   }),
   output: quoteOutput,
   http: { method: 'POST', path: '/quotes/{id}/send' },
@@ -497,6 +586,7 @@ export const quoteSend = defineProcedure({
     const quote = await loadQuote(ctx, input.id, { lock: true })
     requireDraft(quote)
     if ((await loadLines(ctx, quote.id)).length === 0) throw new DomainError('Add at least one line before sending.', 'no_lines')
+    if (quote.optionGroupId) await openGroup(ctx, quote.optionGroupId, quote.companyId)
     const issueDate = input.issueDate ?? (await today(ctx))
     if (quote.validUntil < issueDate) {
       throw new DomainError('The quote would already have expired. Move its valid-until date first.', 'valid_until_passed', 'validUntil')
@@ -522,7 +612,7 @@ export const quoteSend = defineProcedure({
       .update(schema.quotes)
       .set({
         status: 'sent',
-        number: await issueNumber(ctx, 'quote'),
+        number: await issueNumber(ctx, 'quote', issueDate),
         issueDate,
         sentAt: ctx.now,
         baseCurrency: base,
@@ -541,11 +631,15 @@ export const quoteSend = defineProcedure({
       changes: { status: { from: 'draft', to: 'sent' }, number: { from: null, to: sent.number } },
     })
     await ctx.emit('quote.sent', sent)
+    if (input.email) {
+      const { emailQuote } = await import('./quote-acceptance.ts')
+      await emailQuote(ctx, sent, input.to)
+    }
     return sent
   },
 })
 
-async function requireOpen(ctx: ActorContext, quote: QuoteRow): Promise<void> {
+export async function requireOpen(ctx: ActorContext, quote: QuoteRow): Promise<void> {
   if (quote.status !== 'sent') {
     throw new DomainError(
       quote.status === 'draft' ? 'Send the quote before recording an answer.' : `This quote is already ${quote.status}.`,
@@ -556,25 +650,6 @@ async function requireOpen(ctx: ActorContext, quote: QuoteRow): Promise<void> {
     throw new DomainError(`This quote expired on ${quote.validUntil}. Duplicate it to offer again.`, 'quote_expired')
   }
 }
-
-export const quoteAccept = defineProcedure({
-  name: 'quote.accept',
-  summary: 'Record that the client accepted a sent quote',
-  permission: 'quote:update',
-  input: z.object({ id: z.uuid() }),
-  output: quoteOutput,
-  http: { method: 'POST', path: '/quotes/{id}/accept' },
-  emits: ['quote.accepted'],
-  async handler(ctx, input) {
-    const quote = await loadQuote(ctx, input.id, { lock: true })
-    await requireOpen(ctx, quote)
-    await ctx.tx.update(schema.quotes).set({ status: 'accepted', acceptedAt: ctx.now, updatedAt: ctx.now }).where(eq(schema.quotes.id, quote.id))
-    const accepted = await getQuote(ctx, quote.id)
-    await ctx.audit({ action: 'quote.accepted', entityType: 'quote', entityId: quote.id, entityLabel: `${quote.number} ${quote.title}`, changes: { status: { from: 'sent', to: 'accepted' } } })
-    await ctx.emit('quote.accepted', accepted)
-    return accepted
-  },
-})
 
 export const quoteDecline = defineProcedure({
   name: 'quote.decline',
@@ -600,15 +675,41 @@ export const quoteDecline = defineProcedure({
 
 export const quoteDuplicate = defineProcedure({
   name: 'quote.duplicate',
-  summary: 'Copy any quote into a new draft, to revise or offer again',
+  summary: 'Copy any quote into a new draft, to revise or offer again -- or to offer as an alternative beside it',
   permission: 'quote:create',
-  input: z.object({ id: z.uuid() }),
+  input: z.object({
+    id: z.uuid(),
+    /** Offer the copy as an alternative: both join one group, and the client takes one. */
+    asOption: z.boolean().optional(),
+    optionLabel: optionalText(120),
+  }),
   output: quoteOutput,
   http: { method: 'POST', path: '/quotes/{id}/duplicate', successStatus: 201 },
   emits: ['quote.created'],
   async handler(ctx, input) {
-    const source = await loadQuote(ctx, input.id)
+    const source = await loadQuote(ctx, input.id, { lock: true })
     refuseArchived(await loadCompany(ctx, source.companyId), 'company')
+    let optionGroupId: string | null = null
+    if (input.asOption) {
+      if (['accepted', 'declined', 'expired'].includes(source.status)) {
+        throw new DomainError(`This quote is ${source.status}; an alternative to it would offer nothing.`, 'quote_answered')
+      }
+      if (source.optionGroupId) {
+        optionGroupId = (await openGroup(ctx, source.optionGroupId, source.companyId)).id
+      } else {
+        // The first alternative makes the group, and the quote it came from joins it.
+        optionGroupId = newId()
+        await ctx.tx.insert(schema.quoteOptionGroups).values({
+          id: optionGroupId,
+          organizationId: ctx.organizationId,
+          companyId: source.companyId,
+          projectId: source.projectId,
+          name: source.title,
+          createdBy: actingUserId(ctx),
+        })
+        await ctx.tx.update(schema.quotes).set({ optionGroupId, optionLabel: source.optionLabel ?? 'Option A', updatedAt: ctx.now }).where(eq(schema.quotes.id, source.id))
+      }
+    }
     const id = newId()
     await ctx.tx.insert(schema.quotes).values({
       id,
@@ -617,6 +718,8 @@ export const quoteDuplicate = defineProcedure({
       contactId: source.contactId,
       dealId: source.dealId,
       projectId: source.projectId,
+      optionGroupId,
+      optionLabel: optionGroupId ? (input.optionLabel ?? null) : null,
       title: source.title,
       currency: source.currency,
       taxMode: source.taxMode,

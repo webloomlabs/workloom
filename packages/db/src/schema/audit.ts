@@ -1,4 +1,5 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { check, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { tenantColumn } from './columns.ts'
 
 /**
@@ -38,6 +39,14 @@ export const auditLogs = pgTable(
     requestId: text('request_id'),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    /**
+     * The whole record, for creating and deleting money records: what was
+     * created, or what was there before it went. Changes alone say nothing
+     * about a record that no longer exists.
+     */
+    snapshot: jsonb('snapshot'),
+    /** The door it came in by: 'web' | 'api' | 'telegram' | 'worker' | 'system'. Null on entries written before S19. */
+    source: text('source'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -45,5 +54,8 @@ export const auditLogs = pgTable(
     index('audit_logs_organization_id_id_idx').on(t.organizationId, t.id),
     index('audit_logs_organization_entity_idx').on(t.organizationId, t.entityType, t.entityId),
     index('audit_logs_organization_actor_idx').on(t.organizationId, t.actorId),
+    index('audit_logs_organization_created_idx').on(t.organizationId, t.createdAt),
+    index('audit_logs_organization_action_idx').on(t.organizationId, t.action),
+    check('audit_logs_source_check', sql`${t.source} in ('web', 'api', 'telegram', 'worker', 'system')`),
   ],
 )

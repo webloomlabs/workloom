@@ -225,6 +225,97 @@
       "when": 1790556986217,
       "tag": "0031_payment_expense_account_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793683206283,
+      "tag": "0032_invoice_document_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793683230673,
+      "tag": "0033_invoice_document_v2_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793684680951,
+      "tag": "0034_expenses_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793684697807,
+      "tag": "0035_expenses_v2_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793685280892,
+      "tag": "0036_billing_multi_period",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793685760380,
+      "tag": "0037_project_billing_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793685775235,
+      "tag": "0038_project_billing_model_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793686341111,
+      "tag": "0039_quotes_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793686363080,
+      "tag": "0040_quotes_projects_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793754783370,
+      "tag": "0041_telegram_bot",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793754784569,
+      "tag": "0042_telegram_bot_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793755368353,
+      "tag": "0043_books_and_tax_packs",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793755369537,
+      "tag": "0044_books_lock_guards",
+      "breakpoints": true
     }
   ]
 }

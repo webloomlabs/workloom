@@ -1,12 +1,15 @@
 import { minorToDecimalString, type Permission } from '@workloom/core'
-import { contactList, invoiceList, quoteGet, serviceList, taxRateList, type Quote } from '@workloom/core/modules'
+import { contactList, invoiceList, projectGet, projectList, quoteGet, quoteList, serviceList, taxRateList, type Quote } from '@workloom/core/modules'
 import { Alert, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { InvoiceStatusBadge, QuoteStatusBadge } from '@/components/finance/badges'
 import {
+  AcceptQuoteForm,
   AddLineForm,
   AnswerControls,
+  OfferAlternativeButton,
+  QuoteDocumentControls,
   DeleteDraftButton,
   DuplicateQuoteButton,
   LineControls,
@@ -42,6 +45,12 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
       ])
     : [{ data: [] }, { data: [] }, { data: [] }]
   const taxChoices = taxRates.data.map((t) => ({ id: t.id, name: t.name, rate: t.rate }))
+  const answering = quote.status === 'sent' && can('quote:update')
+  const [clientProjects, quoteProject, options] = await Promise.all([
+    answering && !quote.projectId && can('project:read') ? call(projectList, { companyId: quote.companyId, active: true, limit: 100 }) : { data: [] },
+    quote.projectId && can('project:read') ? call(projectGet, { id: quote.projectId }) : null,
+    quote.optionGroupId ? call(quoteList, { optionGroupId: quote.optionGroupId, limit: 20 }) : { data: [] },
+  ])
   const decimal = (minor: number) => minorToDecimalString(minor, quote.currency)
 
   return (
@@ -56,11 +65,14 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
             <Link href={`/companies/${quote.companyId}?tab=quotes`} className="hover:underline">{quote.companyName}</Link>
             {quote.contactName && <span>{quote.contactName}</span>}
             {quote.dealId && <Link href={`/deals/${quote.dealId}`} className="hover:underline">View deal</Link>}
+            {quote.projectId && <Link href={`/projects/${quote.projectId}?tab=quotes`} className="hover:underline">{quoteProject?.name ?? 'Project'}</Link>}
+            {quote.optionLabel && <span className="font-medium text-ink">{quote.optionLabel}</span>}
             <span>{TAX_MODE_LABELS[quote.taxMode]}</span>
           </div>
         }
         actions={
           <div className="flex items-start gap-2">
+            {can('quote:create') && (quote.status === 'draft' || quote.status === 'sent') && <OfferAlternativeButton quoteId={quote.id} />}
             {can('quote:create') && <DuplicateQuoteButton quoteId={quote.id} />}
             {draft && can('quote:delete') && <DeleteDraftButton quoteId={quote.id} />}
           </div>
@@ -91,7 +103,14 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                 <tbody>
                   {quote.lines.map((line) => (
                     <Tr key={line.id}>
-                      <Td>{line.description}</Td>
+                      <Td>
+                        <div className="font-medium">{line.description}</div>
+                        {(line.detail || line.billingType) && (
+                          <div className="text-xs text-muted">
+                            {[line.detail, line.billingType === 'one_off' ? 'One-time' : line.billingType === 'recurring' ? 'Recurring' : null].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </Td>
                       <Td className="text-right tabular-nums">{line.quantity}</Td>
                       <Td className="whitespace-nowrap text-right tabular-nums">{money(line.unitAmountMinor, quote.currency)}</Td>
                       <Td className="text-right tabular-nums text-muted">{line.discountPercent ? `${line.discountPercent}%` : ''}</Td>
@@ -103,7 +122,7 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                             documentId={quote.id}
                             currency={quote.currency}
                             taxRates={taxChoices}
-                            line={{ id: line.id, description: line.description, quantity: line.quantity, unitAmount: decimal(line.unitAmountMinor), discountPercent: line.discountPercent, taxRateId: line.taxRateId }}
+                            line={{ id: line.id, description: line.description, detail: line.detail, billingType: line.billingType, quantity: line.quantity, unitAmount: decimal(line.unitAmountMinor), discountPercent: line.discountPercent, taxRateId: line.taxRateId }}
                           />
                         </Td>
                       )}
@@ -118,6 +137,7 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                   documentId={quote.id}
                   currency={quote.currency}
                   taxRates={taxChoices}
+                  intervals
                   services={services.data.map((s) => ({
                     id: s.id,
                     name: s.name,
@@ -165,6 +185,41 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
 
         <div className="space-y-6">
           <Totals quote={quote} />
+          {(quote.split.recurring.length > 0 || options.data.length > 1) && (
+            <Card>
+              <CardHeader title="What it is for" />
+              <dl className="space-y-2 p-5 text-sm">
+                <div className="flex justify-between gap-4"><dt className="text-muted">One-time, before tax</dt><dd className="tabular-nums">{money(quote.split.oneTimeNetMinor, quote.currency)}</dd></div>
+                {quote.split.recurring.map((r) => (
+                  <div key={`${r.unit}${r.count}`} className="flex justify-between gap-4">
+                    <dt className="text-muted">Every {r.count === 1 ? r.unit : `${r.count} ${r.unit}s`}</dt>
+                    <dd className="tabular-nums">{money(r.perPeriodNetMinor, quote.currency)}</dd>
+                  </div>
+                ))}
+              </dl>
+              {options.data.length > 1 && (
+                <div className="border-t border-line p-5 text-sm">
+                  <p className="mb-2 font-medium">Offered as one of</p>
+                  <ul className="space-y-1">
+                    {options.data.map((o) => (
+                      <li key={o.id} className="flex justify-between gap-2">
+                        <Link href={`/quotes/${o.id}`} className={o.id === quote.id ? 'font-medium' : 'hover:underline'}>{o.optionLabel ?? o.title}</Link>
+                        <QuoteStatusBadge status={o.status} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Card>
+          )}
+          {!draft && (
+            <Card>
+              <CardHeader title="The document" />
+              <div className="p-5">
+                <QuoteDocumentControls quoteId={quote.id} canEmail={can('quote:send')} suggestedEmail={null} />
+              </div>
+            </Card>
+          )}
           {draft && can('quote:send') && (
             <Card>
               <CardHeader title="Send" description="Mark the quote as sent once it has gone to the client. It takes its number and can no longer change." />
@@ -188,14 +243,29 @@ export default async function QuotePage({ params }: PageProps<'/quotes/[id]'>) {
                     ))}
                   </ul>
                 )}
-                {can('invoice:create') && quote.status !== 'declined' && <InvoiceFromQuoteButton quoteId={quote.id} />}
+                {can('invoice:create') && quote.status === 'accepted' && invoices.data.length === 0 && quote.split.oneTimeNetMinor !== 0 && <InvoiceFromQuoteButton quoteId={quote.id} />}
               </div>
             </Card>
           )}
-          {quote.status === 'sent' && can('quote:update') && (
+          {answering && (
             <Card>
-              <CardHeader title="The client's answer" />
-              <div className="p-5"><AnswerControls quoteId={quote.id} /></div>
+              <CardHeader title="Accepted?" description="Accepting carries the quote into its project: the contract, any recurring billing, and a billing plan." />
+              <div className="p-5">
+                <AcceptQuoteForm
+                  quoteId={quote.id}
+                  currency={quote.currency}
+                  projects={clientProjects.data.map((p) => ({ id: p.id, name: p.name }))}
+                  quoteProject={quoteProject ? { id: quoteProject.id, name: quoteProject.name, contractSet: quoteProject.contractValueMinor !== null } : null}
+                  oneTime={money(quote.split.oneTimeNetMinor, quote.currency)}
+                  recurring={quote.split.recurring.map((r) => `${money(r.perPeriodNetMinor, quote.currency)} every ${r.count === 1 ? r.unit : `${r.count} ${r.unit}s`}`)}
+                />
+              </div>
+            </Card>
+          )}
+          {answering && (
+            <Card>
+              <CardHeader title="Declined?" />
+              <div className="p-5"><AnswerControls quoteId={quote.id} declineOnly /></div>
             </Card>
           )}
         </div>

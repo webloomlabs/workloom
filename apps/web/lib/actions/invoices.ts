@@ -9,7 +9,9 @@ import {
   invoiceEmail,
   invoiceFromQuote,
   invoiceLineAdd,
+  invoiceLineAddDeduction,
   invoiceLineRemove,
+  invoiceSetDueDate,
   invoiceLineUpdate,
   invoiceSend,
   invoiceUpdate,
@@ -70,6 +72,14 @@ function amount(form: FormData, name: string, currency: string, options: { allow
     if (error instanceof AmountFormatError) throw new FieldError(name, error.message)
     throw error
   }
+}
+
+/** The billing select: "default" leaves it to the service, "" shows nothing. */
+function billingChoice(form: FormData): 'one_off' | 'recurring' | null | undefined {
+  if (!form.has('billingType')) return undefined
+  const value = String(form.get('billingType') ?? '')
+  if (value === 'default') return undefined
+  return value === 'one_off' || value === 'recurring' ? value : null
 }
 
 /** A tax select: "" for none, "default" to leave it to the service, or a tax rate's id. */
@@ -133,6 +143,7 @@ export async function updateInvoiceAction(_: ActionState, form: FormData): Promi
       contactId: form.has('contactId') ? text(form, 'contactId') || null : undefined,
       taxMode: (maybe(form, 'taxMode') || undefined) as never,
       ...(text(form, 'paymentTermsDays') ? { paymentTermsDays: Number(text(form, 'paymentTermsDays')) } : {}),
+      ...(form.has('dueLabel') ? { dueLabel: text(form, 'dueLabel') || null } : {}),
       notes: maybe(form, 'notes'),
       terms: maybe(form, 'terms'),
       ...(form.has('newCurrency') && text(form, 'newCurrency') ? { currency: text(form, 'newCurrency').toUpperCase() } : {}),
@@ -157,6 +168,9 @@ export async function addInvoiceLineAction(_: ActionState, form: FormData): Prom
       id: invoiceId,
       serviceId: text(form, 'serviceId') || null,
       description: text(form, 'description') || undefined,
+      detail: text(form, 'detail') || null,
+      billingType: billingChoice(form),
+      ...(form.has('periodStart') ? { periodStart: text(form, 'periodStart') || null, periodEnd: text(form, 'periodEnd') || null } : {}),
       quantity: text(form, 'quantity') || '1',
       unitAmountMinor: amount(form, 'unitAmount', currency, { allowNegative: true }),
       discountPercent: text(form, 'discountPercent') || null,
@@ -178,6 +192,9 @@ export async function updateInvoiceLineAction(_: ActionState, form: FormData): P
     await call(invoiceLineUpdate, {
       id: id(form),
       description: text(form, 'description'),
+      ...(form.has('detail') ? { detail: text(form, 'detail') || null } : {}),
+      billingType: billingChoice(form),
+      ...(form.has('periodStart') ? { periodStart: text(form, 'periodStart') || null, periodEnd: text(form, 'periodEnd') || null } : {}),
       quantity: text(form, 'quantity'),
       unitAmountMinor: unitAmount,
       discountPercent: text(form, 'discountPercent') || null,
@@ -225,6 +242,8 @@ export async function sendInvoiceAction(_: ActionState, form: FormData): Promise
     await call(invoiceSend, {
       id: invoiceId,
       ...(text(form, 'exchangeRate') ? { exchangeRate: text(form, 'exchangeRate') } : {}),
+      ...(text(form, 'issueDate') ? { issueDate: text(form, 'issueDate') } : {}),
+      ...(text(form, 'dueDate') ? { dueDate: text(form, 'dueDate') } : {}),
       email: checked(form, 'email'),
       ...(text(form, 'to') ? { to: text(form, 'to') } : {}),
     })
@@ -258,7 +277,29 @@ export async function cancelInvoiceAction(_: ActionState, form: FormData): Promi
 }
 
 export async function deleteInvoiceAction(form: FormData): Promise<void> {
-  await call(invoiceDelete, { id: id(form) })
+  await call(invoiceDelete, { id: id(form), schedulePeriods: text(form, 'schedulePeriods') === 'skip' ? 'skip' : 'rebill' })
   revalidatePath('/invoices')
   redirect('/invoices')
+}
+
+export async function addDeductionAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const invoiceId = id(form)
+  try {
+    await call(invoiceLineAddDeduction, { id: invoiceId, deductsInvoiceId: id(form, 'deductsInvoiceId') })
+  } catch (error) {
+    return failed(error, form)
+  }
+  refresh(invoiceId)
+  return { status: 'success', message: 'Taken off. The invoice now reads as a statement.' }
+}
+
+export async function setDueDateAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const invoiceId = id(form)
+  try {
+    await call(invoiceSetDueDate, { id: invoiceId, dueDate: text(form, 'dueDate') })
+  } catch (error) {
+    return failed(error, form)
+  }
+  refresh(invoiceId)
+  return { status: 'success', message: 'Due date set.' }
 }

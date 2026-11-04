@@ -1,3 +1,4 @@
+import { minorToDecimalString } from '@workloom/core'
 import { billingScheduleGet, billingScheduleInvoiceList, taxRateList } from '@workloom/core/modules'
 import { Alert, Card, CardBody, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
@@ -9,7 +10,9 @@ import {
   AddScheduleLineForm,
   DeleteScheduleButton,
   EditScheduleForm,
+  EditScheduleLineForm,
   GenerateInvoiceButton,
+  PrepayForm,
   RemoveScheduleLineButton,
   ScheduleStatusControl,
 } from '@/components/service/schedule-forms'
@@ -99,7 +102,28 @@ export default async function SchedulePage({ params }: PageProps<'/recurring/[id
                 <tbody>
                   {schedule.lines.map((line) => (
                     <Tr key={line.id}>
-                      <Td>{line.description}</Td>
+                      <Td>
+                        <div>{line.description}</div>
+                        {line.detail && <div className="text-xs text-muted">{line.detail}</div>}
+                        {can('billingSchedule:update') && (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-xs text-muted hover:text-ink">Edit</summary>
+                            <div className="mt-2">
+                              <EditScheduleLineForm
+                                scheduleId={schedule.id}
+                                currency={schedule.currency}
+                                line={{
+                                  id: line.id,
+                                  description: line.description,
+                                  detail: line.detail,
+                                  quantity: line.quantity,
+                                  unitAmount: minorToDecimalString(line.unitAmountMinor, schedule.currency),
+                                }}
+                              />
+                            </div>
+                          </details>
+                        )}
+                      </Td>
                       <Td className="text-right tabular-nums text-muted">{line.quantity}</Td>
                       <Td className="text-right tabular-nums">{amount(line.unitAmountMinor)}</Td>
                       <Td className="text-right tabular-nums">{amount(Math.round(Number(line.quantity) * line.unitAmountMinor))}</Td>
@@ -110,6 +134,16 @@ export default async function SchedulePage({ params }: PageProps<'/recurring/[id
                   ))}
                 </tbody>
               </Table>
+            )}
+            {can('billingSchedule:update') && schedule.status === 'active' && !schedule.blocker && (
+              <CardBody className="border-t border-line">
+                <p className="mb-3 text-sm font-medium">Bill several periods at once</p>
+                <p className="mb-3 text-sm text-muted">
+                  For a client paying ahead: one invoice for the next periods, from {schedule.nextRunOn ? formatDate(schedule.nextRunOn) : 'the next period'}.
+                  Each is still billed once, and the schedule moves past them.
+                </p>
+                <PrepayForm id={schedule.id} remaining={schedule.maxOccurrences === null ? null : schedule.maxOccurrences - schedule.generatedCount} />
+              </CardBody>
             )}
             {can('billingSchedule:update') && (
               <CardBody className="border-t border-line">

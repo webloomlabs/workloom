@@ -283,11 +283,11 @@ describe('an organization leaving', () => {
 
     // As in the other guard tests: the cascade needs a right the application
     // role is denied, and granting it here isolates what this test is about.
-    await admin.query('grant delete on audit_logs to workloom_app_test')
+    await admin.query('grant delete on audit_logs, audit_seals to workloom_app_test')
     try {
       await admin.query(`delete from organization where id = $1`, [org])
     } finally {
-      await admin.query('revoke delete on audit_logs from workloom_app_test')
+      await admin.query('revoke delete on audit_logs, audit_seals from workloom_app_test')
     }
     const { rowCount } = await admin.query(`select 1 from project_revisions where organization_id = $1`, [org])
     expect(rowCount).toBe(0)

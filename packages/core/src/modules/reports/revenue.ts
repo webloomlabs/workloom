@@ -1,5 +1,6 @@
 import { and, eq, schema, sql } from '@workloom/db'
 import { z } from 'zod'
+import { countsAsCost, expenseCostSql } from '../finance/expense-cost.ts'
 import type { ActorContext } from '../../context.ts'
 import { ratioPercent } from '../../reports/margin.ts'
 import { defineProcedure } from '../../registry/index.ts'
@@ -266,9 +267,9 @@ async function outstandingNow(ctx: ActorContext, on: string, companyId?: string)
 async function expensesIn(ctx: ActorContext, from: string, to: string, companyId?: string) {
   const e = schema.expenses
   const rows = await ctx.tx
-    .select({ currency: e.currency, total: sql<string>`sum(${e.amountMinor})` })
+    .select({ currency: e.currency, total: sql<string>`sum(${expenseCostSql})` })
     .from(e)
-    .where(and(sql`${e.incurredOn} between ${from} and ${to}`, companyId ? eq(e.companyId, companyId) : undefined))
+    .where(and(countsAsCost, sql`${e.incurredOn} between ${from} and ${to}`, companyId ? eq(e.companyId, companyId) : undefined))
     .groupBy(e.currency)
   const out = new Map<string, Bucket>()
   for (const row of rows) add(out, row.currency, 'total', Number(row.total))
@@ -319,9 +320,9 @@ async function monthlyIn(ctx: ActorContext, from: string, to: string, companyId?
       .where(and(sql`${p.receivedOn} between ${from} and ${to}`, companyId ? eq(p.companyId, companyId) : undefined))
       .groupBy(p.currency, month(p.receivedOn)),
     ctx.tx
-      .select({ currency: e.currency, month: month(e.incurredOn), total: sql<string>`sum(${e.amountMinor})` })
+      .select({ currency: e.currency, month: month(e.incurredOn), total: sql<string>`sum(${expenseCostSql})` })
       .from(e)
-      .where(and(sql`${e.incurredOn} between ${from} and ${to}`, companyId ? eq(e.companyId, companyId) : undefined))
+      .where(and(countsAsCost, sql`${e.incurredOn} between ${from} and ${to}`, companyId ? eq(e.companyId, companyId) : undefined))
       .groupBy(e.currency, month(e.incurredOn)),
     ctx.tx
       .select({
