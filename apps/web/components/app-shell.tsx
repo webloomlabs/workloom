@@ -15,6 +15,7 @@ import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command-palette'
 import { NAV_ICONS, type NavIconName } from '@/components/nav-icons'
+import { WorkloomMark } from '@/components/workloom-mark'
 
 export type NavItem = {
   href: string
@@ -145,8 +146,8 @@ export function AppShell({
             href="/"
             className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm font-semibold tracking-tight text-ink"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-[13px] font-bold text-accent-ink">
-              {brand.slice(0, 1)}
+            <span className="flex h-7 shrink-0 items-center">
+              <WorkloomMark />
             </span>
             {!rail && <span className="truncate">{brand}</span>}
           </Link>

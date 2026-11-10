@@ -1,4 +1,5 @@
 import { cn } from '@workloom/ui'
+import { WorkloomMark } from '@/components/workloom-mark'
 
 /**
  * The centred, chrome-free frame the signed-out screens share.
@@ -17,9 +18,7 @@ export function AuthShell({ children, wide = false }: { children: React.ReactNod
       />
       <div className={cn('relative w-full', wide ? 'max-w-md' : 'max-w-sm')}>
         <div className="mb-8 flex items-center justify-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-ink">
-            W
-          </span>
+          <WorkloomMark className="h-[18px]" />
           <span className="text-sm font-semibold tracking-tight text-ink">Workloom</span>
         </div>
         {children}

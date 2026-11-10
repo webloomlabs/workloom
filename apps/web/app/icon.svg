@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Workloom icon</title>
+  <desc id="desc">A lime woven W monogram with transparent crossover gaps.</desc>
+  <g fill="#D9F74C" transform="translate(-2 242)">
+    <path d="M73 30H173C202 30 225 42 239 68L403 380C414 400 425 413 439 422L403 478C390 498 371 510 344 510H291C262 510 238 495 224 470L30 98C13 66 35 30 73 30Z"/>
+    <path d="M343 243L419 126C437 98 460 82 491 82H550C587 82 615 99 634 130L687 213C661 208 642 206 625 206C597 206 578 218 562 241L446 412C432 399 424 385 413 366Z"/>
+    <path d="M518 335L580 244C593 226 611 218 633 223L773 411C786 429 800 438 821 445L802 479C789 499 769 510 743 510H662C634 510 614 498 600 475Z"/>
+    <path d="M703 285L803 69C815 43 839 30 869 30H955C993 30 1015 63 997 98L830 433C810 428 797 420 785 404Z"/>
+  </g>
+</svg>
