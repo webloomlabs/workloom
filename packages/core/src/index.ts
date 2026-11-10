@@ -21,6 +21,7 @@ export {
   consumeRateLimit,
   pruneRateLimits,
   rateLimitKey,
+  type AuthRateLimitClass,
   type RateLimitDecision,
 } from './rate-limit.ts'
 export * from './permissions/index.ts'

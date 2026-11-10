@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
@@ -11,6 +12,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { env } from '@workloom/config'
 import {
   assertSafeKey,
+  assertSafePrefix,
   attachmentDisposition,
   inlineDisposition,
   servesInline,
@@ -82,6 +84,31 @@ export class S3Storage implements Storage {
   async delete(key: string): Promise<void> {
     assertSafeKey(key)
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }))
+  }
+
+  /**
+   * One object at a time rather than DeleteObjects: the batch call requires a
+   * request checksum that several S3-compatible servers reject, and this runs
+   * once per organization reset, not on any hot path.
+   */
+  async deletePrefix(prefix: string): Promise<number> {
+    assertSafePrefix(prefix)
+    let deleted = 0
+    let token: string | undefined
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+      )
+      const keys = (page.Contents ?? []).map((o) => o.Key).filter((k): k is string => Boolean(k))
+      for (let i = 0; i < keys.length; i += 16) {
+        await Promise.all(
+          keys.slice(i, i + 16).map((Key) => this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key }))),
+        )
+      }
+      deleted += keys.length
+      token = page.IsTruncated ? page.NextContinuationToken : undefined
+    } while (token)
+    return deleted
   }
 
   async exists(key: string): Promise<boolean> {

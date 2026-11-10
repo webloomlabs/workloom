@@ -20,20 +20,34 @@ export type RateLimitDecision = {
 
 const WINDOW_MS = 60_000
 
+/**
+ * Classes for unauthenticated authentication endpoints, keyed by email or IP
+ * rather than by actor -- there is no actor yet.
+ */
+export type AuthRateLimitClass = 'auth' | 'authMail' | 'authIp'
+
 /** Requests per minute. Generous by default; tighten via configuration later. */
-const LIMITS: Record<RateLimitClass | 'auth', number> = {
+const LIMITS: Record<RateLimitClass | AuthRateLimitClass, number> = {
   read: 600,
   write: 120,
   /** PDF rendering, exports, outbound email. */
   expensive: 20,
-  /** Sign-in and password reset, keyed by IP and email rather than by actor. */
+  /** Sign-in and sign-up attempts against one email address. */
   auth: 10,
+  /** Password-reset and verification emails to one address: each one sends mail. */
+  authMail: 3,
+  /**
+   * Every authentication endpoint from one IP. Looser than the per-email
+   * limits because an IP can be shared (an office, a CDN) and, without a
+   * trusted proxy, spoofed -- the per-email limits are the real control.
+   */
+  authIp: 60,
 }
 
 export function rateLimitKey(parts: {
   organizationId?: string | undefined
   actorId: string
-  klass: RateLimitClass | 'auth'
+  klass: RateLimitClass | AuthRateLimitClass
 }): string {
   return `org:${parts.organizationId ?? 'none'}:actor:${parts.actorId}:${parts.klass}`
 }
@@ -47,7 +61,7 @@ export function rateLimitKey(parts: {
  */
 export async function consumeRateLimit(
   key: string,
-  klass: RateLimitClass | 'auth',
+  klass: RateLimitClass | AuthRateLimitClass,
   now = new Date(),
 ): Promise<RateLimitDecision> {
   const limit = LIMITS[klass]

@@ -61,6 +61,34 @@ creates an account without a session is
 `packages/auth/src/provisioning.ts`, which is not reachable over HTTP and has
 two callers, each of which authorises first.
 
+### Resetting an organization
+
+Settings → Organization → *Danger zone* lets the owner delete every record and
+file the organization has: clients, projects, invoices, payments, banking,
+documents, and the configuration (tax rates, services, numbering, API keys,
+webhooks, the Telegram bot). The organization, its members and their sign-ins,
+and the audit log stay; the reset is itself an audit entry, listing how many
+rows went from each table.
+
+It is the most destructive thing in the product, so it asks for more than a
+session:
+
+1. **The owner's password**, typed again. A signed-in browser left open, or a
+   stolen cookie, is not enough.
+2. **A six-digit code emailed to them**, valid for ten minutes, once. Five
+   wrong guesses spend it. A known password is not enough either. The code is
+   stored only as an HMAC.
+
+Only `organization:delete` may ask, which is the owner alone; the role is
+re-read at each step. It is not a procedure, so no API key and no REST call
+can reach it, and it needs a working mail transport. All of
+`packages/auth/src/organization-reset.ts`. There is no undo: take a backup
+first (see [backup-and-restore.md](backup-and-restore.md)).
+
+The database guards that keep issued invoices and closed periods from changing
+stand aside for it, and for nothing else; see
+[database.md](database.md#triggers-that-hold-the-rules-the-application-cannot).
+
 ## The one public surface
 
 A client's invoice link (`/i/<token>`) is the only thing reachable without

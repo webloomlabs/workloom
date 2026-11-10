@@ -55,6 +55,29 @@ describe('local storage', () => {
       await expect(storage.put(key, Buffer.from('x')), key).rejects.toThrow(/unsafe storage key/)
     }
   })
+
+  it('deletes a whole folder, and only that folder', async () => {
+    const storage = new LocalStorage()
+    await storage.put('org-one/documents/a.pdf', Buffer.from('a'))
+    await storage.put('org-one/receipts/e/b.jpg', Buffer.from('b'))
+    await storage.put('org-one-and-more/c.pdf', Buffer.from('c'))
+    await storage.put('org-two/d.pdf', Buffer.from('d'))
+
+    expect(await storage.deletePrefix('org-one/')).toBe(2)
+    expect(await storage.exists('org-one/documents/a.pdf')).toBe(false)
+    expect(await storage.exists('org-one/receipts/e/b.jpg')).toBe(false)
+    // A neighbour whose name merely starts the same way is not in the folder.
+    expect(await storage.exists('org-one-and-more/c.pdf')).toBe(true)
+    expect(await storage.exists('org-two/d.pdf')).toBe(true)
+    expect(await storage.deletePrefix('org-one/')).toBe(0)
+  })
+
+  it('refuses a prefix that is not one safe folder', async () => {
+    const storage = new LocalStorage()
+    for (const prefix of ['', '/', 'org', '../', 'a/../', '/etc/']) {
+      await expect(storage.deletePrefix(prefix), prefix).rejects.toThrow(/storage (key|prefix)/)
+    }
+  })
 })
 
 describe('signed URLs', () => {

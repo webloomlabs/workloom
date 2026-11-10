@@ -125,6 +125,8 @@ jobs:
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+          # The app runs on the runner, so mail goes to docker-compose.dev.yml's Mailpit.
+          sed -i "s|^#SMTP_HOST=.*|SMTP_HOST=localhost|; s|^#SMTP_PORT=.*|SMTP_PORT=1025|" .env
           # These journeys are the multi-organization ones: signing up, holding
           # two organizations, inviting by email. The default shape has its own
           # job below.
@@ -183,6 +185,8 @@ jobs:
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^WORKLOOM_ENCRYPTION_KEY=.*|WORKLOOM_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+          # The app runs on the runner, so mail goes to docker-compose.dev.yml's Mailpit.
+          sed -i "s|^#SMTP_HOST=.*|SMTP_HOST=localhost|; s|^#SMTP_PORT=.*|SMTP_PORT=1025|" .env
       - run: docker compose -f docker-compose.dev.yml up -d --wait
       - run: pnpm --filter @workloom/web exec next build
       - name: start the app (migrates and verifies isolation on boot)

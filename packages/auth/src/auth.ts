@@ -10,6 +10,8 @@ import { organization } from 'better-auth/plugins/organization'
 import { nextCookies, toNextJsHandler } from 'better-auth/next-js'
 import { accessControl, roles } from './access-control.ts'
 import { organizationAuditHooks, recordSignIn } from './audit-hooks.ts'
+import { authRateLimit } from './rate-limit.ts'
+import { roleGuardHooks } from './role-guard.ts'
 
 const INVITATION_EXPIRY_DAYS = 7
 
@@ -84,6 +86,13 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
 
+  hooks: {
+    // Sign-in, sign-up and password-reset limits, per email and per IP. A
+    // `before` hook so that Server Actions, which call auth.api directly and
+    // skip Better Auth's HTTP-only limiter, are covered too.
+    before: authRateLimit,
+  },
+
   databaseHooks: {
     session: {
       create: {
@@ -128,7 +137,9 @@ export const auth = betterAuth({
       invitationExpiresIn: 60 * 60 * 24 * INVITATION_EXPIRY_DAYS,
       // Explicit, so a future default change cannot quietly weaken it.
       requireEmailVerificationOnInvitation: true,
-      organizationHooks: organizationAuditHooks,
+      // Audit hooks run after a change; the role guard runs before one and
+      // refuses any role that is not exactly one of Workloom's.
+      organizationHooks: { ...organizationAuditHooks, ...roleGuardHooks },
 
       async sendInvitationEmail(data) {
         const acceptUrl = `${env.APP_URL}/accept-invitation/${data.id}`

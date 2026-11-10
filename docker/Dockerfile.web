@@ -38,7 +38,8 @@ COPY . .
 # this file is the only one there is.
 ENV NODE_ENV=production \
     BETTER_AUTH_SECRET=build-time-placeholder-not-a-real-secret \
-    WORKLOOM_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    WORKLOOM_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+    SMTP_HOST=build-time-placeholder
 RUN cp .env.example .env && pnpm --filter @workloom/web exec next build && rm .env
 
 FROM base AS runtime

@@ -337,6 +337,13 @@
       "when": 1793765565517,
       "tag": "0047_bank_opening_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794282558915,
+      "tag": "0048_organization_reset",
+      "breakpoints": true
     }
   ]
 }

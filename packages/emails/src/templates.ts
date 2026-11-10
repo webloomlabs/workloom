@@ -211,3 +211,42 @@ export function quoteEmail(options: { to: string; organization: string; number: 
     ].join('\n'),
   }
 }
+
+/**
+ * The second step of an organization reset: a code that proves the person at
+ * the keyboard also holds the owner's inbox. It says plainly what the code
+ * does, so that someone who did not ask for it knows their password is out.
+ */
+export function organizationResetCodeEmail(options: {
+  to: string
+  organizationName: string
+  code: string
+  expiresInMinutes: number
+}): Email {
+  const org = escapeHtml(options.organizationName)
+  return {
+    to: options.to,
+    subject: `Your code to reset ${options.organizationName} on Workloom`,
+    html: layout({
+      heading: `Reset ${org}`,
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
+          Someone signed in as you asked to <strong>permanently delete all of ${org}'s data</strong>
+          and settings on Workloom. Enter this code to confirm:
+        </p>
+        <p style="margin:0 0 24px;font-size:28px;font-weight:600;letter-spacing:6px;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(options.code)}</p>
+        <p style="margin:0;font-size:13px;color:#78716c;line-height:1.6;">
+          The code expires in ${options.expiresInMinutes} minutes and works once.
+          If this wasn't you, don't share it: someone has your password, so change it now.
+        </p>`,
+    }),
+    text: [
+      `Someone signed in as you asked to permanently delete all of ${options.organizationName}'s data and settings on Workloom.`,
+      '',
+      `Code: ${options.code}`,
+      '',
+      `The code expires in ${options.expiresInMinutes} minutes and works once.`,
+      "If this wasn't you, don't share it: someone has your password, so change it now.",
+    ].join('\n'),
+  }
+}

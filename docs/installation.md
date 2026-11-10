@@ -64,13 +64,17 @@ shape: everyone signs up and creates their own organization. See
 - `worker` ran the same isolation check, then began dispatching events, retrying
   webhooks, and sweeping quotes and overdue invoices.
 - `mailpit` caught the outbound mail so nothing escapes a trial installation.
-  Its inbox is at <http://localhost:8025>.
+  Its inbox is at <http://localhost:8025>, published on the loopback interface
+  only: it has no login and holds every password-reset link, so it must not
+  be reachable from other machines. From elsewhere, use an SSH tunnel
+  (`ssh -L 8025:localhost:8025 your-server`).
 
 ## Before anyone real uses it
 
-1. **Send mail somewhere real.** Point `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`
-   and `SMTP_PASSWORD` at your relay, set `MAIL_FROM`, and remove the `mailpit`
-   service. Invitations, invoices, and password resets all go through it.
+1. **Send mail somewhere real.** Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`
+   and `SMTP_PASSWORD` in `.env` to your relay, set `MAIL_FROM`, and remove the
+   `mailpit` service. Invitations, invoices, and password resets all go
+   through it.
 2. **Set `APP_URL` to the address people will use.** Every link in outbound
    mail — including the one a client opens to see their invoice — is built from
    it, and the API's cross-origin check compares against it.

@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@workloom/config": "workspace:*",
-    "nodemailer": "^9.1.1"
+    "nodemailer": "10.1.6"
   },
   "devDependencies": {
     "@types/nodemailer": "^7.0.0"

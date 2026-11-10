@@ -105,3 +105,6 @@ cannot quietly stop being true.
 - **Restoring into a newer release.** That works — the app migrates on boot.
   Restoring into an *older* release does not, and will fail loudly.
 - **A backup nobody has restored.** Practise this on a spare machine once.
+
+The reverse also holds: **nothing but a backup undoes an organization reset**
+(Settings → Organization → *Danger zone*). Take one immediately before using it.

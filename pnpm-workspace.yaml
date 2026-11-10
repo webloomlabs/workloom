@@ -18,3 +18,12 @@ allowBuilds:
   protobufjs: false
   # Declined: the Gemini SDK's install script is an echo that does nothing.
   '@google/genai': false
+
+# One version of each, everywhere: transitive copies would otherwise keep the
+# versions these patch. better-auth's peer `next` resolved to its own older
+# copy (with a vulnerable sharp), openai brought an older undici, and
+# @better-auth/core an older zod. Keep in step with the direct dependencies.
+overrides:
+  next: 16.4.3
+  undici: 7.30.1
+  zod: 4.6.7

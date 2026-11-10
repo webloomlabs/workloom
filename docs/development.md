@@ -4,7 +4,8 @@
 
 ```bash
 pnpm install
-cp .env.example .env            # set the two secrets it names
+cp .env.example .env            # set the two secrets it names, and
+                                # uncomment SMTP_HOST and SMTP_PORT
 pnpm services:up                # postgres, mailpit, minio in containers
 pnpm db:migrate
 pnpm dev                        # the app on :3000

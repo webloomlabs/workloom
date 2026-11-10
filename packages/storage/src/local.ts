@@ -1,8 +1,8 @@
 import { env } from '@workloom/config'
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { assertSafeKey, servesInline, type PutOptions, type SignedUrlOptions, type Storage, type StoredObject } from './types.ts'
+import { assertSafeKey, assertSafePrefix, servesInline, type PutOptions, type SignedUrlOptions, type Storage, type StoredObject } from './types.ts'
 
 /**
  * Local filesystem storage.
@@ -46,6 +46,20 @@ export class LocalStorage implements Storage {
 
   async delete(key: string): Promise<void> {
     await rm(this.path(key), { force: true })
+  }
+
+  async deletePrefix(prefix: string): Promise<number> {
+    assertSafePrefix(prefix)
+    const dir = this.path(prefix.slice(0, -1))
+    let files: number
+    try {
+      files = (await readdir(dir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+      throw error
+    }
+    await rm(dir, { recursive: true, force: true })
+    return files
   }
 
   async exists(key: string): Promise<boolean> {

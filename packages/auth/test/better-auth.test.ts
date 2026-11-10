@@ -123,3 +123,32 @@ describe('organizations', () => {
     expect(rows[0]).toEqual({ base_currency: 'AUD', timezone: 'UTC' })
   })
 })
+
+describe('authentication rate limits', () => {
+  // Server Actions call auth.api directly, which skips Better Auth's own
+  // HTTP-only limiter -- so these drive auth.api exactly as an action does.
+  it('refuses sign-in attempts against one email beyond the limit', async () => {
+    const attempt = () =>
+      auth.api.signInEmail({ body: { email: 'target@example.com', password: 'wrong-password-guess' } })
+
+    for (let i = 0; i < 10; i++) {
+      // Wrong password: refused as invalid credentials, not as rate-limited.
+      await expect(attempt()).rejects.toThrow(/invalid/i)
+    }
+    await expect(attempt()).rejects.toThrow(/too many attempts/i)
+  })
+
+  it('counts each email separately', async () => {
+    await expect(
+      auth.api.signInEmail({ body: { email: 'someone-else@example.com', password: 'wrong-password-guess' } }),
+    ).rejects.toThrow(/invalid/i)
+  })
+
+  it('limits password-reset emails to one address more tightly', async () => {
+    const request = () =>
+      auth.api.requestPasswordReset({ body: { email: 'owner@example.com', redirectTo: '/reset-password' } })
+
+    for (let i = 0; i < 3; i++) await request()
+    await expect(request()).rejects.toThrow(/too many attempts/i)
+  })
+})

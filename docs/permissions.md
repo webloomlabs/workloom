@@ -43,6 +43,10 @@ was a decision.
 - Only owners, admins, and managers touch **infrastructure**. A lapsed domain
   is an outage, and the list of who can change one stays short.
 - Everyone can see the organization they belong to.
+- Only the **owner** can reset the organization, deleting all of its data. It
+  rides on `organization:delete` rather than a permission of its own, so an
+  admin still differs from an owner by exactly one permission, and it is never
+  available to an API key. See [security.md](security.md#resetting-an-organization).
 
 ## The matrix
 

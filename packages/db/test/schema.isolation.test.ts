@@ -31,6 +31,7 @@ describe('tenant isolation', () => {
     // make every other assertion in this file meaningless.
     const violations = await mod.findIsolationViolations()
     expect(violations.filter((v) => v.check === 'not-superuser')).toEqual([])
+    expect(violations.filter((v) => v.check === 'not-bypassrls')).toEqual([])
   })
 
   it('has row-level security enabled and forced on every tenant table', async () => {
@@ -98,6 +99,44 @@ describe('the boot gate', () => {
       expect(violations.map((v) => v.check)).toContain('not-superuser')
 
       await expect(mod.assertIsolationIntact(asSuperuser)).rejects.toThrow(mod.IsolationError)
+    } finally {
+      await pool.end()
+    }
+  })
+
+  it('refuses a role with BYPASSRLS that is not a superuser', async () => {
+    // Several managed Postgres platforms hand out exactly this: a non-superuser
+    // owner role with BYPASSRLS. It skips every policy just as a superuser
+    // does, so checking is_superuser alone would print "isolation verified"
+    // over a database with none.
+    const { drizzle } = await import('drizzle-orm/node-postgres')
+    const pg = (await import('pg')).default
+    const role = 'workloom_bypassrls_probe'
+    const password = 'bypassrls_probe_password'
+    const admin = new pg.Client({ connectionString: database.adminUrl })
+    await admin.connect()
+    try {
+      const { rowCount } = await admin.query('select 1 from pg_roles where rolname = $1', [role])
+      if (rowCount === 0) {
+        await admin.query(
+          `CREATE ROLE "${role}" WITH LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${password}'`,
+        )
+      }
+    } finally {
+      await admin.end()
+    }
+
+    const url = new URL(database.url)
+    url.username = role
+    url.password = password
+    const pool = new pg.Pool({ connectionString: url.toString() })
+    try {
+      const asBypass = drizzle(pool)
+      const violations = await mod.findIsolationViolations(asBypass)
+      expect(violations.map((v) => v.check)).toContain('not-bypassrls')
+      expect(violations.map((v) => v.check)).not.toContain('not-superuser')
+
+      await expect(mod.assertIsolationIntact(asBypass)).rejects.toThrow(mod.IsolationError)
     } finally {
       await pool.end()
     }

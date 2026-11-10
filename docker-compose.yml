@@ -37,10 +37,16 @@ services:
 
   # Catches outbound mail so nothing escapes a trial installation. Point
   # SMTP_HOST at your own relay when you are ready to send for real.
+  #
+  # Its inbox has no login and holds every password-reset and invitation link
+  # the application sends, so it is published on the loopback interface only.
+  # Bound to 0.0.0.0 it would be readable by anyone who can reach the host --
+  # and Docker-published ports bypass host firewalls such as ufw. From another
+  # machine, reach it through an SSH tunnel: ssh -L 8025:localhost:8025 host
   mailpit:
     image: axllent/mailpit:latest
     restart: unless-stopped
-    ports: ["8025:8025"]
+    ports: ["127.0.0.1:8025:8025"]
 
   web:
     build:
@@ -53,8 +59,11 @@ services:
     environment:
       # Inside the network the services are named, not localhost.
       DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
+      # The bundled Mailpit unless you name a relay. These read SMTP_HOST and
+      # SMTP_PORT from .env (or the platform's environment), so setting them
+      # there is enough -- a literal value here would silently override it.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       STORAGE_LOCAL_PATH: /data/storage
       NODE_ENV: production
       # One organization unless you ask for more. With this off the first visit
@@ -80,8 +89,8 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://${WORKLOOM_DB_USER:-workloom_app}:${WORKLOOM_DB_PASSWORD:-workloom_dev_password}@postgres:5432/${WORKLOOM_DB_NAME:-workloom}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       STORAGE_LOCAL_PATH: /data/storage
       NODE_ENV: production
       MULTI_TENANT: ${MULTI_TENANT:-false}

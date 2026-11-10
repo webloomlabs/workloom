@@ -40,4 +40,5 @@ export {
   type IsolationHandle,
 } from './isolation.ts'
 export { checkDatabase, checkMigrations, type HealthCheck } from './health.ts'
+export { wipeTenantData, deletionOrder, KEPT_ON_WIPE, type WipeEdge } from './wipe.ts'
 export * as schema from './schema/index.ts'

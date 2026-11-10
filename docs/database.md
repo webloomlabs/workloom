@@ -79,6 +79,16 @@ Some invariants matter enough to live below the application:
 
 Each binds a superuser too, and each has a test that proves it by trying.
 
+**Every trigger carries `WHEN (NOT workloom_wiping())`.** That is the one
+exception, for an owner resetting their organization (`packages/db/src/wipe.ts`).
+`workloom_wiping()` is true only when the transaction has set
+`workloom.wipe_org` *and* is scoped by `workloom.org_id` to the same
+organization, so row-level security confines it to that organization's rows,
+for one transaction. A new trigger needs the condition too:
+`packages/db/test/wipe.test.ts` fails without it. The reset deletes table by
+table in foreign-key order read from the catalogue, so a new table is included
+without being listed; `audit_logs` and `audit_seals` are kept.
+
 ## Views
 
 Exactly one: `project_financials_v`. It **must** be declared

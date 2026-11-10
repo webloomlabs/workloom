@@ -117,6 +117,39 @@ describe('an admin', () => {
     expect(await roleOf('dev@x.test')).toBe('manager')
   })
 
+  it('cannot reach owner through a role list or stray whitespace', async () => {
+    // Better Auth's "only an owner may invite an owner" check splits the role
+    // string without trimming, while its "is the inviter an owner" check
+    // trims. "admin, owner" used to pass the first, be stored as sent, and
+    // then count as an owner -- a path from admin to owner.
+    const admin = await signIn('admin@x.test')
+    // A fresh address each time: re-inviting someone already invited is
+    // refused for that reason alone, which would let this pass vacuously.
+    const roles: unknown[] = ['admin, owner', 'admin,owner', ' owner', 'owner ', ['admin', ' owner']]
+    for (const [i, role] of roles.entries()) {
+      await expect(
+        auth.api.createInvitation({
+          body: { email: `escalate-${i}@x.test`, role: role as never, organizationId },
+          headers: admin,
+        }),
+      ).rejects.toThrow(/role/i)
+    }
+    const { rows } = await mod.withoutTenant('test: invitations', (db) =>
+      db.execute<{ role: string }>(sql`
+        select role from invitation
+        where organization_id = ${organizationId}::uuid and email like 'escalate-%'`),
+    )
+    expect(rows).toEqual([])
+
+    await auth.api
+      .updateMemberRole({
+        body: { memberId: await memberId('dev@x.test'), role: 'developer, owner' as never, organizationId },
+        headers: admin,
+      })
+      .catch(() => undefined)
+    expect(await roleOf('dev@x.test')).not.toMatch(/owner/)
+  })
+
   it('cannot demote an owner', async () => {
     const admin = await signIn('admin@x.test')
     await auth.api

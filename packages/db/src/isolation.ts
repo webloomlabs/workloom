@@ -44,23 +44,42 @@ export type IsolationViolation = { check: string; object: string; detail: string
 
 const excluded = sql.raw(UNSCOPED_TABLES.map((t) => `'${t}'`).join(', '))
 
-/** The connection must not be a superuser: superusers bypass RLS outright. */
+/**
+ * The connection must not bypass RLS: neither as a superuser nor as a role
+ * with BYPASSRLS. Both skip every policy, and BYPASSRLS without superuser is
+ * what several managed Postgres platforms hand out as the default owner role.
+ */
 async function checkNotSuperuser(handle: IsolationHandle): Promise<IsolationViolation[]> {
-  const { rows } = await handle.execute<{ is_superuser: boolean; role: string }>(
-    sql`select current_setting('is_superuser') = 'on' as is_superuser, current_user as role`,
-  )
+  const { rows } = await handle.execute<{ is_superuser: boolean; bypass_rls: boolean; role: string }>(sql`
+    select current_setting('is_superuser') = 'on' as is_superuser,
+           coalesce((select rolbypassrls from pg_roles where rolname = current_user), false) as bypass_rls,
+           current_user as role
+  `)
   const row = rows[0]
-  if (!row?.is_superuser) return []
-  return [
-    {
+  if (!row) return []
+  const violations: IsolationViolation[] = []
+  if (row.is_superuser) {
+    violations.push({
       check: 'not-superuser',
       object: row.role,
       detail:
         'the application is connected as a database superuser, which bypasses row-level ' +
         'security entirely -- every organization can read every other organization\'s data. ' +
         'Connect as an unprivileged role (the bundled docker-compose creates workloom_app).',
-    },
-  ]
+    })
+  }
+  if (row.bypass_rls && !row.is_superuser) {
+    violations.push({
+      check: 'not-bypassrls',
+      object: row.role,
+      detail:
+        'the application is connected as a role with BYPASSRLS, which skips row-level ' +
+        'security entirely -- every organization can read every other organization\'s data. ' +
+        `Run ALTER ROLE "${row.role}" NOBYPASSRLS, or connect as an unprivileged role ` +
+        '(the bundled docker-compose creates workloom_app).',
+    })
+  }
+  return violations
 }
 
 /** Every table with organization_id has RLS enabled AND forced. */

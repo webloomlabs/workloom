@@ -20,3 +20,6 @@ export * from './reports/index.ts'
 export * from './exports.ts'
 export * from './integrations/index.ts'
 export * from './books/index.ts'
+// Last: it imports the Telegram client, and procedures register -- and are
+// listed in the OpenAPI document -- in the order their modules load.
+export * from './organization-reset.ts'

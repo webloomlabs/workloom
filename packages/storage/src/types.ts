@@ -17,6 +17,13 @@ export interface Storage {
   putFile(key: string, path: string, options?: PutOptions): Promise<StoredObject>
   get(key: string): Promise<Buffer>
   delete(key: string): Promise<void>
+  /**
+   * Deletes every object whose key starts with `prefix`, which must end in
+   * "/" -- a whole folder, never a partial name. Returns how many went. Used
+   * to remove all of an organization's files, which are all kept under
+   * `<organization id>/`.
+   */
+  deletePrefix(prefix: string): Promise<number>
   exists(key: string): Promise<boolean>
   /**
    * A time-limited URL the browser can fetch directly. The local driver
@@ -71,4 +78,13 @@ export function assertSafeKey(key: string): void {
   if (key.length === 0 || key.startsWith('/') || key.split('/').some((s) => s === '..' || s === '')) {
     throw new TypeError(`unsafe storage key: ${key}`)
   }
+}
+
+/**
+ * A prefix is a folder: safe as a key once its trailing slash is off, and
+ * never empty, so that no mistake can reach "delete everything".
+ */
+export function assertSafePrefix(prefix: string): void {
+  if (!prefix.endsWith('/')) throw new TypeError(`storage prefix must end in "/": ${prefix}`)
+  assertSafeKey(prefix.slice(0, -1))
 }
