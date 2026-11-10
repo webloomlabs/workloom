@@ -114,7 +114,7 @@ export default tseslint.config(
    */
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['apps/worker/src/outbox/scope.ts', 'packages/auth/src/api-keys.ts', '**/test/**', '**/*.test.ts'],
+    ignores: ['apps/worker/src/outbox/scope.ts', 'packages/auth/src/auth-lookup.ts', '**/test/**', '**/*.test.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',

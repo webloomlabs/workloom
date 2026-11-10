@@ -76,6 +76,8 @@ const COLLISION_WINDOW = 5000
 
 export const documentSequenceUpdate = defineProcedure({
   name: 'documentSequence.update',
+  // Not offered to AI assistants: Invoice numbering must stay gapless and deliberate.
+  mcp: false,
   summary: 'Change how a kind of document is numbered, or where its count stands',
   permission: 'organization:update',
   input: z.object({

@@ -100,6 +100,8 @@ const tokenInput = z
 
 export const telegramBotConnect = defineProcedure({
   name: 'telegramBot.connect',
+  // Not offered to AI assistants: Integration credentials stay with people.
+  mcp: false,
   summary: "Connect the organization's Telegram bot, with the token from @BotFather",
   permission: 'integration:manage',
   input: z.object({ token: tokenInput, mode: z.enum(schema.TELEGRAM_MODES).default('poll') }),
@@ -151,6 +153,8 @@ export const telegramBotGet = defineProcedure({
 
 export const telegramBotUpdate = defineProcedure({
   name: 'telegramBot.update',
+  // Not offered to AI assistants: Integration credentials stay with people.
+  mcp: false,
   summary: 'Change how the bot receives updates, or pause it',
   permission: 'integration:manage',
   input: z.object({
@@ -187,6 +191,8 @@ export const telegramBotUpdate = defineProcedure({
 
 export const telegramBotDisconnect = defineProcedure({
   name: 'telegramBot.disconnect',
+  // Not offered to AI assistants: Integration credentials stay with people.
+  mcp: false,
   summary: 'Disconnect the bot. Linked accounts are kept for a bot connected later; unprocessed updates are dropped.',
   permission: 'integration:manage',
   input: z.object({}),
@@ -223,6 +229,8 @@ export const messagingIdentityOutput = z.object({
 
 export const messagingIdentityCreateLinkCode = defineProcedure({
   name: 'messagingIdentity.createLinkCode',
+  // Not offered to AI assistants: A link code binds an outside chat account to a person.
+  mcp: false,
   summary: 'A one-time code, good for ten minutes, that links your Telegram account when you send it to the bot. For people who record expenses.',
   permission: 'expense:create',
   input: z.object({}),
@@ -271,6 +279,8 @@ export const messagingIdentityList = defineProcedure({
 
 export const messagingIdentityRevoke = defineProcedure({
   name: 'messagingIdentity.revoke',
+  // Not offered to AI assistants: Account linking stays with people.
+  mcp: false,
   summary: 'Unlink a chat account. Your own, or anyone’s with integration:manage.',
   permission: 'expense:create',
   input: z.object({ id: z.uuid() }),

@@ -126,6 +126,8 @@ export const webhookEventTypes = defineProcedure({
 
 export const webhookCreate = defineProcedure({
   name: 'webhook.create',
+  // Not offered to AI assistants: A webhook streams every record to any URL: the strongest exfiltration channel.
+  mcp: false,
   summary: 'Register a webhook endpoint',
   permission: 'webhook:create',
   input: z.object({
@@ -174,6 +176,8 @@ export const webhookCreate = defineProcedure({
 
 export const webhookUpdate = defineProcedure({
   name: 'webhook.update',
+  // Not offered to AI assistants: Re-pointing a webhook is as dangerous as creating one.
+  mcp: false,
   summary: 'Change a webhook endpoint',
   permission: 'webhook:update',
   input: z.object({
@@ -229,6 +233,8 @@ export const webhookUpdate = defineProcedure({
 
 export const webhookDelete = defineProcedure({
   name: 'webhook.delete',
+  // Not offered to AI assistants: Integration security plumbing; not an assistant’s job.
+  mcp: false,
   summary: 'Delete a webhook endpoint and its delivery history',
   permission: 'webhook:delete',
   input: z.object({ id: z.uuid() }),
@@ -250,6 +256,8 @@ export const webhookDelete = defineProcedure({
 
 export const webhookRotateSecret = defineProcedure({
   name: 'webhook.rotateSecret',
+  // Not offered to AI assistants: Integration security plumbing; not an assistant’s job.
+  mcp: false,
   summary: 'Issue a new signing secret, keeping the old one valid for 24 hours',
   permission: 'webhook:update',
   input: z.object({ id: z.uuid() }),
@@ -287,6 +295,8 @@ export const webhookRotateSecret = defineProcedure({
 
 export const webhookTest = defineProcedure({
   name: 'webhook.test',
+  // Not offered to AI assistants: Sends data to an external URL.
+  mcp: false,
   summary: 'Send a test event to one endpoint',
   permission: 'webhook:update',
   input: z.object({ id: z.uuid() }),
@@ -364,6 +374,8 @@ export const webhookDeliveryList = defineProcedure({
 
 export const webhookDeliveryRetry = defineProcedure({
   name: 'webhookDelivery.retry',
+  // Not offered to AI assistants: Sends data to an external URL.
+  mcp: false,
   summary: 'Queue a failed delivery to be attempted again now',
   permission: 'webhook:update',
   input: z.object({ id: z.uuid() }),

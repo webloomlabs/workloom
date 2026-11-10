@@ -1,5 +1,6 @@
 import { API_KEY_PREFIX, hashApiKey } from '@workloom/core'
-import { db, sql } from '@workloom/db'
+import { sql } from '@workloom/db'
+import { withAuthLookup } from './auth-lookup.ts'
 
 /**
  * API key verification.
@@ -19,19 +20,15 @@ export type ResolvedApiKey = {
 /**
  * Looks up a presented secret.
  *
- * The one query that cannot know its organization in advance -- the
- * organization is precisely what it is trying to discover. It runs in a
- * transaction that sets `workloom.auth_lookup`, which the api_key_authentication
- * policy checks. The flag is transaction-local, set here and nowhere else, and
- * widens nothing except SELECT on this one table for the length of this
- * lookup. Ordinary access to api_keys remains tenant-scoped.
+ * A query that cannot know its organization in advance -- the organization
+ * is precisely what it is trying to discover -- so it runs through
+ * `withAuthLookup`, which widens SELECT on api_keys for this lookup only.
  */
 export async function verifyApiKey(presented: string, now = new Date()) {
   if (!presented.startsWith(API_KEY_PREFIX)) return null
 
   const hash = hashApiKey(presented)
-  const rows = await db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('workloom.auth_lookup', 'on', true)`)
+  const rows = await withAuthLookup(async (tx) => {
     // Note the string types. Drizzle's raw `execute` does not apply the
     // driver's type parsers, so timestamps arrive as strings. Comparing one
     // to a Date coerces the Date to its own string form and compares

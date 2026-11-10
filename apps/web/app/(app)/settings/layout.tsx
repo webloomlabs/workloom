@@ -18,6 +18,8 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     { href: '/settings/expense-categories', label: 'Expense categories', permission: 'expense:read' },
     { href: '/settings/telegram', label: 'Telegram', permission: 'expense:create' },
     { href: '/settings/api-keys', label: 'API keys', permission: 'apiKey:read' },
+    // Anyone may connect an AI assistant, so anyone may see and disconnect their own.
+    { href: '/settings/connected-apps', label: 'Connected apps', permission: 'organization:read' },
     { href: '/settings/webhooks', label: 'Webhooks', permission: 'webhook:read' },
     { href: '/settings/audit-log', label: 'Audit log', permission: 'auditLog:read' },
   ] as const

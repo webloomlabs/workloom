@@ -107,6 +107,8 @@ export const memberList = defineProcedure({
 
 export const memberRemove = defineProcedure({
   name: 'member.remove',
+  // Not offered to AI assistants: Access control stays with people.
+  mcp: false,
   summary: 'Remove someone from this organization',
   permission: 'member:remove',
   input: z.object({ userId: z.uuid() }),

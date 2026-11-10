@@ -97,6 +97,8 @@ export const booksLock = defineProcedure({
 
 export const booksUnlock = defineProcedure({
   name: 'books.unlock',
+  // Not offered to AI assistants: Reopening a closed period is an accountant’s decision.
+  mcp: false,
   summary: 'Reopen the books, entirely or back to an earlier day. The reason is kept in the audit log.',
   permission: 'books:lock',
   input: z.object({ to: z.iso.date().nullish(), reason: requiredText(500, 'Reason') }),

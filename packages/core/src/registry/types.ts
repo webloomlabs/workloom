@@ -57,6 +57,16 @@ export type ProcedureDefinition<TInput extends z.ZodType, TOutput extends z.ZodT
   rateLimit?: RateLimitClass
   /** True for reads. Used to pick the default rate-limit class and status. */
   readOnly?: boolean
+  /**
+   * `false` keeps this procedure out of the MCP server, so AI assistants
+   * connected to Workloom cannot call it. Every other procedure the caller is
+   * permitted becomes a tool automatically.
+   *
+   * Reserve it for operations a prompt-injected assistant could abuse: minting
+   * credentials, opening an exfiltration channel, changing where money is
+   * paid. Say why at the definition.
+   */
+  mcp?: false
   handler: (ctx: ActorContext, input: z.output<TInput>) => Promise<z.input<TOutput>>
 }
 

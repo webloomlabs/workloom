@@ -12,3 +12,4 @@ export {
 } from './provisioning.ts'
 export { recordAuthEvent } from './audit-hooks.ts'
 export { confirmOrganizationReset, requestOrganizationReset, RESET_CODE_MINUTES } from './organization-reset.ts'
+export * as oauth from './oauth/index.ts'

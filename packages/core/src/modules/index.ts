@@ -5,6 +5,7 @@
 export * from './identity.ts'
 export * from './organization.ts'
 export * from './api-keys.ts'
+export * from './oauth-grants.ts'
 export * from './audit.ts'
 export * from './webhooks.ts'
 export * from './crm/index.ts'

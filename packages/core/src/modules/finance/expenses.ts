@@ -432,6 +432,8 @@ export type ExpenseCreateInput = {
 /** Which door an expense came in by, from the request's own. */
 export function expenseSource(ctx: ActorContext): (typeof schema.EXPENSE_SOURCES)[number] {
   const source = ctx.source ?? (ctx.actor.type === 'apiKey' ? 'api' : 'web')
+  // An AI assistant is a programmatic client: its expenses came in through the API.
+  if (source === 'mcp') return 'api'
   return source === 'telegram' || source === 'api' ? source : 'web'
 }
 

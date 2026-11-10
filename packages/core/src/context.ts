@@ -7,16 +7,18 @@ import type { EventType } from './events/catalogue.ts'
  * Who is acting.
  *
  * `apiKey` carries the owning user because a key's authority is derived from
- * theirs and re-evaluated on every request -- never frozen at issue time.
+ * theirs and re-evaluated on every request -- never frozen at issue time. An
+ * AI assistant connected through OAuth is the same kind of actor, marked
+ * `credential: 'oauth'`, with the grant's id as its `id`.
  */
 export type Actor =
   | { type: 'user'; id: string; label: string }
-  | { type: 'apiKey'; id: string; userId: string; label: string }
+  | { type: 'apiKey'; id: string; userId: string; label: string; credential?: 'apiKey' | 'oauth' | undefined }
   | { type: 'system'; label: string }
   | { type: 'job'; label: string }
 
 /** The door a change came in by, recorded on its audit entry. */
-export type AuditSource = 'web' | 'api' | 'telegram' | 'worker' | 'system'
+export type AuditSource = 'web' | 'api' | 'telegram' | 'mcp' | 'worker' | 'system'
 
 /** Where an actor's changes come from when the caller does not say. */
 export function defaultSource(actor: Actor): AuditSource {

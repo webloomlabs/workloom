@@ -3,7 +3,7 @@ import { call } from '@/lib/server/procedures'
 
 export const dynamic = 'force-dynamic'
 
-const SOURCES = ['web', 'api', 'telegram', 'worker', 'system'] as const
+const SOURCES = ['web', 'api', 'telegram', 'mcp', 'worker', 'system'] as const
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
 /** The audit log as CSV, with the filters on the page. The procedure checks the permission. */

@@ -22,6 +22,10 @@ A key can never do more than the person who owns it. Its scopes are intersected
 with their role's permissions on **every request**, so demoting someone narrows
 their keys immediately. See [authentication.md](authentication.md).
 
+AI assistants such as ChatGPT and Claude connect through the MCP server
+instead, at `/api/mcp`, which offers these same operations as tools. See
+[mcp.md](mcp.md).
+
 The browser session cookie also works, which is how the interface calls the API.
 Cookie-authenticated writes must come from this application's own origin.
 

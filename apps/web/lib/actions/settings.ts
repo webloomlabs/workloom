@@ -3,7 +3,7 @@
 import { auth, authErrorCode, provisionMember, recordAuthEvent, setMemberPassword } from '@workloom/auth'
 import { env } from '@workloom/config'
 import { DomainError, ForbiddenError, NotFoundError, ROLES } from '@workloom/core'
-import { apiKeyCreate, apiKeyRevoke, documentSequenceUpdate, memberList, memberRemove, organizationRemoveLogo, organizationUpdate, organizationUploadLogo } from '@workloom/core/modules'
+import { apiKeyCreate, apiKeyRevoke, oauthGrantRevoke, documentSequenceUpdate, memberList, memberRemove, organizationRemoveLogo, organizationUpdate, organizationUploadLogo } from '@workloom/core/modules'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { z } from 'zod'
@@ -367,4 +367,14 @@ export async function revokeApiKeyAction(_: ActionState, form: FormData): Promis
   }
   revalidatePath('/settings/api-keys')
   return { status: 'success', message: 'Key revoked.' }
+}
+
+export async function revokeOAuthGrantAction(_: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    await call(oauthGrantRevoke, { id: z.uuid().parse(form.get('id')) })
+  } catch (error) {
+    return toActionError(error)
+  }
+  revalidatePath('/settings/connected-apps')
+  return { status: 'success', message: 'Disconnected.' }
 }

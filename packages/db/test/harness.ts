@@ -80,7 +80,8 @@ export async function startTestDatabase(): Promise<TestDatabase> {
  */
 export async function loadDbWithEnv(databaseUrl: string) {
   process.env.DATABASE_URL = databaseUrl
-  process.env.NODE_ENV = 'test'
+  // Cast: Next's types make NODE_ENV read-only, and the web app's tests load this file too.
+  ;(process.env as Record<string, string | undefined>).NODE_ENV = 'test'
   process.env.APP_URL ??= 'http://localhost:3000'
   process.env.BETTER_AUTH_SECRET ??= 'a'.repeat(32)
   process.env.WORKLOOM_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString('base64')

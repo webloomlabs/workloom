@@ -102,7 +102,7 @@ Everything is in [docs/](docs/README.md).
 
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Self-hosting](docs/self-hosting.md)
 - [Backup and restore](docs/backup-and-restore.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](docs/security.md)
-- [API](docs/api.md) · [openapi.json](docs/openapi.json) · [Webhooks](docs/webhooks.md) · [Automation](docs/automation.md)
+- [API](docs/api.md) · [openapi.json](docs/openapi.json) · [Webhooks](docs/webhooks.md) · [Automation](docs/automation.md) · [AI assistants (MCP)](docs/mcp.md)
 - [Architecture](docs/architecture.md) · [Database](docs/database.md) · [Permissions](docs/permissions.md) · [Development](docs/development.md)
 - [Roadmap](Roadmap.md)
 

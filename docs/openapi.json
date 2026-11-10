@@ -1774,6 +1774,184 @@
         }
       }
     },
+    "/oauth-grants": {
+      "get": {
+        "operationId": "oauthGrant.list",
+        "summary": "Apps connected through OAuth, such as AI assistants",
+        "tags": [
+          "oauthGrant"
+        ],
+        "parameters": [
+          {
+            "name": "includeRevoked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "clientName": {
+                            "type": "string"
+                          },
+                          "userId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "userName": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {},
+                          "lastUsedAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "revokedAt": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "clientName",
+                          "userId",
+                          "userName",
+                          "scopes",
+                          "createdAt",
+                          "lastUsedAt",
+                          "revokedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/oauth-grants/{id}": {
+      "delete": {
+        "operationId": "oauthGrant.revoke",
+        "summary": "Disconnect an app connected through OAuth. Your own, or anyone’s with apiKey:revoke.",
+        "tags": [
+          "oauthGrant"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Makes a retry safe. A repeated key with the same body returns the original response (with `Idempotent-Replayed: true`) without performing the operation again; the same key with a different body is rejected. Keys are remembered for 24 hours, per API key."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor lacks the required permission"
+          },
+          "404": {
+            "description": "No such resource in this organization"
+          },
+          "422": {
+            "description": "The request failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
     "/audit-logs": {
       "get": {
         "operationId": "auditLog.list",
@@ -1830,6 +2008,7 @@
                 "web",
                 "api",
                 "telegram",
+                "mcp",
                 "worker",
                 "system"
               ]
@@ -2080,6 +2259,7 @@
                 "web",
                 "api",
                 "telegram",
+                "mcp",
                 "worker",
                 "system"
               ]

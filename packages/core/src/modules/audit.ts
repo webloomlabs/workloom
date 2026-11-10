@@ -9,7 +9,7 @@ const filterInput = {
   actorId: z.uuid().optional(),
   /** An exact action (`invoice.sent`) or a family (`invoice.`). */
   action: z.string().max(64).optional(),
-  source: z.enum(['web', 'api', 'telegram', 'worker', 'system']).optional(),
+  source: z.enum(['web', 'api', 'telegram', 'mcp', 'worker', 'system']).optional(),
   /** Inclusive days, UTC. */
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),

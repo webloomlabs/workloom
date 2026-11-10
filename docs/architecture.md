@@ -123,20 +123,23 @@ the health route, and the boot sequence.
 The worker's hourly maintenance prunes idempotency keys the documented way:
 it lists organizations, then opens one `withTenant` transaction per organization.
 
-### Authenticating API keys
+### Authenticating API keys and OAuth tokens
 
-API key lookup is the one query that cannot know its organization in advance —
-the organization is what it is trying to discover. `api_keys` is nevertheless a
-tenant table under RLS, with a second, narrower policy:
+Looking up a presented credential — an API key, or an OAuth token issued to an
+AI assistant — is the one kind of query that cannot know its organization in
+advance: the organization is what it is trying to discover. `api_keys`,
+`oauth_tokens`, and `oauth_grants` are nevertheless tenant tables under RLS,
+each with a second, narrower policy:
 
 ```sql
 CREATE POLICY api_key_authentication ON api_keys
   FOR SELECT USING (current_setting('workloom.auth_lookup', true) = 'on');
 ```
 
-`verifyApiKey` sets that flag, transaction-locally, for the length of one
-lookup by key digest. Permissive policies are OR'd, so this widens `SELECT` on
-one table during one query and nothing else.
+`withAuthLookup` (in `packages/auth/src/auth-lookup.ts`) sets that flag,
+transaction-locally, for the length of one lookup by credential digest.
+Permissive policies are OR'd, so this widens `SELECT` on those tables during one
+lookup and nothing else.
 
 A `SECURITY DEFINER` function looks like the obvious tool here and **does not
 work**: `FORCE ROW LEVEL SECURITY` subjects the table owner to the policy, and
@@ -150,7 +153,7 @@ narrow policy that applies only while a transaction-local flag is set:
 
 | Flag | Set only in | Grants |
 | --- | --- | --- |
-| `workloom.auth_lookup` | `packages/auth/src/api-keys.ts` | `SELECT` on `api_keys`, for one lookup by key digest |
+| `workloom.auth_lookup` | `packages/auth/src/auth-lookup.ts` | `SELECT` on `api_keys`, `oauth_tokens`, and `oauth_grants`, for one lookup by credential digest |
 | `workloom.dispatcher` | `apps/worker/src/outbox/scope.ts` | `SELECT`/`UPDATE` on `events` and `webhook_endpoints`; `SELECT`/`INSERT`/`UPDATE` on `webhook_deliveries`. No `DELETE`, nothing else |
 
 A lint rule rejects either flag's name anywhere else. The dispatcher could instead

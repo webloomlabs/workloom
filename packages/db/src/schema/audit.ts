@@ -45,7 +45,7 @@ export const auditLogs = pgTable(
      * about a record that no longer exists.
      */
     snapshot: jsonb('snapshot'),
-    /** The door it came in by: 'web' | 'api' | 'telegram' | 'worker' | 'system'. Null on entries written before S19. */
+    /** The door it came in by: 'web' | 'api' | 'telegram' | 'mcp' | 'worker' | 'system'. Null on entries written before S19. */
     source: text('source'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -56,6 +56,6 @@ export const auditLogs = pgTable(
     index('audit_logs_organization_actor_idx').on(t.organizationId, t.actorId),
     index('audit_logs_organization_created_idx').on(t.organizationId, t.createdAt),
     index('audit_logs_organization_action_idx').on(t.organizationId, t.action),
-    check('audit_logs_source_check', sql`${t.source} in ('web', 'api', 'telegram', 'worker', 'system')`),
+    check('audit_logs_source_check', sql`${t.source} in ('web', 'api', 'telegram', 'mcp', 'worker', 'system')`),
   ],
 )

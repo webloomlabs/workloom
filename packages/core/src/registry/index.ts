@@ -8,3 +8,14 @@ export type {
   RateLimitClass,
 } from './types.ts'
 export { buildOpenApiDocument } from './openapi.ts'
+export { safeJsonSchema, type JsonSchemaObject } from './json-schema.ts'
+export {
+  isMcpExposed,
+  isPermitted,
+  mcpToolByName,
+  mcpToolName,
+  mcpTools,
+  mcpToolsFor,
+  type McpTool,
+  type McpToolAnnotations,
+} from './mcp.ts'

@@ -48,6 +48,8 @@ export const apiKeyList = defineProcedure({
 
 export const apiKeyCreate = defineProcedure({
   name: 'apiKey.create',
+  // Not offered to AI assistants: Credentials are minted by a person, never by an assistant holding one.
+  mcp: false,
   summary: 'Issue an API key',
   permission: 'apiKey:create',
   input: z.object({
@@ -134,6 +136,8 @@ export const apiKeyCreate = defineProcedure({
 
 export const apiKeyRevoke = defineProcedure({
   name: 'apiKey.revoke',
+  // Not offered to AI assistants: Credential management stays with people.
+  mcp: false,
   summary: 'Revoke an API key',
   permission: 'apiKey:revoke',
   input: z.object({ id: z.uuid() }),

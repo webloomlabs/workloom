@@ -2,6 +2,7 @@ import { apiKeyList } from '@workloom/core/modules'
 import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from '@workloom/ui'
 import type { Metadata } from 'next'
 import { CreateApiKeyForm, RevokeApiKeyForm } from '@/components/api-key-forms'
+import { McpConnectCard } from '@/components/mcp-connect-card'
 import { actionLabel, groupScopes } from '@/lib/api-key-scopes'
 import { call } from '@/lib/server/procedures'
 import { requireViewer } from '@/lib/server/viewer'
@@ -66,6 +67,8 @@ export default async function ApiKeysPage() {
           </Table>
         )}
       </Card>
+
+      <McpConnectCard />
     </div>
   )
 }

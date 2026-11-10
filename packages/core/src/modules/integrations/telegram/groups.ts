@@ -23,6 +23,8 @@ export const telegramGroupOutput = z.object({
 
 export const telegramGroupCreateLinkCode = defineProcedure({
   name: 'telegramGroup.createLinkCode',
+  // Not offered to AI assistants: A link code binds an outside chat to the organization.
+  mcp: false,
   summary: 'A one-time code, good for ten minutes, that lets the bot work in a Telegram group',
   permission: 'integration:manage',
   input: z.object({}),
@@ -62,6 +64,8 @@ export const telegramGroupList = defineProcedure({
 
 export const telegramGroupRevoke = defineProcedure({
   name: 'telegramGroup.revoke',
+  // Not offered to AI assistants: Account linking stays with people.
+  mcp: false,
   summary: 'Stop the bot working in a group. It stays silent there from now on.',
   permission: 'integration:manage',
   input: z.object({ id: z.uuid() }),

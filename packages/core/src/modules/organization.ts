@@ -88,6 +88,8 @@ export const organizationGet = defineProcedure({
 
 export const organizationUpdate = defineProcedure({
   name: 'organization.update',
+  // Not offered to AI assistants: Carries the payment details printed on invoices; swapping them is invoice fraud.
+  mcp: false,
   summary: 'Change organization settings',
   permission: 'organization:update',
   input: z.object({
@@ -202,6 +204,8 @@ export const organizationUploadLogo = defineProcedure({
 
 export const organizationRemoveLogo = defineProcedure({
   name: 'organization.removeLogo',
+  // Not offered to AI assistants: Branding is a person’s call.
+  mcp: false,
   summary: 'Remove the logo printed on quotes and invoices',
   permission: 'organization:update',
   input: z.object({}),
@@ -232,6 +236,8 @@ export async function organizationLogo(ctx: ActorContext): Promise<{ bytes: Buff
 
 export const organizationLogoGet = defineProcedure({
   name: 'organization.logo',
+  // Not offered to AI assistants: a base64 image is no use to a language model and floods its context.
+  mcp: false,
   summary: 'The printed logo, base64-encoded, or null when there is none',
   permission: 'organization:read',
   readOnly: true,

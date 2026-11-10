@@ -13,7 +13,7 @@ function describeChanges(changes: unknown): string {
     .join('; ')
 }
 
-const SOURCES = { web: 'Web', api: 'API', telegram: 'Telegram', worker: 'Worker', system: 'System' } as const
+const SOURCES = { web: 'Web', api: 'API', telegram: 'Telegram', mcp: 'AI assistant (MCP)', worker: 'Worker', system: 'System' } as const
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
 /** The filters a person set, kept to what the procedure accepts. */

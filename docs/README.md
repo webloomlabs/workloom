@@ -16,6 +16,7 @@
 - **[Webhooks](webhooks.md)** — payloads, signatures, retries, the event catalogue
 - **[Automation](automation.md)** — driving Workloom from something else
 - **[Integrations](integrations.md)** — what to connect, and what is deliberately absent
+- **[AI assistants (MCP)](mcp.md)** — connecting ChatGPT, Claude, and other MCP clients
 - **[Authentication](authentication.md)** — sessions, API keys, the public link
 - **[Permissions](permissions.md)** — the six roles and the full matrix
 

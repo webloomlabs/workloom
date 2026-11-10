@@ -1,8 +1,11 @@
-import { isPermission, isRole, permissionsForRole, type Permission } from '@workloom/core'
-import { and, db, eq, schema, sql, withTenant } from '@workloom/db'
+import { isPermission, permissionsForRole, type Permission } from '@workloom/core'
+import { db, eq, schema, sql, withTenant } from '@workloom/db'
 import type { Actor } from '@workloom/core'
 import { auth } from './auth.ts'
 import { verifyApiKey } from './api-keys.ts'
+import { findMemberRole } from './membership-role.ts'
+import { ACCESS_TOKEN_PREFIX } from './oauth/config.ts'
+import { touchGrant, verifyOAuthAccessToken } from './oauth/tokens.ts'
 
 /**
  * Turns a request into an identity, an organization, and a permission set.
@@ -25,13 +28,23 @@ export type ResolveOptions = {
   headers: Headers
   /** Overrides the session's active organization, for explicit org scoping. */
   organizationId?: string | undefined
+  /**
+   * Which endpoint is asking. OAuth access tokens are issued for the MCP
+   * endpoint alone (RFC 8707), so only `'mcp'` accepts them; the REST API
+   * takes API keys and sessions. Defaults to `'api'`.
+   */
+  audience?: 'api' | 'mcp' | undefined
 }
 
 export async function resolveActor(options: ResolveOptions): Promise<Resolution> {
   const authorization = options.headers.get('authorization')
 
   if (authorization?.startsWith('Bearer ')) {
-    return resolveFromApiKey(authorization.slice('Bearer '.length).trim())
+    const secret = authorization.slice('Bearer '.length).trim()
+    if (secret.startsWith(ACCESS_TOKEN_PREFIX)) {
+      return options.audience === 'mcp' ? resolveFromOAuthToken(secret) : { ok: false, reason: 'invalid-key' }
+    }
+    return resolveFromApiKey(secret)
   }
   return resolveFromSession(options)
 }
@@ -56,6 +69,49 @@ async function resolveFromSession(options: ResolveOptions): Promise<Resolution> 
     },
     role,
     permissions: new Set(permissionsForRole(role)),
+  }
+}
+
+/**
+ * An AI assistant connected through OAuth. Exactly an API key's rules: the
+ * person's current role, narrowed by the scopes they chose at consent.
+ *
+ * The actor is an `apiKey` actor marked `credential: 'oauth'`, so everything
+ * that attributes an API key's work to its owner does the same here.
+ */
+async function resolveFromOAuthToken(secret: string): Promise<Resolution> {
+  const token = await verifyOAuthAccessToken(secret)
+  if (!token) return { ok: false, reason: 'invalid-key' }
+
+  const role = await findMemberRole(token.userId, token.organizationId)
+  if (!role) return { ok: false, reason: 'not-a-member' }
+
+  const [owner] = await db
+    .select({ name: schema.user.name, email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.id, token.userId))
+    .limit(1)
+
+  const ownerPermissions = permissionsForRole(role)
+  const permissions =
+    token.scopes === null
+      ? new Set(ownerPermissions)
+      : new Set(token.scopes.filter((s): s is Permission => isPermission(s) && ownerPermissions.has(s)))
+
+  await touchGrant(token)
+
+  return {
+    ok: true,
+    organizationId: token.organizationId,
+    actor: {
+      type: 'apiKey',
+      id: token.grantId,
+      userId: token.userId,
+      label: `${token.clientName} (${owner?.name || owner?.email || 'unknown owner'})`,
+      credential: 'oauth',
+    },
+    role,
+    permissions,
   }
 }
 
@@ -101,15 +157,6 @@ async function resolveFromApiKey(secret: string): Promise<Resolution> {
     role,
     permissions,
   }
-}
-
-async function findMemberRole(userId: string, organizationId: string) {
-  const [row] = await db
-    .select({ role: schema.member.role })
-    .from(schema.member)
-    .where(and(eq(schema.member.userId, userId), eq(schema.member.organizationId, organizationId)))
-    .limit(1)
-  return isRole(row?.role) ? row.role : undefined
 }
 
 /**

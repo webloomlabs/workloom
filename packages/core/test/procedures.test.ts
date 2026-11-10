@@ -465,6 +465,19 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
     })) as { key: { id: string } }
     return { id: created.key.id }
   },
+  'oauthGrant.revoke': async () => {
+    const clientId = `wlc_${unique()}`
+    const id = core.newId()
+    await mod.withoutTenant('test: register an OAuth client', (db) =>
+      db.execute(sql`insert into oauth_clients (id, client_name, redirect_uris)
+                     values (${clientId}, 'Fixture app', array['https://app.example.com/callback'])`),
+    )
+    await mod.withTenant(ORG_A, (tx) =>
+      tx.execute(sql`insert into oauth_grants (id, organization_id, user_id, client_id, client_name, resource)
+                     values (${id}::uuid, ${ORG_A}::uuid, ${ownerA}::uuid, ${clientId}, 'Fixture app', 'https://example.com/api/mcp')`),
+    )
+    return { id }
+  },
   // A fresh member each time: this fixture runs once per coverage suite.
   'member.remove': async () => {
     const userId = core.newId()

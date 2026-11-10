@@ -14,6 +14,7 @@ export { writeAuditEntry, diff } from './audit.ts'
 export {
   API_KEY_PREFIX,
   generateApiKey,
+  generateSecret,
   hashApiKey,
   type GeneratedApiKey,
 } from './api-key-crypto.ts'

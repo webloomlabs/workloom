@@ -37,3 +37,13 @@ export function generateApiKey(): GeneratedApiKey {
 export function hashApiKey(secret: string): string {
   return createHash('sha256').update(secret).digest('hex')
 }
+
+/**
+ * A random secret with a recognisable prefix, for other bearer credentials
+ * (OAuth tokens and client secrets). Hashed exactly like an API key, for the
+ * same reasons.
+ */
+export function generateSecret(prefix: string): { secret: string; hash: string } {
+  const secret = prefix + randomBytes(SECRET_BYTES).toString('base64url')
+  return { secret, hash: hashApiKey(secret) }
+}

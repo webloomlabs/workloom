@@ -1,6 +1,6 @@
 import { allProcedures } from './registry.ts'
 import type { AnyProcedure } from './types.ts'
-import { z } from 'zod'
+import { safeJsonSchema } from './json-schema.ts'
 
 /**
  * Generates the OpenAPI document from the registry.
@@ -126,20 +126,5 @@ function operationFor(procedure: AnyProcedure) {
       '422': { description: 'The request failed validation' },
       '429': { description: 'Rate limit exceeded' },
     },
-  }
-}
-
-type JsonSchemaObject = { properties?: Record<string, unknown>; required?: string[] }
-
-/**
- * Some schemas (dates, branded types) have no clean JSON Schema form. A
- * document that is missing one field's shape is far better than no document,
- * so a failure here degrades rather than throws.
- */
-function safeJsonSchema(schema: z.ZodType): JsonSchemaObject | undefined {
-  try {
-    return z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }) as JsonSchemaObject
-  } catch {
-    return undefined
   }
 }
