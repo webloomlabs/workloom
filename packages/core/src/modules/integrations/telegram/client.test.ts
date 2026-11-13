@@ -5,7 +5,7 @@ const ID = '01a0dd00-0000-7000-8000-0000000019aa'
 
 describe('button data', () => {
   it('round-trips within Telegram’s 64 bytes', () => {
-    for (const action of ['confirm', 'discard', 'noProject'] as const) {
+    for (const action of ['confirm', 'discard', 'noProject', 'noAccount'] as const) {
       const data = encodeCallback({ action, expenseId: ID })
       expect(Buffer.byteLength(data)).toBeLessThanOrEqual(64)
       expect(decodeCallback(data)).toEqual({ action, expenseId: ID })
@@ -19,8 +19,15 @@ describe('button data', () => {
     expect(decodeCallback(data)).toEqual(value)
   })
 
+  it('fits an account choice, two ids, in 64 bytes', () => {
+    const value = { action: 'account' as const, expenseId: ID, bankAccountId: 'ffffffff-ffff-7fff-bfff-ffffffffffff' }
+    const data = encodeCallback(value)
+    expect(Buffer.byteLength(data)).toBeLessThanOrEqual(64)
+    expect(decodeCallback(data)).toEqual(value)
+  })
+
   it('refuses anything else', () => {
-    for (const data of [undefined, '', 'x:c:', 'x:z:' + ID, 'x:c:not-a-uuid', `x:c:${ID}; drop table`, 'x:p:short:short', `x:p:${ID}:${ID}`]) expect(decodeCallback(data)).toBeNull()
+    for (const data of [undefined, '', 'x:c:', 'x:z:' + ID, 'x:c:not-a-uuid', `x:c:${ID}; drop table`, 'x:p:short:short', `x:p:${ID}:${ID}`, `x:a:${ID}:${ID}`, 'x:b:not-a-uuid']) expect(decodeCallback(data)).toBeNull()
   })
 })
 

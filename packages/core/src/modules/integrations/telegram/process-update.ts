@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, ne, notInArray, schema, withTenant } from '@workloom/db'
+import { and, asc, desc, eq, gt, isNull, ne, notInArray, schema, withTenant } from '@workloom/db'
 import { isOneOf } from '@workloom/storage'
 import { DomainError, ForbiddenError, NotFoundError, type Actor } from '../../../context.ts'
 import { newId } from '../../../ids.ts'
@@ -203,6 +203,28 @@ async function activeProjects(member: Member): Promise<ProjectChoice[]> {
   )
 }
 
+/** An open account an expense can be paid from. */
+type AccountChoice = { id: string; name: string; isDefault: boolean }
+
+const ACCOUNT_QUESTION = 'Which account was this paid from?'
+
+/**
+ * Open accounts in the expense's currency -- money cannot leave an account in
+ * another one -- the default first. None for a member who cannot see the
+ * organization's accounts: they are not asked, and the draft is left without one.
+ */
+async function paymentAccounts(member: Member, currency: string): Promise<AccountChoice[]> {
+  if (!member.request.permissions.has('bankAccount:read')) return []
+  const a = schema.bankAccounts
+  return withTenant(member.request.organizationId, (tx) =>
+    tx
+      .select({ id: a.id, name: a.name, isDefault: a.isDefault })
+      .from(a)
+      .where(and(isNull(a.archivedAt), eq(a.currency, currency)))
+      .orderBy(desc(a.isDefault), asc(a.name)),
+  )
+}
+
 const comparable = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 
 /** Whether `name` appears in `text` as whole words. */
@@ -263,6 +285,25 @@ function projectKeyboard(expenseId: string, projects: ProjectChoice[], url: stri
     ],
   }
 }
+
+/** One button per account, the default first; then no account, or discard. */
+function accountKeyboard(expenseId: string, accounts: AccountChoice[], url: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      ...accounts.slice(0, PROJECT_CHOICES).map((a) => [
+        { text: (a.isDefault ? `${a.name} (default)` : a.name).slice(0, 60), callback_data: encodeCallback({ action: 'account', expenseId, bankAccountId: a.id }) },
+      ]),
+      [
+        { text: 'No account', callback_data: encodeCallback({ action: 'noAccount', expenseId }) },
+        { text: 'Discard', callback_data: encodeCallback({ action: 'discard', expenseId }) },
+      ],
+      ...openRow(url),
+    ],
+  }
+}
+
+const accountQuestion = (accounts: AccountChoice[]) =>
+  accounts.length > PROJECT_CHOICES ? `${ACCOUNT_QUESTION} Only the first ${PROJECT_CHOICES} are listed; choose another in Workloom.` : ACCOUNT_QUESTION
 
 /** The file in a message: the largest size of a photo, or a document. */
 function attachment(message: TelegramMessage): { fileId: string; name: string | undefined; size: number | undefined } | null {
@@ -351,7 +392,7 @@ async function receipt(context: UpdateContext, message: TelegramMessage, member:
   })
 }
 
-type CreatedExpense = { id: string; description: string; currency: string; projectName: string | null }
+type CreatedExpense = { id: string; description: string; currency: string; projectName: string | null; bankAccountName: string | null }
 type Duplicate = { number: string | null; description: string }
 
 const duplicateLine = (duplicates: Duplicate[]) =>
@@ -381,8 +422,10 @@ async function createAs<T>(context: UpdateContext | AlbumContext, member: Member
 /**
  * Tells the member their draft was started, with what it says and the buttons
  * under it: a project question first when none was named and there are some
- * to choose from, otherwise Confirm and Discard. From a group, the group
- * hears one line and the rest goes to the member privately.
+ * to choose from, then which account it was paid from, then Confirm and
+ * Discard. Each question is asked only when there is something to choose.
+ * From a group, the group hears one line and the rest goes to the member
+ * privately.
  */
 async function offerDraft(
   context: UpdateContext | AlbumContext,
@@ -391,15 +434,18 @@ async function offerDraft(
   const url = `${o.appUrl}/expenses/${o.expense.id}`
   // No project named, and some to choose from: ask before offering Confirm.
   const ask = !o.expense.projectName && o.projects.length > 0
+  // The account is asked after the project; when there is no project to ask, now.
+  const accounts = ask || o.expense.bankAccountName ? [] : await paymentAccounts(o.member, o.expense.currency)
   const lines = [
     `Draft expense started: ${o.expense.description}`,
     ...o.details,
     o.expense.projectName ? `Project: ${o.expense.projectName}` : null,
     ask ? (o.projects.length > PROJECT_CHOICES ? `${PROJECT_QUESTION} Only the ${PROJECT_CHOICES} newest are listed; choose another in Workloom.` : PROJECT_QUESTION) : null,
+    accounts.length > 0 ? accountQuestion(accounts) : null,
     // Telegram only opens HTTPS links from a button; otherwise the link is in the text.
     o.appUrl.startsWith('https://') ? null : url,
   ].filter(Boolean)
-  const keyboard = ask ? projectKeyboard(o.expense.id, o.projects, url) : draftKeyboard(o.expense.id, url)
+  const keyboard = ask ? projectKeyboard(o.expense.id, o.projects, url) : accounts.length > 0 ? accountKeyboard(o.expense.id, accounts, url) : draftKeyboard(o.expense.id, url)
   await context.client.sendMessage(o.chat, lines.join('\n'), keyboard)
   if (o.group) await context.client.sendMessage(o.group.id, `Draft expense started for ${o.member.userName}. The details are in your private chat with me.`)
 }
@@ -672,7 +718,7 @@ async function membershipChanged(context: UpdateContext, change: NonNullable<Tel
   )
 }
 
-/** A Confirm, Discard or project press, done as -- and only if allowed for -- the person who pressed it. */
+/** A Confirm, Discard, project or account press, done as -- and only if allowed for -- the person who pressed it. */
 async function handleButton(context: UpdateContext, query: NonNullable<TelegramUpdate['callback_query']>) {
   const { client, organizationId, now } = context
   const action = decodeCallback(query.data)
@@ -693,15 +739,21 @@ async function handleButton(context: UpdateContext, query: NonNullable<TelegramU
       const expense = (await executeProcedure('expense.update', {
         ...member.request,
         input: { id: action.expenseId, projectId: action.action === 'project' ? action.projectId : null },
-      })) as { id: string; description: string; projectName: string | null }
-      const line = `Project: ${expense.projectName ?? 'none'}`
+      })) as CreatedExpense
       reply = expense.projectName ? `Filed under ${expense.projectName}` : 'No project'
-      // The question's line becomes the answer; the rest of the message stays as it was.
-      const before = query.message?.text?.split('\n') ?? [`Draft expense: ${expense.description}`]
-      const asked = before.findIndex((l) => l.startsWith(PROJECT_QUESTION))
-      if (asked >= 0) before[asked] = line
-      else before.push(line)
-      edit = before.join('\n')
+      const { appUrl } = await telegramSettings()
+      const url = `${appUrl}/expenses/${expense.id}`
+      // Next, which account it was paid from -- when there is one to choose.
+      const accounts = expense.bankAccountName ? [] : await paymentAccounts(member, expense.currency)
+      edit = answered(query.message?.text, expense, PROJECT_QUESTION, `Project: ${expense.projectName ?? 'none'}`, accounts.length > 0 ? accountQuestion(accounts) : null)
+      keyboard = accounts.length > 0 ? accountKeyboard(expense.id, accounts, url) : draftKeyboard(expense.id, url)
+    } else if (action.action === 'account' || action.action === 'noAccount') {
+      const expense = (await executeProcedure('expense.update', {
+        ...member.request,
+        input: { id: action.expenseId, bankAccountId: action.action === 'account' ? action.bankAccountId : null },
+      })) as CreatedExpense
+      reply = expense.bankAccountName ? `Paid from ${expense.bankAccountName}` : 'No account'
+      edit = answered(query.message?.text, expense, ACCOUNT_QUESTION, `Paid from: ${expense.bankAccountName ?? 'no account'}`, null)
       const { appUrl } = await telegramSettings()
       keyboard = draftKeyboard(expense.id, `${appUrl}/expenses/${expense.id}`)
     } else if (action.action === 'confirm') {
@@ -721,4 +773,18 @@ async function handleButton(context: UpdateContext, query: NonNullable<TelegramU
   }
   await client.answerCallbackQuery(query.id, reply.slice(0, 200))
   if (edit && query.message) await client.editMessageText(query.message.chat.id, query.message.message_id, edit, keyboard).catch(() => undefined)
+}
+
+/**
+ * The draft's message with a question answered: the question's line becomes
+ * the answer, and the next question, if any, follows it. The rest of the
+ * message stays as it was.
+ */
+function answered(text: string | undefined, expense: { description: string }, question: string, answer: string, next: string | null): string {
+  const lines = text?.split('\n') ?? [`Draft expense: ${expense.description}`]
+  const asked = lines.findIndex((l) => l.startsWith(question))
+  const replacement = next ? [answer, next] : [answer]
+  if (asked >= 0) lines.splice(asked, 1, ...replacement)
+  else lines.push(...replacement)
+  return lines.join('\n')
 }

@@ -123,16 +123,18 @@ export class TelegramClient {
 
 /**
  * What a button carries back: an action, the expense it acts on, and for a
- * project choice the project. Telegram allows 64 bytes. "x:c:" and a UUID
- * take 40; a project choice carries two UUIDs, so they go as base64url
- * (22 characters each) to fit: "x:p:" + 22 + ":" + 22 is 49.
+ * project or account choice the project or account. Telegram allows 64 bytes.
+ * "x:c:" and a UUID take 40; a choice carries two UUIDs, so they go as
+ * base64url (22 characters each) to fit: "x:p:" + 22 + ":" + 22 is 49.
  */
 export type CallbackAction =
-  | { action: 'confirm' | 'discard' | 'noProject'; expenseId: string }
+  | { action: 'confirm' | 'discard' | 'noProject' | 'noAccount'; expenseId: string }
   | { action: 'project'; expenseId: string; projectId: string }
+  | { action: 'account'; expenseId: string; bankAccountId: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const LETTERS = { confirm: 'c', discard: 'd', noProject: 'n' } as const
+const LETTERS = { confirm: 'c', discard: 'd', noProject: 'n', noAccount: 'b' } as const
+const ACTIONS = { c: 'confirm', d: 'discard', n: 'noProject', b: 'noAccount' } as const
 
 const packUuid = (uuid: string) => Buffer.from(uuid.replace(/-/g, ''), 'hex').toString('base64url')
 
@@ -145,17 +147,19 @@ function unpackUuid(packed: string): string | null {
 
 export function encodeCallback(value: CallbackAction): string {
   if (value.action === 'project') return `x:p:${packUuid(value.expenseId)}:${packUuid(value.projectId)}`
+  if (value.action === 'account') return `x:a:${packUuid(value.expenseId)}:${packUuid(value.bankAccountId)}`
   return `x:${LETTERS[value.action]}:${value.expenseId}`
 }
 
 export function decodeCallback(data: string | undefined): CallbackAction | null {
-  const project = /^x:p:([^:]+):([^:]+)$/.exec(data ?? '')
-  if (project) {
-    const expenseId = unpackUuid(project[1]!)
-    const projectId = unpackUuid(project[2]!)
-    return expenseId && projectId ? { action: 'project', expenseId, projectId } : null
+  const pair = /^x:([pa]):([^:]+):([^:]+)$/.exec(data ?? '')
+  if (pair) {
+    const expenseId = unpackUuid(pair[2]!)
+    const otherId = unpackUuid(pair[3]!)
+    if (!expenseId || !otherId) return null
+    return pair[1] === 'p' ? { action: 'project', expenseId, projectId: otherId } : { action: 'account', expenseId, bankAccountId: otherId }
   }
-  const match = /^x:([cdn]):(.+)$/.exec(data ?? '')
+  const match = /^x:([cdnb]):(.+)$/.exec(data ?? '')
   if (!match || !UUID.test(match[2]!)) return null
-  return { action: match[1] === 'c' ? 'confirm' : match[1] === 'd' ? 'discard' : 'noProject', expenseId: match[2]! }
+  return { action: ACTIONS[match[1] as keyof typeof ACTIONS], expenseId: match[2]! }
 }

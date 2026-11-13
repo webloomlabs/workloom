@@ -40,7 +40,11 @@ Confirm and Discard buttons under the bot's reply. If the caption names an
 active project (one not completed, cancelled or archived), the expense is filed
 under it; otherwise the bot first asks which project it is for, with a button
 for each of the ten newest active projects and one for **No project**, and
-shows Confirm once they have chosen. Anyone else who messages the
+shows Confirm once they have chosen. Then, when the organization has open
+accounts in the expense's currency, it asks **which account it was paid
+from** (the default first, and **No account**); once the expense is confirmed
+its total comes out of that account's balance. People who cannot see the
+accounts are not asked. Anyone else who messages the
 bot only gets told how to link; nothing they send is stored as an expense.
 
 **Several receipts at once.** Photos or PDFs sent together as one album

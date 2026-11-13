@@ -828,3 +828,83 @@ describe('the project of a receipt', () => {
     expect((await projectOf(id)).project_id).toBeNull()
   })
 })
+
+// After the projects: the accounts made here are offered under every draft from now on.
+describe('the account an expense was paid from', () => {
+  let card: { id: string; name: string }
+  beforeAll(async () => {
+    await run('bankAccount.create', { name: 'Sampath current', openingBalanceMinor: 10_000_000, openingBalanceOn: '2026-01-01' })
+    card = await run('bankAccount.create', { name: 'Amex card', kind: 'credit_card', openingBalanceOn: '2026-01-01' })
+    // Not offered: another currency, and a closed account.
+    await run('bankAccount.create', { name: 'Wise USD', currency: 'USD', openingBalanceOn: '2026-01-01' })
+    const closed = await run('bankAccount.create', { name: 'Old savings', openingBalanceOn: '2026-01-01' })
+    await run('bankAccount.archive', { id: closed.id })
+  })
+
+  const lastReply = () => telegram.calls('sendMessage').at(-1)!.body
+  const buttons = (body: any) => (body.reply_markup.inline_keyboard as any[][]).flat()
+  const accountOf = async (expenseId: string) =>
+    (await mod.withTenant(ORG, (tx) => tx.execute<{ bank_account_id: string | null }>(sql`select bank_account_id from expenses where id = ${expenseId}::uuid`))).rows[0]!.bank_account_id
+
+  it('is asked once the project is chosen, and taken from that account on confirm', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    photo(shakil, 'Bus to the client')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    const question = lastReply()
+    expect(question.text).toMatch(/Which project is this for\?$/)
+
+    press(shakil, buttons(question).find((b: any) => b.text === 'No project').callback_data, question.text)
+    await deliver()
+    const asked = telegram.calls('editMessageText').at(-1)!.body
+    expect(asked.text).toMatch(/\nProject: none\nWhich account was this paid from\?$/)
+    // The default first, then by name; never another currency or a closed account.
+    expect(buttons(asked).map((b: any) => b.text)).toEqual(['Sampath current (default)', 'Amex card', 'No account', 'Discard', 'Open in Workloom'])
+
+    press(shakil, buttons(asked).find((b: any) => b.text === 'Amex card').callback_data, asked.text)
+    await deliver()
+    expect(await accountOf(id)).toBe(card.id)
+    expect(telegram.calls('answerCallbackQuery').at(-1)!.body.text).toBe('Paid from Amex card')
+    const answered = telegram.calls('editMessageText').at(-1)!.body
+    expect(answered.text).toMatch(/\nProject: none\nPaid from: Amex card$/)
+    expect(answered.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+
+    press(shakil, `x:c:${id}`)
+    await deliver()
+    // Confirmed: the receipt's total has left the account.
+    expect((await run('bankAccount.get', { id: card.id })).currentBalanceMinor).toBe(-1_250_000)
+  })
+
+  it('can be left empty', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    say(shakil, '1500 taxi for the kyla app launch')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    // The project was named, so the account is the first question.
+    const question = lastReply()
+    expect(question.text).toMatch(/\nProject: Kyla App\nWhich account was this paid from\?$/)
+    press(shakil, buttons(question).find((b: any) => b.text === 'No account').callback_data, question.text)
+    await deliver()
+    expect(await accountOf(id)).toBeNull()
+    const answered = telegram.calls('editMessageText').at(-1)!.body
+    expect(answered.text).toMatch(/\nPaid from: no account$/)
+    expect(answered.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+  })
+
+  it('is set only by someone allowed to change the expense', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    say(shakil, '1500 taxi for the kyla app launch')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    const choice = buttons(lastReply()).find((b: any) => b.text === 'Sampath current (default)')
+    const colleague = person()
+    await linkAs(colleague, manager, 'manager')
+    press(colleague, choice.callback_data)
+    await deliver()
+    expect(telegram.calls('answerCallbackQuery').at(-1)!.body.text).toBe('You are not allowed to do that.')
+    expect(await accountOf(id)).toBeNull()
+  })
+})
