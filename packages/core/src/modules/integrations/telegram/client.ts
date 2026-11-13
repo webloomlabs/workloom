@@ -19,6 +19,8 @@ export type TelegramMessage = {
   caption?: string
   photo?: TelegramPhotoSize[]
   document?: TelegramDocument
+  /** Photos or files sent together as an album share this; each still comes as its own message. */
+  media_group_id?: string
   /** A group became a supergroup, and has a new id. */
   migrate_to_chat_id?: number
 }

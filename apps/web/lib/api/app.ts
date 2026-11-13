@@ -242,8 +242,9 @@ async function readInput(
   if (procedure.http.method !== 'GET' && procedure.http.method !== 'DELETE') {
     const contentType = c.req.raw.headers.get('content-type') ?? ''
     if (procedure.http.body === 'multipart' && contentType.includes('multipart/form-data')) {
-      // Files arrive as File objects; the procedure's schema validates them.
-      Object.assign(input, await c.req.parseBody())
+      // Files arrive as File objects; the procedure's schema validates them. A
+      // field sent more than once (several receipts) arrives as an array.
+      Object.assign(input, await c.req.parseBody({ all: true }))
     } else if (contentType.includes('application/json')) {
       try {
         const body = await c.req.json()

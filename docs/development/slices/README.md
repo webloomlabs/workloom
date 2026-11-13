@@ -53,3 +53,4 @@ Anything a later slice needs to know — decisions taken, surprises found.
 | [S19 — Receipts from Telegram, read by AI](S19.md) | Done |
 | [S20 — Closing the year: books lock, audit log, income tax pack](S20.md) | Done |
 | [S21 — Bank balances follow recorded money; budgets over means overspent](S21.md) | Done |
+| [S22 — Typed expenses and receipt albums from Telegram](S22.md) | Done |

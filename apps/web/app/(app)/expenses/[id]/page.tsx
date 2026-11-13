@@ -18,9 +18,16 @@ function readFrom(expense: { currency: string; extraction: Record<string, unknow
   if (!read || typeof read.reader !== 'string') return null
   const currency = typeof read.currency === 'string' ? read.currency : null
   const amount = typeof read.amountMinor === 'number' ? read.amountMinor : null
+  // 'message': typed to the Telegram bot, not read from a receipt.
+  const typed = read.reader === 'message'
+  const count = Array.isArray(read.receipts) ? read.receipts.length : 0
+  const several = count > 1
   if (currency && currency !== expense.currency && amount !== null) {
-    return ` The receipt was read as ${currency} ${minorToDecimalString(amount, currency)}: enter the currency and its exchange rate before confirming.`
+    const what = typed ? 'It was sent' : several ? 'The receipts were read' : 'The receipt was read'
+    return ` ${what} as ${currency} ${minorToDecimalString(amount, currency)}: enter the currency and its exchange rate before confirming.`
   }
+  if (typed) return ' Filled in from a message sent to the Telegram bot — check the amount, date, and category before confirming.'
+  if (several) return ` Added up from ${count} receipts read by AI — check the amount, date, and category before confirming.`
   return ' Filled in from the receipt by AI — check the amount, date, and category before confirming.'
 }
 

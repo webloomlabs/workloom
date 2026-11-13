@@ -488,6 +488,58 @@ describe('a group', () => {
     expect(await telegramExpenses()).toHaveLength(before)
   })
 
+  it('takes an album as one expense, with the details sent privately', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    await approve(team, shakil)
+    telegram.clear()
+    const before = (await telegramExpenses()).length
+    for (let i = 0; i < 3; i++) {
+      const update = photoInGroup(team, shakil)
+      ;(update.message as Record<string, unknown>).media_group_id = `group-album-${team.id}`
+    }
+    await modules.pollTelegramBots()
+    expect(await modules.processTelegramInbox({ extractor, albumSettleMs: 0 })).toBe(3)
+    const created = (await telegramExpenses()).slice(before)
+    expect(created).toHaveLength(1)
+    expect(created[0]).toMatchObject({ amount_minor: 3_750_000, created_by: owner })
+    expect(telegram.messages(team.id)).toEqual([expect.stringMatching(/^Draft expense started for Shakil/)])
+    const privately = telegram.calls('sendMessage').filter((c) => c.body.chat_id === String(shakil.id)).map((c) => c.body.text)
+    expect(privately).toEqual([expect.stringMatching(/^Draft expense started: Web hosting, 12 months\n3 receipts, added up/)])
+  })
+
+  it('ignores an album from someone not linked', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    await approve(team, shakil)
+    const stranger = person()
+    telegram.clear()
+    const before = (await telegramExpenses()).length
+    for (let i = 0; i < 2; i++) {
+      const update = photoInGroup(team, stranger)
+      ;(update.message as Record<string, unknown>).media_group_id = `stranger-album-${team.id}`
+    }
+    await modules.pollTelegramBots()
+    await modules.processTelegramInbox({ extractor, albumSettleMs: 0 })
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.calls('sendMessage')).toHaveLength(0)
+  })
+
+  it('ignores typed expenses: only receipts are taken in a group', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const team = group()
+    await approve(team, shakil)
+    telegram.clear()
+    const before = (await telegramExpenses()).length
+    inGroup(team, shakil, { text: '1500 taxi to the client' })
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.calls('sendMessage')).toHaveLength(0)
+  })
+
   it('follows a group that becomes a supergroup', async () => {
     const shakil = person()
     await linkAs(shakil, owner, 'owner')
@@ -500,6 +552,164 @@ describe('a group', () => {
     photoInGroup(upgraded, shakil)
     await deliver()
     expect(await telegramExpenses()).toHaveLength(before + 1)
+  })
+})
+
+describe('a typed expense', () => {
+  it('with an amount becomes a draft, as the person who typed it', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const before = (await telegramExpenses()).length
+    say(shakil, '1500 taxi to the client #travel')
+    await deliver()
+    const all = await telegramExpenses()
+    expect(all).toHaveLength(before + 1)
+    const created = all.at(-1)!
+    expect(created).toMatchObject({ status: 'draft', description: 'Taxi to the client', amount_minor: 150_000, category: 'travel', created_by: owner, source: 'telegram' })
+    // Typed, not read: nothing is sent to a reader.
+    expect(extractor.calls).toHaveLength(0)
+    expect((await run('expenseReceipt.list', { expenseId: created.id })).data).toEqual([])
+
+    const reply = telegram.calls('sendMessage').at(-1)!.body
+    expect(reply.text).toMatch(/^Draft expense started: Taxi to the client\nLKR\s?1,500\.00/)
+    expect(reply.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Confirm', 'Discard'])
+    press(shakil, `x:c:${created.id}`)
+    await deliver()
+    expect((await telegramExpenses()).find((e) => e.id === created.id)!.status).toBe('confirmed')
+  })
+
+  it('without an amount is not an expense', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const before = (await telegramExpenses()).length
+    say(shakil, 'thanks!')
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.messages(shakil.id).at(-1)).toMatch(/could not find an amount/)
+  })
+
+  it('in another currency waits for its rate', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    say(shakil, 'USD 20 Figma')
+    await deliver()
+    expect((await telegramExpenses()).at(-1)).toMatchObject({ status: 'draft', description: 'Figma', amount_minor: 0 })
+    expect(telegram.messages(shakil.id).at(-1)).toMatch(/Enter the USD to LKR rate/)
+  })
+
+  it('from a stranger is not an expense', async () => {
+    const stranger = person()
+    const before = (await telegramExpenses()).length
+    say(stranger, '1500 taxi')
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+    expect(telegram.messages(stranger.id).at(-1)).toMatch(/I don't know you yet/)
+  })
+})
+
+describe('several receipts sent together', () => {
+  /** A reader that answers each receipt in turn. */
+  function inTurn(answers: Array<typeof reading | null>) {
+    const fake = new modules.FakeReceiptExtractor(null)
+    const read = fake.read.bind(fake)
+    fake.read = (file, hints) => {
+      fake.answer = answers.shift() ?? null
+      return read(file, hints)
+    }
+    return fake
+  }
+  let nextAlbum = 1
+  /** Photos sent as one album: each its own update, sharing a media group id. */
+  function album(from: Person, count: number, caption?: string) {
+    const id = `album-${nextAlbum++}`
+    return Array.from({ length: count }, (_, i) => {
+      const update = photo(from, i === 0 ? caption : undefined)
+      ;(update.message as Record<string, unknown>).media_group_id = id
+      return update
+    })
+  }
+  /** Once the album has gone quiet. */
+  const settled = async () => {
+    await modules.pollTelegramBots()
+    return modules.processTelegramInbox({ extractor, albumSettleMs: 0 })
+  }
+  const receiptsOf = async (expenseId: string) => (await run('expenseReceipt.list', { expenseId })).data as unknown[]
+  const hosting = (total: string, category = 'hosting') => ({ ...reading, total, category })
+
+  it('are one expense, added up, with every receipt -- once the album has gone quiet', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const before = (await telegramExpenses()).length
+    extractor = inTurn([hosting('12,500.00'), hosting('2,500.00'), hosting('1,000.00')])
+    album(shakil, 3)
+
+    // Just arrived: the rest of the album may still be on its way.
+    await deliver()
+    expect(await telegramExpenses()).toHaveLength(before)
+
+    expect(await settled()).toBe(3)
+    const all = await telegramExpenses()
+    expect(all).toHaveLength(before + 1)
+    const created = all.at(-1)!
+    expect(created).toMatchObject({ status: 'draft', amount_minor: 1_600_000, category: 'hosting', supplier: 'Hostinger', description: 'Web hosting, 12 months' })
+    expect(await receiptsOf(created.id)).toHaveLength(3)
+    expect(extractor.calls).toHaveLength(3)
+
+    const replies = telegram.messages(shakil.id)
+    expect(replies.at(-1)).toMatch(/^Draft expense started: Web hosting, 12 months\n3 receipts, added up into one expense\.\nHostinger · LKR\s?16,000\.00/)
+    expect(replies.filter((m) => m.startsWith('Draft expense started'))).toHaveLength(1)
+
+    // Handled: a later round leaves it alone.
+    await settled()
+    expect(await telegramExpenses()).toHaveLength(before + 1)
+  })
+
+  it('are filed under what most were read as, and the sender is told they disagree', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    extractor = inTurn([hosting('100.00', 'software'), hosting('200.00'), hosting('300.00')])
+    album(shakil, 3)
+    await settled()
+    expect((await telegramExpenses()).at(-1)).toMatchObject({ amount_minor: 60_000, category: 'hosting' })
+    expect(telegram.messages(shakil.id).at(-1)).toMatch(/different categories \(Software and subscriptions, Hosting\); filed under Hosting/)
+  })
+
+  it('are filed under the category the caption names', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    extractor = inTurn([hosting('100.00', 'software'), hosting('200.00')])
+    album(shakil, 2, '#travel')
+    await settled()
+    const created = (await telegramExpenses()).at(-1)!
+    expect(created).toMatchObject({ amount_minor: 30_000, category: 'travel' })
+    expect(telegram.messages(shakil.id).at(-1)).not.toMatch(/different categories/)
+  })
+
+  it('in two currencies are two expenses', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    const before = (await telegramExpenses()).length
+    extractor = inTurn([hosting('100.00'), { ...hosting('20.00'), currency: 'USD' }, hosting('300.00')])
+    album(shakil, 3)
+    await settled()
+    const created = (await telegramExpenses()).slice(before)
+    expect(created.map((e) => e.amount_minor)).toEqual([40_000, 0])
+    expect(await receiptsOf(created[0]!.id)).toHaveLength(2)
+    expect(await receiptsOf(created[1]!.id)).toHaveLength(1)
+    expect(telegram.messages(shakil.id).at(-1)).toMatch(/Enter the USD to LKR rate/)
+  })
+
+  it('are one blank expense when reading is off', async () => {
+    await run('organization.update', { receiptReadingEnabled: false })
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    album(shakil, 2, 'Team dinner')
+    await settled()
+    const created = (await telegramExpenses()).at(-1)!
+    expect(created).toMatchObject({ status: 'draft', description: 'Team dinner', amount_minor: 0 })
+    expect(await receiptsOf(created.id)).toHaveLength(2)
+    expect(extractor.calls).toHaveLength(0)
+    await run('organization.update', { receiptReadingEnabled: true })
   })
 })
 
@@ -591,6 +801,16 @@ describe('the project of a receipt', () => {
     await deliver()
     for (const e of (await telegramExpenses()).slice(-2)) expect((await projectOf(e.id)).project_id).toBeNull()
     for (const m of telegram.messages(shakil.id).slice(-2)) expect(m).toMatch(/Which project is this for\?$/)
+  })
+
+  it('is taken from a typed expense too', async () => {
+    const shakil = person()
+    await linkAs(shakil, owner, 'owner')
+    say(shakil, '1500 taxi for the kyla app launch')
+    await deliver()
+    const id = (await telegramExpenses()).at(-1)!.id
+    expect(await projectOf(id)).toMatchObject({ project_id: app.id, description: 'Taxi for the kyla app launch' })
+    expect(lastReply().text).toMatch(/\nProject: Kyla App$/)
   })
 
   it('is set only by someone allowed to change the expense', async () => {

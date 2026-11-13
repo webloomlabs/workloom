@@ -5,6 +5,7 @@ import { newId } from '../../../ids.ts'
 import { permissionsForRole, isRole } from '../../../permissions/index.ts'
 import { consumeRateLimit, rateLimitKey } from '../../../rate-limit.ts'
 import { buildContext, executeProcedure, type ExecutionRequest } from '../../../registry/index.ts'
+import { categoryNamed, combineDrafts, disagreeingCategories, parseExpenseText } from '../../finance/expense-from-message.ts'
 import { describeDraft, receiptHintsFor } from '../../finance/expense-from-receipt.ts'
 import { RECEIPT_MAX_BYTES, RECEIPT_TYPES, receiptFilename } from '../../finance/expense-receipts.ts'
 import { readReceipt, receiptDraftSchema, type ReceiptDraft, type ReceiptExtractor } from '../../finance/receipt-extraction.ts'
@@ -20,7 +21,10 @@ import { decodeCallback, encodeCallback, TelegramError, type InlineKeyboard, typ
  *   AI when the organization has turned that on, with buttons to confirm
  *   or discard it. A project named in the caption files it there; otherwise,
  *   when there are active projects, the bot asks which one before offering
- *   Confirm. Anything else gets a line of help.
+ *   Confirm. Several sent together as an album are one expense, their
+ *   amounts added up (`processAlbum`). A typed line with an amount in it --
+ *   "1500 taxi to the client" -- is a draft expense too, in a private chat.
+ *   Anything else gets a line of help.
  * - From anyone else: how to link, and nothing more. Nothing they send is
  *   stored as an expense.
  * - In a group: nothing at all, unless an owner or admin approved the group
@@ -46,7 +50,9 @@ export type UpdateContext = {
   now: Date
 }
 
-const HELP = 'Send me a photo of a receipt, or the PDF, and I will start an expense for you to check.'
+const HELP =
+  'Send me a photo of a receipt, or the PDF, and I will start an expense for you to check. Several sent together become one expense, added up. Or type what you spent, such as "1500 taxi to the client" or "USD 20 Figma #software".'
+const NO_AMOUNT = 'I could not find an amount in that. Type what you spent with what it cost, such as "1500 taxi to the client", or send me a photo of the receipt.'
 
 function linkHelp(appUrl: string): string {
   return `I don't know you yet. In Workloom, open ${appUrl}/settings/telegram and choose "Link my Telegram", then send me the code it shows.`
@@ -119,6 +125,8 @@ export async function processUpdate(context: UpdateContext): Promise<void> {
     return
   }
   if (message.photo?.length || message.document) return receipt(context, message, member, appUrl)
+  const text = message.text?.trim()
+  if (text && !text.startsWith('/')) return typed(context, message, text, member, appUrl)
   await context.client.sendMessage(message.chat.id, HELP)
 }
 
@@ -319,45 +327,252 @@ async function receipt(context: UpdateContext, message: TelegramMessage, member:
     await withTenant(organizationId, (tx) => tx.update(schema.telegramUpdates).set({ extraction: { draft, projectId } }).where(eq(schema.telegramUpdates.id, row.id)))
   }
 
-  let created: { expense: { id: string; description: string; currency: string; projectName: string | null }; duplicateOf: { number: string | null; description: string } | null }
+  const created = await createAs<{ expense: CreatedExpense; duplicateOf: Duplicate | null }>(context, member, chat, 'expense.createFromReceipt', {
+    input: {
+      file: new File([new Uint8Array(bytes)], receiptFilename(file.name, type), { type }),
+      draft,
+      note: captionNote(message.caption, projects.find((p) => p.id === projectId)),
+      projectId,
+    },
+    idempotencyKey: `telegram:${bot.id}:${row.updateId}`,
+  })
+  if (!created) return
+  await offerDraft(context, {
+    chat,
+    member,
+    appUrl,
+    projects,
+    expense: created.expense,
+    details: [
+      reading ? describeDraft(draft, created.expense.currency) : 'Fill in the amount in Workloom, then confirm it.',
+      duplicateLine(created.duplicateOf ? [created.duplicateOf] : []),
+    ],
+    group,
+  })
+}
+
+type CreatedExpense = { id: string; description: string; currency: string; projectName: string | null }
+type Duplicate = { number: string | null; description: string }
+
+const duplicateLine = (duplicates: Duplicate[]) =>
+  duplicates.length === 0 ? null : `This looks like the same receipt as ${duplicates.map((d) => d.number ?? d.description).join(', ')}.`
+
+/**
+ * Runs a procedure that starts an expense, as the member. A refusal or a
+ * problem with what they sent is told to them, and gives null; anything else
+ * is thrown, to be retried.
+ */
+async function createAs<T>(context: UpdateContext | AlbumContext, member: Member, chat: number | string, name: string, request: { input: unknown; idempotencyKey: string }): Promise<T | null> {
   try {
-    created = (await executeProcedure('expense.createFromReceipt', {
-      ...member.request,
-      input: {
-        file: new File([new Uint8Array(bytes)], receiptFilename(file.name, type), { type }),
-        draft,
-        note: captionNote(message.caption, projects.find((p) => p.id === projectId)),
-        projectId,
-      },
-      idempotencyKey: `telegram:${bot.id}:${row.updateId}`,
-    })) as typeof created
+    return (await executeProcedure(name, { ...member.request, ...request })) as T
   } catch (error) {
     if (error instanceof ForbiddenError) {
-      await client.sendMessage(chat, 'Your role in Workloom cannot record expenses.')
-      return
+      await context.client.sendMessage(chat, 'Your role in Workloom cannot record expenses.')
+      return null
     }
     if (error instanceof DomainError) {
-      await client.sendMessage(chat, error.message)
-      return
+      await context.client.sendMessage(chat, error.message)
+      return null
     }
     throw error
   }
+}
 
-  const url = `${appUrl}/expenses/${created.expense.id}`
+/**
+ * Tells the member their draft was started, with what it says and the buttons
+ * under it: a project question first when none was named and there are some
+ * to choose from, otherwise Confirm and Discard. From a group, the group
+ * hears one line and the rest goes to the member privately.
+ */
+async function offerDraft(
+  context: UpdateContext | AlbumContext,
+  o: { chat: number | string; member: Member; appUrl: string; projects: ProjectChoice[]; expense: CreatedExpense; details: Array<string | null>; group?: TelegramMessage['chat'] | undefined },
+) {
+  const url = `${o.appUrl}/expenses/${o.expense.id}`
   // No project named, and some to choose from: ask before offering Confirm.
-  const ask = !created.expense.projectName && projects.length > 0
+  const ask = !o.expense.projectName && o.projects.length > 0
   const lines = [
-    `Draft expense started: ${created.expense.description}`,
-    reading ? describeDraft(draft, created.expense.currency) : 'Fill in the amount in Workloom, then confirm it.',
-    created.expense.projectName ? `Project: ${created.expense.projectName}` : null,
-    created.duplicateOf ? `This looks like the same receipt as ${created.duplicateOf.number ?? created.duplicateOf.description}.` : null,
-    ask ? (projects.length > PROJECT_CHOICES ? `${PROJECT_QUESTION} Only the ${PROJECT_CHOICES} newest are listed; choose another in Workloom.` : PROJECT_QUESTION) : null,
+    `Draft expense started: ${o.expense.description}`,
+    ...o.details,
+    o.expense.projectName ? `Project: ${o.expense.projectName}` : null,
+    ask ? (o.projects.length > PROJECT_CHOICES ? `${PROJECT_QUESTION} Only the ${PROJECT_CHOICES} newest are listed; choose another in Workloom.` : PROJECT_QUESTION) : null,
     // Telegram only opens HTTPS links from a button; otherwise the link is in the text.
-    appUrl.startsWith('https://') ? null : url,
+    o.appUrl.startsWith('https://') ? null : url,
   ].filter(Boolean)
-  const keyboard = ask ? projectKeyboard(created.expense.id, projects, url) : draftKeyboard(created.expense.id, url)
-  await client.sendMessage(chat, lines.join('\n'), keyboard)
-  if (group) await client.sendMessage(group.id, `Draft expense started for ${member.userName}. The details are in your private chat with me.`)
+  const keyboard = ask ? projectKeyboard(o.expense.id, o.projects, url) : draftKeyboard(o.expense.id, url)
+  await context.client.sendMessage(o.chat, lines.join('\n'), keyboard)
+  if (o.group) await context.client.sendMessage(o.group.id, `Draft expense started for ${o.member.userName}. The details are in your private chat with me.`)
+}
+
+/**
+ * A typed line from a linked member, in a private chat: "1500 taxi to the
+ * client". With an amount in it, it becomes a draft expense like a receipt
+ * does, with the same buttons; without one, it is not an expense, and they
+ * are told how to write one.
+ */
+async function typed(context: UpdateContext, message: TelegramMessage, text: string, member: Member, appUrl: string) {
+  const { bot, row, client, organizationId } = context
+  const hints = await receiptHintsFor(member.request)
+  const draft = parseExpenseText(text, hints)
+  if (draft) {
+    // The same budget as receipts: a flood of typed lines is a flood of drafts.
+    const limit = await consumeRateLimit(rateLimitKey({ organizationId, actorId: `telegram:${member.identityId}`, klass: 'expensive' }), 'expensive', context.now)
+    if (!limit.allowed) {
+      await client.sendMessage(message.chat.id, `That is a lot of expenses at once. Send the rest in ${limit.resetSeconds} seconds.`)
+      return
+    }
+  }
+  if (!draft) {
+    await client.sendMessage(message.chat.id, NO_AMOUNT)
+    return
+  }
+  const projects = await activeProjects(member)
+  const project = projectInCaption(text, projects)
+  const created = await createAs<{ expense: CreatedExpense }>(context, member, message.chat.id, 'expense.createDraft', {
+    input: { draft, projectId: project?.id ?? null },
+    idempotencyKey: `telegram:${bot.id}:${row.updateId}`,
+  })
+  if (!created) return
+  await offerDraft(context, { chat: message.chat.id, member, appUrl, projects, expense: created.expense, details: [describeDraft(draft, created.expense.currency)] })
+}
+
+export type AlbumContext = Omit<UpdateContext, 'row'> & {
+  /** Every update of one album, in the order Telegram numbered them. */
+  rows: UpdateRow[]
+}
+
+const TAKES = 'only photos (JPEG, PNG, WebP, HEIC) and PDFs of up to 10 MB'
+
+/**
+ * Photos or PDFs sent together, as an album: one expense, not one each. Each
+ * receipt is read (once -- a retry reuses what was read), and their amounts
+ * added up into one draft with every receipt attached. Receipts in different
+ * currencies cannot be added up, so each currency is its own draft.
+ *
+ * The category is the one the caption names (`#travel`), otherwise the one
+ * most of the receipts were read as; when they disagree the member is told,
+ * so they can change it before confirming.
+ */
+export async function processAlbum(context: AlbumContext): Promise<void> {
+  const { organizationId, bot, rows, client } = context
+  const messages = rows.map((r) => (r.payload as TelegramUpdate).message).filter((m): m is TelegramMessage => Boolean(m))
+  const first = messages[0]
+  if (!first?.from || first.from.is_bot) return
+  const isGroup = first.chat.type === 'group' || first.chat.type === 'supergroup'
+  if (!isGroup && first.chat.type !== 'private') return
+  if (isGroup && !(await approvedGroup(organizationId, first.chat.id))) return
+  const member = await linkedMember(organizationId, first.from, context.now)
+  const { appUrl } = await telegramSettings()
+  if (!member) {
+    // In a group, silence; in private, how to link.
+    if (!isGroup) await client.sendMessage(first.chat.id, linkHelp(appUrl))
+    return
+  }
+  const group = isGroup ? first.chat : undefined
+  const chat = group ? member.chatId : first.chat.id
+
+  const limit = await consumeRateLimit(rateLimitKey({ organizationId, actorId: `telegram:${member.identityId}`, klass: 'expensive' }), 'expensive', context.now)
+  if (!limit.allowed) {
+    await client.sendMessage(chat, `That is a lot of receipts at once. Send the rest in ${limit.resetSeconds} seconds.`)
+    return
+  }
+
+  const hints = await receiptHintsFor(member.request)
+  const reading = hints.enabled
+  const extractor = context.extractor === undefined ? undefined : context.extractor
+  type Item = { file: File; draft: ReceiptDraft | null; updateId: number }
+  const items: Item[] = []
+  let skipped = 0
+  for (const row of rows) {
+    const message = (row.payload as TelegramUpdate).message
+    const file = message ? attachment(message) : null
+    if (!message || !file || (file.size && file.size > RECEIPT_MAX_BYTES)) {
+      skipped += 1
+      continue
+    }
+    let bytes: Buffer
+    try {
+      bytes = await client.downloadFile(file.fileId, RECEIPT_MAX_BYTES)
+    } catch (error) {
+      if (error instanceof TelegramError && error.status === 413) {
+        skipped += 1
+        continue
+      }
+      throw error
+    }
+    const type = isOneOf(bytes, RECEIPT_TYPES)
+    if (!type) {
+      skipped += 1
+      continue
+    }
+    let draft: ReceiptDraft | null
+    if (row.extraction !== null) {
+      const saved = row.extraction as { draft: unknown }
+      draft = saved.draft === null ? null : receiptDraftSchema.parse(saved.draft)
+    } else {
+      draft = reading ? await readReceipt({ bytes, contentType: type }, hints, extractor) : null
+      await withTenant(organizationId, (tx) => tx.update(schema.telegramUpdates).set({ extraction: { draft } }).where(eq(schema.telegramUpdates.id, row.id)))
+    }
+    items.push({ file: new File([new Uint8Array(bytes)], receiptFilename(file.name, type), { type }), draft, updateId: row.updateId })
+  }
+  if (items.length === 0) {
+    await client.sendMessage(chat, `I can take ${TAKES}.`)
+    return
+  }
+
+  // Telegram puts an album's caption on one of its messages, usually the first.
+  const caption = messages.find((m) => m.caption?.trim())?.caption
+  const projects = await activeProjects(member)
+  const project = projectInCaption(caption, projects)
+  const category = categoryNamed(caption, hints.categories)
+  const note = albumNote(caption, project, category)
+  const names = new Map(hints.categories.map((c) => [c.key, c.name]))
+  const firstUpdate = Math.min(...rows.map((r) => r.updateId))
+
+  const byCurrency = new Map<string, Item[]>()
+  for (const item of items) {
+    const currency = item.draft?.currency ?? hints.baseCurrency
+    byCurrency.set(currency, [...(byCurrency.get(currency) ?? []), item])
+  }
+  let told = false
+  for (const [currency, together] of byCurrency) {
+    const drafts = together.map((i) => i.draft)
+    const combined = reading ? combineDrafts(drafts, { currency, category }) : null
+    const created = await createAs<{ expense: CreatedExpense; duplicates: Duplicate[] }>(context, member, chat, 'expense.createDraft', {
+      input: { files: together.map((i) => i.file), draft: combined, category: category ?? undefined, note, projectId: project?.id ?? null },
+      idempotencyKey: `telegram:${bot.id}:${firstUpdate}:${currency}`,
+    })
+    if (!created) return
+    const unread = drafts.filter((d) => d?.amountMinor == null).length
+    const disagree = category ? [] : disagreeingCategories(drafts)
+    await offerDraft(context, {
+      chat,
+      member,
+      appUrl,
+      projects,
+      expense: created.expense,
+      details: [
+        together.length > 1 ? `${together.length} receipts, added up into one expense.` : null,
+        reading ? describeDraft(combined, created.expense.currency) : 'Fill in the amount in Workloom, then confirm it.',
+        reading && combined && unread > 0 ? `${unread === 1 ? 'One receipt' : `${unread} receipts`} could not be read; add ${unread === 1 ? 'its' : 'their'} amount in Workloom.` : null,
+        disagree.length > 0 && combined?.category
+          ? `The receipts look like different categories (${disagree.map((k) => names.get(k) ?? k).join(', ')}); filed under ${names.get(combined.category) ?? combined.category}. Change it in Workloom if that is wrong.`
+          : null,
+        byCurrency.size > 1 ? `Only the ${currency} receipts are in this one: different currencies are separate expenses.` : null,
+        duplicateLine(created.duplicates),
+        !told && skipped > 0 ? `${skipped === 1 ? 'One file was' : `${skipped} files were`} left out: I can take ${TAKES}.` : null,
+      ],
+      group,
+    })
+    told = true
+  }
+}
+
+/** An album's caption as the expense's note, without the project or the category it named. */
+function albumNote(caption: string | undefined, project: ProjectChoice | null, category: string | null): string | null {
+  let note = caption?.trim() ?? ''
+  if (category) note = note.replace(/(^|\s)#[\p{L}\p{N}_-]+(?=\s|$)/gu, '$1').trim()
+  return captionNote(note, project ?? undefined)
 }
 
 type GroupRow = typeof schema.telegramGroups.$inferSelect

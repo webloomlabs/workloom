@@ -43,6 +43,26 @@ for each of the ten newest active projects and one for **No project**, and
 shows Confirm once they have chosen. Anyone else who messages the
 bot only gets told how to link; nothing they send is stored as an expense.
 
+**Several receipts at once.** Photos or PDFs sent together as one album
+become **one** draft expense: each receipt is read, their amounts added up,
+and every receipt attached. The bot waits until the album has been quiet for
+a few seconds, so all of it arrives first. The category is the one the caption
+names (`#travel`, or a category's name), otherwise the one most of the
+receipts were read as; when they disagree, the reply says so. Receipts in
+different currencies cannot be added up, so each currency becomes its own
+draft. With reading off, the album is still one draft, with every receipt
+attached, for the amount to be filled in.
+
+**Typing an expense.** No receipt? Type it to the bot in a private chat:
+`1500 taxi to the client`, `USD 20 Figma #software`, `Lunch with Acme 3,200
+yesterday`. The amount is the number with a currency beside it (a code, `$`,
+`€`, `£`, `Rs`), otherwise the only or largest number; `today`, `yesterday`
+or a `YYYY-MM-DD` date sets the day; `#tag` or a category's name sets the
+category; a project's name files it there. The rest is the description. It
+becomes a draft with the same buttons. A line with no amount in it is not an
+expense: the bot says how to write one. In groups, the bot takes receipts
+only, not typed expenses.
+
 **In a group.** An owner or admin chooses **Add the bot to a group** in
 Settings → Telegram, which gives Telegram's "add to group" link and a
 one-time code. Once a group is approved:

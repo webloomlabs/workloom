@@ -6,7 +6,7 @@ import { buildContext, defineProcedure, type ExecutionRequest } from '../../regi
 import { baseCurrency, optionalText } from '../crm/shared.ts'
 import { today } from './documents.ts'
 import { expenseOutput, createExpense, ensureExpenseCategories, expenseSource } from './expenses.ts'
-import { RECEIPT_MAX_BYTES, receiptOutput, storeReceipt } from './expense-receipts.ts'
+import { RECEIPT_MAX_BYTES, receiptOutput, storeReceipt, type Receipt } from './expense-receipts.ts'
 import { readReceipt, receiptDraftSchema, type ReceiptDraft, type ReceiptHints } from './receipt-extraction.ts'
 
 /**
@@ -56,6 +56,57 @@ export function describeDraft(draft: ReceiptDraft | null, base: string): string 
   return (parts.length > 0 ? parts.join(' · ') : 'Nothing could be read from it.') + foreign
 }
 
+/** A draft as a procedure takes it: what reading or the message gave, and -- for several receipts -- what each one said. */
+const expenseDraftInput = receiptDraftSchema.extend({ receipts: z.array(receiptDraftSchema.nullable()).max(10).optional() })
+const jsonField = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (typeof v === 'string' ? JSON.parse(v) : v), schema)
+
+type DraftInput = z.infer<typeof expenseDraftInput>
+type Duplicate = { expenseId: string; number: string | null; description: string }
+
+/**
+ * Starts a draft expense from what was read or typed, with its receipts
+ * attached, in one transaction: the expense and every receipt, or none.
+ */
+async function startDraft(
+  ctx: ActorContext,
+  input: { files: File[]; draft: DraftInput | null; note?: string | null | undefined; projectId?: string | null | undefined; category?: string | undefined },
+) {
+  for (const file of input.files) if (file.size > RECEIPT_MAX_BYTES) throw new DomainError('A receipt can be at most 10 MB.', 'file_too_large', 'file')
+  const { draft, files, note } = input
+  const base = await baseCurrency(ctx)
+  // A foreign amount needs a rate a person gives; until then the draft is in
+  // the organization's currency, and what was read is kept with it.
+  const local = draft && (draft.currency ?? base) === base
+  const fallback = draft?.supplier ? `Receipt from ${draft.supplier}` : files.length > 1 ? `${files.length} receipts` : files.length === 1 ? 'Receipt' : 'Expense'
+  const expense = await createExpense(
+    ctx,
+    {
+      status: 'draft',
+      description: draft?.description ?? note ?? fallback,
+      supplier: draft?.supplier ?? null,
+      incurredOn: draft?.incurredOn ?? undefined,
+      currency: base,
+      amountMinor: local ? (draft.amountMinor ?? 0) : 0,
+      category: input.category ?? draft?.category ?? undefined,
+      paymentMethod: draft?.paymentMethod ?? null,
+      notes: note && draft?.description ? note : null,
+      projectId: input.projectId ?? null,
+      extraction: draft ? { ...draft } : null,
+    },
+    expenseSource(ctx),
+  )
+  const receipts: Receipt[] = []
+  const duplicates: Duplicate[] = []
+  for (const file of files) {
+    const stored = await storeReceipt(ctx, expense.id, { bytes: Buffer.from(await file.arrayBuffer()), name: file.name }, expenseSource(ctx))
+    receipts.push(stored.receipt)
+    if (stored.duplicateOf && !duplicates.some((d) => d.expenseId === stored.duplicateOf!.expenseId)) duplicates.push(stored.duplicateOf)
+  }
+  return { expense, receipts, duplicates }
+}
+
+const duplicateOutput = z.object({ expenseId: z.uuid(), number: z.string().nullable(), description: z.string() })
+
 export const expenseCreateFromReceipt = defineProcedure({
   name: 'expense.createFromReceipt',
   summary: 'Start a draft expense from a receipt (multipart/form-data), filled with what reading it suggested, for a person to confirm',
@@ -63,7 +114,7 @@ export const expenseCreateFromReceipt = defineProcedure({
   input: z.object({
     file: z.file(),
     /** What reading the receipt suggested. Every value is optional; the draft is checked again on confirm. */
-    draft: z.preprocess((v) => (typeof v === 'string' ? JSON.parse(v) : v), receiptDraftSchema.nullable()).optional(),
+    draft: jsonField(receiptDraftSchema.nullable()).optional(),
     /** A note sent with the receipt, used as the description when reading gave none. */
     note: optionalText(500),
     projectId: z.uuid().nullish(),
@@ -71,37 +122,47 @@ export const expenseCreateFromReceipt = defineProcedure({
   output: z.object({
     expense: expenseOutput,
     receipt: receiptOutput,
-    duplicateOf: z.object({ expenseId: z.uuid(), number: z.string().nullable(), description: z.string() }).nullable(),
+    duplicateOf: duplicateOutput.nullable(),
   }),
   http: { method: 'POST', path: '/expenses/from-receipt', successStatus: 201, body: 'multipart' },
   rateLimit: 'expensive',
   emits: ['expense.created', 'expense_receipt.added'],
   async handler(ctx, input) {
-    if (input.file.size > RECEIPT_MAX_BYTES) throw new DomainError('A receipt can be at most 10 MB.', 'file_too_large', 'file')
+    const { expense, receipts, duplicates } = await startDraft(ctx, { files: [input.file], draft: input.draft ?? null, note: input.note, projectId: input.projectId })
+    return { expense, receipt: receipts[0]!, duplicateOf: duplicates[0] ?? null }
+  },
+})
+
+/** A form field that may come once, several times, or not at all. */
+const filesField = z.preprocess((v) => (v === undefined || v === null || v === '' ? [] : Array.isArray(v) ? v : [v]), z.array(z.file()).max(10, 'At most 10 receipts at once.'))
+
+export const expenseCreateDraft = defineProcedure({
+  name: 'expense.createDraft',
+  summary:
+    'Start one draft expense from a typed line or from several receipts at once (multipart/form-data, a `files` field per receipt), for a person to confirm',
+  permission: 'expense:create',
+  input: z.object({
+    /** Up to ten receipts, all evidence for the one expense. None for a typed expense. */
+    files: filesField,
+    /** What reading or the typed line gave -- for several receipts, their total, with what each said in `receipts`. */
+    draft: jsonField(expenseDraftInput.nullable()).optional(),
+    /** A category key, when the person named one: it wins over what reading suggested. */
+    category: z.string().min(1).max(100).optional(),
+    note: optionalText(500),
+    projectId: z.uuid().nullish(),
+  }),
+  output: z.object({
+    expense: expenseOutput,
+    receipts: z.array(receiptOutput),
+    /** Other expenses that already hold one of these receipts. */
+    duplicates: z.array(duplicateOutput),
+  }),
+  http: { method: 'POST', path: '/expenses/drafts', successStatus: 201, body: 'multipart' },
+  rateLimit: 'expensive',
+  emits: ['expense.created', 'expense_receipt.added'],
+  async handler(ctx, input) {
     const draft = input.draft ?? null
-    const base = await baseCurrency(ctx)
-    // A foreign amount needs a rate a person gives; until then the draft is in
-    // the organization's currency, and what was read is kept with it.
-    const local = draft && (draft.currency ?? base) === base
-    const category = draft?.category ?? undefined
-    const expense = await createExpense(
-      ctx,
-      {
-        status: 'draft',
-        description: draft?.description ?? input.note ?? (draft?.supplier ? `Receipt from ${draft.supplier}` : 'Receipt'),
-        supplier: draft?.supplier ?? null,
-        incurredOn: draft?.incurredOn ?? undefined,
-        currency: base,
-        amountMinor: local ? (draft.amountMinor ?? 0) : 0,
-        category,
-        paymentMethod: draft?.paymentMethod ?? null,
-        notes: input.note && draft?.description ? input.note : null,
-        projectId: input.projectId ?? null,
-        extraction: draft ? { ...draft } : null,
-      },
-      expenseSource(ctx),
-    )
-    const stored = await storeReceipt(ctx, expense.id, { bytes: Buffer.from(await input.file.arrayBuffer()), name: input.file.name }, expenseSource(ctx))
-    return { expense, receipt: stored.receipt, duplicateOf: stored.duplicateOf }
+    if (input.files.length === 0 && !draft) throw new DomainError('Send a receipt, or what the expense was and what it cost.', 'draft_empty', 'draft')
+    return startDraft(ctx, { files: input.files, draft, note: input.note, projectId: input.projectId, category: input.category })
   },
 })

@@ -80,7 +80,7 @@ const text = (value: string | null, max: number): string | null => {
 }
 
 /** "LKR 1,250.00" or "Rs. 1250" -> 125000, in the currency given; null if it is not an amount. */
-function amount(value: string | null, currency: string): number | null {
+export function readAmount(value: string | null, currency: string): number | null {
   if (!value) return null
   // The number itself, from its first digit to its last: "Rs." must not lend it a decimal point.
   const digits = (value.match(/\d[\d.,\s]*\d|\d/)?.[0] ?? '').replace(/\s/g, '')
@@ -93,7 +93,7 @@ function amount(value: string | null, currency: string): number | null {
   }
 }
 
-function isoDate(value: string | null, today: string): string | null {
+export function receiptDate(value: string | null, today: string): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const parsed = new Date(`${value}T00:00:00Z`)
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return null
@@ -110,14 +110,14 @@ export function normaliseReading(reading: ReceiptReading | null, hints: ReceiptH
   if (!reading || !reading.isReceipt) return null
   const said = reading.currency?.trim().toUpperCase() ?? null
   const currency = said && isCurrencyCode(said) ? said : hints.baseCurrency
-  const total = amount(reading.total, currency)
-  const tax = amount(reading.tax, currency)
+  const total = readAmount(reading.total, currency)
+  const tax = readAmount(reading.tax, currency)
   const category = reading.category && hints.categories.some((c) => c.key === reading.category) ? reading.category : null
   const method = (schema.EXPENSE_PAYMENT_METHODS as readonly string[]).includes(reading.paymentMethod ?? '') ? (reading.paymentMethod as ReceiptDraft['paymentMethod']) : null
   return {
     supplier: text(reading.supplier, 200),
     description: text(reading.description, 500),
-    incurredOn: isoDate(reading.date, hints.today),
+    incurredOn: receiptDate(reading.date, hints.today),
     currency,
     amountMinor: total,
     // Tax cannot be more than what was paid.

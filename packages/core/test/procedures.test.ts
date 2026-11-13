@@ -885,6 +885,7 @@ const MUTATIONS: Record<string, Fixture | Fixture[]> = {
   'expense.delete': async () => ({ id: await createExpense() }),
   'expense.confirm': async () => ({ id: await createExpense({ status: 'draft' }) }),
   'expense.createFromReceipt': async () => ({ file: aReceipt(), draft: null, note: 'Taxi to the client' }),
+  'expense.createDraft': async () => ({ files: [aReceipt(), aReceipt()], draft: null, note: 'Two taxis to the client' }),
   'telegramBot.connect': async () => {
     await disconnectBot()
     return { token: FAKE_TOKEN, mode: 'poll' }
